@@ -1,0 +1,133 @@
+import React, { useState, useEffect } from 'react';
+import { Lock } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { toBengaliDate } from '../../lib/i18n';
+import { useNotification } from '../../context/NotificationContext';
+import { api } from '../../services/api';
+import { Profile, UserRole } from '../../types/database';
+import { StatusBadge } from '../../components/common/StatusBadge';
+
+export const AdminUsers: React.FC = () => {
+  const { user, isSuperAdmin, role } = useAuth();
+  const { showToast } = useNotification();
+  const [users, setUsers] = useState<Profile[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      const data = await api.getUsers();
+      setUsers(data);
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  const handleRoleChange = async (targetUser: Profile, newRole: UserRole) => {
+    if (!isSuperAdmin) {
+      showToast({
+        type: 'error',
+        title: 'অনুমতি নেই',
+        message: 'ব্যবহারকারীর ভূমিকা পরিবর্তন করার অনুমতি শুধুমাত্র সুপার অ্যাডমিনের রয়েছে।',
+      });
+      return;
+    }
+
+    if (targetUser.role === 'super_admin' && newRole !== 'super_admin') {
+      const confirmDemote = window.confirm(
+        'সতর্কতা: আপনি একজন সক্রিয় সুপার অ্যাডমিনের ক্ষমতা হ্রাস করতে যাচ্ছেন। আপনি কি নিশ্চিত?'
+      );
+      if (!confirmDemote) return;
+    }
+
+    try {
+      await api.updateUserRole(targetUser.id, newRole, role);
+      setUsers((prev) =>
+        prev.map((u) => (u.id === targetUser.id ? { ...u, role: newRole } : u))
+      );
+      showToast({
+        type: 'success',
+        title: 'ভূমিকা পরিবর্তিত হয়েছে',
+        message: `${targetUser.email}-এর ভূমিকা সফলভাবে আপডেট করা হয়েছে।`,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'ভূমিকা পরিবর্তন করা সম্ভব হয়নি';
+      showToast({ type: 'error', title: 'ত্রুটি', message: msg });
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="border-b border-slate-200 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <span className="text-xs font-semibold uppercase tracking-wider text-indigo-600 block">
+            অ্যাক্সেস ও পারমিশন কন্ট্রোল
+          </span>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">ব্যবহারকারী ও ভূমিকা ব্যবস্থাপনা</h1>
+          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+            সুপার অ্যাডমিন, অ্যাডমিন এবং সাধারণ গ্রাহক অ্যাকাউন্টের অ্যাক্সেস নিয়ন্ত্রণ।
+          </p>
+        </div>
+
+        {!isSuperAdmin && (
+          <div className="flex items-center gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900">
+            <Lock className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>ভূমিকা পরিবর্তন শুধুমাত্র সুপার অ্যাডমিনের জন্য সীমাবদ্ধ।</span>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        {loading ? (
+          <div className="p-8 text-center text-xs text-slate-500">অ্যাকাউন্ট তালিকা লোড হচ্ছে...</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-left">
+              <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                <tr>
+                  <th className="py-3 px-4 font-medium">ইমেইল ঠিকানা</th>
+                  <th className="py-3 px-4 font-medium">নাম</th>
+                  <th className="py-3 px-4 font-medium">বর্তমান ভূমিকা</th>
+                  <th className="py-3 px-4 font-medium">নিবন্ধনের তারিখ</th>
+                  <th className="py-3 px-4 font-medium text-right">ভূমিকা নির্ধারণ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-700">
+                {users.map((u) => {
+                  const canEdit = isSuperAdmin;
+
+                  return (
+                    <tr key={u.id} className="hover:bg-slate-50/50">
+                      <td className="py-3 px-4 font-mono font-medium text-slate-900">{u.email}</td>
+                      <td className="py-3 px-4 font-semibold text-slate-800">{u.full_name}</td>
+                      <td className="py-3 px-4">
+                        <StatusBadge status={u.role} />
+                      </td>
+                      <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
+                        {toBengaliDate(u.created_at)}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        {canEdit ? (
+                          <select
+                            value={u.role}
+                            onChange={(e) => handleRoleChange(u, e.target.value as UserRole)}
+                            className="p-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg font-medium focus:outline-hidden"
+                          >
+                            <option value="user">সাধারণ গ্রাহক</option>
+                            <option value="admin">অ্যাডমিন</option>
+                            <option value="super_admin">সুপার অ্যাডমিন</option>
+                          </select>
+                        ) : (
+                          <span className="text-slate-400 font-mono text-[11px]">সুরক্ষিত</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};

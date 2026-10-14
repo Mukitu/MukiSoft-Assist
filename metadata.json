@@ -1,0 +1,6 @@
+{
+  "name": "MukiSoft Assist",
+  "description": "Premium AI-powered digital service platform and enterprise marketplace operated by MukiSoft Technology.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
