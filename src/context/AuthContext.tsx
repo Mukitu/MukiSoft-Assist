@@ -53,9 +53,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let isMounted = true;
 
     async function initAuth() {
-      if (isSupabaseConfigured && supabase) {
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
+      try {
+        if (isSupabaseConfigured && supabase) {
+          const { data: { session }, error } = await supabase.auth.getSession();
+          if (error) {
+            console.error('Supabase getSession error:', error);
+          }
+
           if (session?.user && isMounted) {
             setUser({
               id: session.user.id,
@@ -73,67 +77,74 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if (profileData && isMounted) {
               setProfile(profileData as Profile);
             }
-          }
-        } catch (err) {
-          console.error('Supabase auth initialization error:', err);
-        }
-
-        // Listen for auth changes
-        const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
-          if (!isMounted) return;
-          if (session?.user) {
-            setUser({
-              id: session.user.id,
-              email: session.user.email || '',
-              name: session.user.user_metadata?.full_name || session.user.email || 'User',
-            });
-
-            const { data: profileData } = await supabase!
-              .from('profiles')
-              .select('*')
-              .eq('id', session.user.id)
-              .single();
-
-            if (profileData && isMounted) {
-              setProfile(profileData as Profile);
-            }
-          } else {
+          } else if (isMounted) {
             setUser(null);
             setProfile(null);
           }
-        });
 
-        if (isMounted) setIsLoading(false);
-        return () => {
-          authListener.subscription.unsubscribe();
-        };
-      } else {
-        // Fallback default session for evaluation testing
-        const savedDemo = localStorage.getItem('mukisoft_demo_current_user');
-        if (savedDemo) {
-          try {
-            const parsed = JSON.parse(savedDemo);
-            setUser({ id: parsed.id, email: parsed.email, name: parsed.full_name });
-            setProfile(parsed);
-          } catch {
-            // fallback
-          }
-        } else {
-          // Default client persona
-          const defaultClient: Profile = {
-            id: 'user_customer_demo',
-            email: 'client@mukisoft.com',
-            full_name: 'Tanvir Hossain',
-            role: 'user',
-            preferred_language: 'en',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
+          // Listen for auth changes
+          const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+            if (!isMounted) return;
+            if (session?.user) {
+              setUser({
+                id: session.user.id,
+                email: session.user.email || '',
+                name: session.user.user_metadata?.full_name || session.user.email || 'User',
+              });
+
+              const { data: profileData } = await supabase!
+                .from('profiles')
+                .select('*')
+                .eq('id', session.user.id)
+                .single();
+
+              if (profileData && isMounted) {
+                setProfile(profileData as Profile);
+              }
+            } else {
+              setUser(null);
+              setProfile(null);
+            }
+          });
+
+          return () => {
+            authListener.subscription.unsubscribe();
           };
-          setUser({ id: defaultClient.id, email: defaultClient.email, name: defaultClient.full_name });
-          setProfile(defaultClient);
-          localStorage.setItem('mukisoft_demo_current_user', JSON.stringify(defaultClient));
+        } else {
+          // Supabase not configured: Check if an active session was previously created via login/role-switcher
+          const savedDemo = localStorage.getItem('mukisoft_demo_current_user');
+          if (savedDemo && isMounted) {
+            try {
+              const parsed = JSON.parse(savedDemo);
+              if (parsed && parsed.id && parsed.email) {
+                setUser({ id: parsed.id, email: parsed.email, name: parsed.full_name || parsed.name });
+                setProfile(parsed);
+              } else {
+                localStorage.removeItem('mukisoft_demo_current_user');
+                setUser(null);
+                setProfile(null);
+              }
+            } catch {
+              localStorage.removeItem('mukisoft_demo_current_user');
+              setUser(null);
+              setProfile(null);
+            }
+          } else if (isMounted) {
+            // Visitor is unauthenticated by default
+            setUser(null);
+            setProfile(null);
+          }
         }
-        if (isMounted) setIsLoading(false);
+      } catch (err) {
+        console.error('Auth initialization error:', err);
+        if (isMounted) {
+          setUser(null);
+          setProfile(null);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     }
 

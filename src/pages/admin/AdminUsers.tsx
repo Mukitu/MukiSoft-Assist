@@ -22,23 +22,9 @@ export const AdminUsers: React.FC = () => {
     load();
   }, []);
 
-  const handleRoleChange = async (targetUser: Profile, newRole: UserRole) => {
-    if (!isSuperAdmin) {
-      showToast({
-        type: 'error',
-        title: 'অনুমতি নেই',
-        message: 'ব্যবহারকারীর ভূমিকা পরিবর্তন করার অনুমতি শুধুমাত্র সুপার অ্যাডমিনের রয়েছে।',
-      });
-      return;
-    }
+  const [pendingDemote, setPendingDemote] = useState<{ targetUser: Profile; newRole: UserRole } | null>(null);
 
-    if (targetUser.role === 'super_admin' && newRole !== 'super_admin') {
-      const confirmDemote = window.confirm(
-        'সতর্কতা: আপনি একজন সক্রিয় সুপার অ্যাডমিনের ক্ষমতা হ্রাস করতে যাচ্ছেন। আপনি কি নিশ্চিত?'
-      );
-      if (!confirmDemote) return;
-    }
-
+  const applyRoleUpdate = async (targetUser: Profile, newRole: UserRole) => {
     try {
       await api.updateUserRole(targetUser.id, newRole, role);
       setUsers((prev) =>
@@ -52,7 +38,27 @@ export const AdminUsers: React.FC = () => {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'ভূমিকা পরিবর্তন করা সম্ভব হয়নি';
       showToast({ type: 'error', title: 'ত্রুটি', message: msg });
+    } finally {
+      setPendingDemote(null);
     }
+  };
+
+  const handleRoleChange = async (targetUser: Profile, newRole: UserRole) => {
+    if (!isSuperAdmin) {
+      showToast({
+        type: 'error',
+        title: 'অনুমতি নেই',
+        message: 'ব্যবহারকারীর ভূমিকা পরিবর্তন করার অনুমতি শুধুমাত্র সুপার অ্যাডমিনের রয়েছে।',
+      });
+      return;
+    }
+
+    if (targetUser.role === 'super_admin' && newRole !== 'super_admin') {
+      setPendingDemote({ targetUser, newRole });
+      return;
+    }
+
+    await applyRoleUpdate(targetUser, newRole);
   };
 
   return (
@@ -128,6 +134,37 @@ export const AdminUsers: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* সুপার অ্যাডমিন ক্ষমতা হ্রাসের নিশ্চিতকরণ মডাল */}
+      {pendingDemote && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4 border border-slate-200">
+            <div>
+              <h3 className="text-base font-bold text-slate-900">সতর্কতা: সুপার অ্যাডমিন পদ পরিবর্তন</h3>
+              <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+                আপনি <strong className="text-slate-900 font-mono">{pendingDemote.targetUser.email}</strong> ব্যবহারকারীর সুপার অ্যাডমিন ক্ষমতা হ্রাস করতে যাচ্ছেন। আপনি কি নিশ্চিতভাবে এটি সম্পন্ন করতে চান?
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setPendingDemote(null)}
+                className="px-4 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+              >
+                বাতিল করুন
+              </button>
+              <button
+                type="button"
+                onClick={() => applyRoleUpdate(pendingDemote.targetUser, pendingDemote.newRole)}
+                className="px-4 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors shadow-xs"
+              >
+                হ্যাঁ, পদ পরিবর্তন করুন
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -18,7 +18,7 @@ export type OrderStatus =
   | 'cancelled'
   | 'refunded';
 export type TicketPriority = 'low' | 'medium' | 'high' | 'urgent';
-export type TicketStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
+export type TicketStatus = 'open' | 'in_progress' | 'waiting_for_user' | 'resolved' | 'closed';
 
 export interface Profile {
   id: string;
@@ -159,18 +159,40 @@ export interface OrderDeliverable {
   created_at: string;
 }
 
+export interface TicketMessage {
+  id: string;
+  ticket_id: string;
+  sender_id: string;
+  sender_role: 'customer' | 'admin' | 'staff' | 'system';
+  message: string;
+  attachment_url?: string | null;
+  attachment_name?: string | null;
+  is_internal?: boolean;
+  created_at: string;
+  sender?: Profile;
+}
+
 export interface SupportTicket {
   id: string;
   ticket_number: string;
   user_id: string;
+  order_id?: string | null;
   subject: string;
   category: string;
   priority: TicketPriority;
   status: TicketStatus;
+  description?: string;
+  attachment_url?: string | null;
+  attachment_name?: string | null;
   assigned_to?: string | null;
+  reopened_at?: string | null;
+  reopen_reason?: string | null;
   created_at: string;
   updated_at: string;
   customer?: Profile;
+  assigned_staff?: Profile;
+  order?: Order;
+  messages?: TicketMessage[];
 }
 
 export interface AppNotification {

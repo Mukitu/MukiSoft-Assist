@@ -110,7 +110,7 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({ serviceSlu
         title: 'লগইন প্রয়োজন',
         message: 'সেবা অর্ডার করার পূর্বে অনুগ্রহ করে লগইন করুন অথবা অ্যাকাউন্ট তৈরি করুন।',
       });
-      onNavigate('/login');
+      onNavigate(`/login?redirect=${encodeURIComponent(`/service/${serviceSlug}`)}&reason=order`);
       return;
     }
     setIsCommissionModalOpen(true);

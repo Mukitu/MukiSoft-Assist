@@ -20,6 +20,8 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status }) => {
       case 'in_review':
       case 'review':
         return 'text-indigo-800 bg-indigo-50 border border-indigo-300';
+      case 'waiting_for_user':
+        return 'text-sky-800 bg-sky-50 border border-sky-300';
       case 'in_progress':
       case 'pending':
       case 'open':

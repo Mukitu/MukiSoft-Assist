@@ -63,9 +63,10 @@ export const statusLabels: Record<string, string> = {
   admin: 'অ্যাডমিন',
   user: 'সাধারণ ব্যবহারকারী',
 
-  // টিকিট
-  open: 'উন্মুক্ত',
-  resolved: 'সমাধানকৃত',
+  // টিকিট স্ট্যাটাস
+  open: 'খোলা',
+  waiting_for_user: 'গ্রাহকের উত্তরের অপেক্ষায়',
+  resolved: 'সমাধান হয়েছে',
   closed: 'বন্ধ',
   low: 'সাধারণ',
   medium: 'মাঝারি',

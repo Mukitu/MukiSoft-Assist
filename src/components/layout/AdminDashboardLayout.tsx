@@ -13,6 +13,7 @@ import {
   Menu,
   X,
   Lock,
+  HelpCircle,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { StatusBadge } from '../common/StatusBadge';
@@ -70,6 +71,7 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
     { label: 'সেবা ও ক্যাটালগ', path: '/admin/services', icon: Layers },
     { label: 'টাকা জমার অনুরোধ যাচাই', path: '/admin/deposits', icon: CheckSquare },
     { label: 'অর্ডার ও ফাইল ডেলিভারি', path: '/admin/orders', icon: ShoppingBag },
+    { label: 'সহায়তা ডেস্ক ও টিকিট', path: '/admin/tickets', icon: HelpCircle },
     { label: 'ব্যবহারকারী ও ভূমিকা', path: '/admin/users', icon: Users },
     { label: 'নিরাপত্তা অডিট লগ', path: '/admin/audit-logs', icon: ShieldAlert, superAdminOnly: true },
     { label: 'প্ল্যাটফর্ম সেটিংস', path: '/admin/settings', icon: Sliders, superAdminOnly: true },
@@ -80,6 +82,7 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
     if (currentPath === '/admin/services') return ['প্রশাসনিক কনসোল', 'সেবা ও ক্যাটালগ'];
     if (currentPath === '/admin/deposits') return ['প্রশাসনিক কনসোল', 'টাকা জমার অনুরোধ যাচাই'];
     if (currentPath === '/admin/orders') return ['প্রশাসনিক কনসোল', 'অর্ডার ও ডেলিভারি'];
+    if (currentPath === '/admin/tickets') return ['প্রশাসনিক কনসোল', 'সহায়তা ডেস্ক ও টিকিট'];
     if (currentPath === '/admin/users') return ['প্রশাসনিক কনসোল', 'ব্যবহারকারী ও ভূমিকা'];
     if (currentPath === '/admin/audit-logs') return ['প্রশাসনিক কনসোল', 'অডিট লগ'];
     if (currentPath === '/admin/settings') return ['প্রশাসনিক কনসোল', 'প্ল্যাটফর্ম সেটিংস'];

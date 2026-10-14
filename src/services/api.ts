@@ -9,7 +9,11 @@ import {
   Order,
   OrderDeliverable,
   SupportTicket,
+  TicketMessage,
+  TicketPriority,
+  TicketStatus,
   AuditLog,
+  AppNotification,
   PlatformSettings,
   UserRole,
   OrderStatus,
@@ -126,6 +130,17 @@ export const api = {
     }
     setLS('services', current);
     return updated;
+  },
+
+  async deleteService(id: string): Promise<boolean> {
+    if (isSupabaseConfigured && supabase) {
+      const { error } = await supabase.from('services').delete().eq('id', id);
+      if (!error) return true;
+    }
+    const current = getLS<ServiceItem[]>('services', INITIAL_SERVICES);
+    const filtered = current.filter((s) => s.id !== id);
+    setLS('services', filtered);
+    return true;
   },
 
   // -------------------------------------------------------------
@@ -798,12 +813,90 @@ export const api = {
     ]);
   },
 
+  async logAudit(params: {
+    actorId?: string | null;
+    action: string;
+    targetType: string;
+    targetId: string;
+    details?: Record<string, unknown>;
+  }): Promise<void> {
+    if (isSupabaseConfigured && supabase) {
+      await supabase.from('audit_logs').insert({
+        actor_id: params.actorId || null,
+        action: params.action,
+        target_type: params.targetType,
+        target_id: params.targetId,
+        details: params.details || {},
+      });
+      return;
+    }
+    const current = getLS<AuditLog[]>('audit_logs', []);
+    current.unshift({
+      id: `audit_${Date.now()}`,
+      actor_id: params.actorId || null,
+      action: params.action,
+      target_type: params.targetType,
+      target_id: params.targetId,
+      details: params.details || {},
+      created_at: new Date().toISOString(),
+    });
+    setLS('audit_logs', current);
+  },
+
   // -------------------------------------------------------------
-  // SUPPORT TICKETS
+  // NOTIFICATIONS
+  // -------------------------------------------------------------
+  async getNotifications(userId: string): Promise<AppNotification[]> {
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+      if (!error && data) return data as AppNotification[];
+    }
+    const current = getLS<AppNotification[]>('notifications', []);
+    return current.filter((n) => n.user_id === userId);
+  },
+
+  async createNotification(params: {
+    userId: string;
+    title: string;
+    message: string;
+    link?: string | null;
+  }): Promise<void> {
+    if (isSupabaseConfigured && supabase) {
+      await supabase.from('notifications').insert({
+        user_id: params.userId,
+        title: params.title,
+        message: params.message,
+        link: params.link || null,
+        is_read: false,
+      });
+      return;
+    }
+    const current = getLS<AppNotification[]>('notifications', []);
+    current.unshift({
+      id: `notif_${Date.now()}`,
+      user_id: params.userId,
+      title: params.title,
+      message: params.message,
+      link: params.link || null,
+      is_read: false,
+      created_at: new Date().toISOString(),
+    });
+    setLS('notifications', current);
+  },
+
+  // -------------------------------------------------------------
+  // SUPPORT TICKETS & CONVERSATION THREADS (Prompt 5)
   // -------------------------------------------------------------
   async getTickets(userId?: string): Promise<SupportTicket[]> {
     if (isSupabaseConfigured && supabase) {
-      let q = supabase.from('support_tickets').select('*, customer:profiles(*)').order('created_at', { ascending: false });
+      let q = supabase
+        .from('support_tickets')
+        .select('*, customer:profiles!user_id(*), assigned_staff:profiles!assigned_to(*), order:orders(*)')
+        .order('updated_at', { ascending: false });
       if (userId) q = q.eq('user_id', userId);
       const { data, error } = await q;
       if (!error && data) return data as SupportTicket[];
@@ -813,40 +906,350 @@ export const api = {
     return all;
   },
 
-  async createTicket(ticket: { userId: string; subject: string; category: string; priority: SupportTicket['priority'] }): Promise<SupportTicket> {
-    const ticketNumber = `TICK-${Math.floor(100000 + Math.random() * 900000)}`;
+  async getTicketById(ticketId: string): Promise<SupportTicket | null> {
     if (isSupabaseConfigured && supabase) {
       const { data, error } = await supabase
         .from('support_tickets')
-        .insert({
-          user_id: ticket.userId,
-          ticket_number: ticketNumber,
-          subject: ticket.subject,
-          category: ticket.category,
-          priority: ticket.priority,
-          status: 'open',
-        })
-        .select()
+        .select('*, customer:profiles!user_id(*), assigned_staff:profiles!assigned_to(*), order:orders(*)')
+        .eq('id', ticketId)
         .single();
       if (!error && data) return data as SupportTicket;
-      throw new Error(error?.message || 'Failed to create support ticket');
+    }
+    const all = getLS<SupportTicket[]>('tickets', []);
+    return all.find((t) => t.id === ticketId) || null;
+  },
+
+  async createTicket(payload: {
+    userId: string;
+    subject: string;
+    category: string;
+    priority: TicketPriority;
+    description?: string;
+    orderId?: string | null;
+    attachmentUrl?: string | null;
+    attachmentName?: string | null;
+  }): Promise<SupportTicket> {
+    const ticketNumber = `TICK-${Math.floor(100000 + Math.random() * 900000)}`;
+    const now = new Date().toISOString();
+
+    if (isSupabaseConfigured && supabase) {
+      const { data: ticketData, error: ticketError } = await supabase
+        .from('support_tickets')
+        .insert({
+          user_id: payload.userId,
+          ticket_number: ticketNumber,
+          subject: payload.subject,
+          category: payload.category,
+          priority: payload.priority,
+          status: 'open',
+          order_id: payload.orderId || null,
+          description: payload.description || '',
+          attachment_url: payload.attachmentUrl || null,
+          attachment_name: payload.attachmentName || null,
+        })
+        .select('*, customer:profiles!user_id(*), order:orders(*)')
+        .single();
+
+      if (ticketError || !ticketData) {
+        throw new Error(ticketError?.message || 'সহায়তা টিকিট তৈরি করা সম্ভব হয়নি');
+      }
+
+      // প্রাথমিক বিবরণকে প্রথম বার্তা হিসেবে সংরক্ষণ
+      if (payload.description) {
+        await supabase.from('ticket_messages').insert({
+          ticket_id: ticketData.id,
+          sender_id: payload.userId,
+          sender_role: 'customer',
+          message: payload.description,
+          attachment_url: payload.attachmentUrl || null,
+          attachment_name: payload.attachmentName || null,
+          is_internal: false,
+        });
+      }
+
+      return ticketData as SupportTicket;
     }
 
+    // LocalStorage fallback
     const all = getLS<SupportTicket[]>('tickets', []);
+    const newId = `tick_${Date.now()}`;
     const newT: SupportTicket = {
-      id: `tick_${Date.now()}`,
+      id: newId,
       ticket_number: ticketNumber,
-      user_id: ticket.userId,
-      subject: ticket.subject,
-      category: ticket.category,
-      priority: ticket.priority,
+      user_id: payload.userId,
+      subject: payload.subject,
+      category: payload.category,
+      priority: payload.priority,
       status: 'open',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      order_id: payload.orderId || null,
+      description: payload.description || '',
+      attachment_url: payload.attachmentUrl || null,
+      attachment_name: payload.attachmentName || null,
+      created_at: now,
+      updated_at: now,
     };
     all.unshift(newT);
     setLS('tickets', all);
+
+    if (payload.description) {
+      const messages = getLS<TicketMessage[]>(`ticket_msgs_${newId}`, []);
+      messages.push({
+        id: `msg_${Date.now()}`,
+        ticket_id: newId,
+        sender_id: payload.userId,
+        sender_role: 'customer',
+        message: payload.description,
+        attachment_url: payload.attachmentUrl || null,
+        attachment_name: payload.attachmentName || null,
+        is_internal: false,
+        created_at: now,
+      });
+      setLS(`ticket_msgs_${newId}`, messages);
+    }
+
     return newT;
+  },
+
+  async getTicketMessages(ticketId: string, isAdminView: boolean = false): Promise<TicketMessage[]> {
+    if (isSupabaseConfigured && supabase) {
+      let q = supabase
+        .from('ticket_messages')
+        .select('*, sender:profiles(*)')
+        .eq('ticket_id', ticketId)
+        .order('created_at', { ascending: true });
+      if (!isAdminView) {
+        q = q.eq('is_internal', false);
+      }
+      const { data, error } = await q;
+      if (!error && data) return data as TicketMessage[];
+    }
+    const messages = getLS<TicketMessage[]>(`ticket_msgs_${ticketId}`, []);
+    if (!isAdminView) {
+      return messages.filter((m) => !m.is_internal);
+    }
+    return messages;
+  },
+
+  async sendTicketMessage(payload: {
+    ticketId: string;
+    senderId: string;
+    senderRole: 'customer' | 'admin' | 'staff' | 'system';
+    message: string;
+    attachmentUrl?: string | null;
+    attachmentName?: string | null;
+    isInternal?: boolean;
+    updateStatus?: TicketStatus;
+  }): Promise<TicketMessage> {
+    const now = new Date().toISOString();
+
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase
+        .from('ticket_messages')
+        .insert({
+          ticket_id: payload.ticketId,
+          sender_id: payload.senderId,
+          sender_role: payload.senderRole,
+          message: payload.message,
+          attachment_url: payload.attachmentUrl || null,
+          attachment_name: payload.attachmentName || null,
+          is_internal: payload.isInternal || false,
+        })
+        .select('*, sender:profiles(*)')
+        .single();
+
+      if (error || !data) {
+        throw new Error(error?.message || 'বার্তা পাঠানো সম্ভব হয়নি');
+      }
+
+      // টিকিট আপডেট ও স্ট্যাটাস পরিবর্তন
+      const updates: Record<string, unknown> = { updated_at: now };
+      if (payload.updateStatus) {
+        updates.status = payload.updateStatus;
+      } else if (payload.senderRole === 'customer') {
+        updates.status = 'in_progress';
+      }
+      await supabase.from('support_tickets').update(updates).eq('id', payload.ticketId);
+
+      // গ্রাহককে নোটিফিকেশন প্রেরণ (যদি অ্যাডমিন উত্তর পাঠায় এবং অভ্যন্তরীণ নোট না হয়)
+      if ((payload.senderRole === 'admin' || payload.senderRole === 'staff') && !payload.isInternal) {
+        const { data: ticket } = await supabase
+          .from('support_tickets')
+          .select('user_id, ticket_number')
+          .eq('id', payload.ticketId)
+          .single();
+        if (ticket) {
+          await this.createNotification({
+            userId: ticket.user_id,
+            title: 'সহায়তা ডেস্ক থেকে উত্তর',
+            message: `আপনার টিকিট #${ticket.ticket_number}-এ সহায়তা প্রতিনিধি নতুন উত্তর দিয়েছেন।`,
+            link: '/dashboard/support',
+          });
+        }
+      }
+
+      return data as TicketMessage;
+    }
+
+    // LocalStorage fallback
+    const messages = getLS<TicketMessage[]>(`ticket_msgs_${payload.ticketId}`, []);
+    const newMsg: TicketMessage = {
+      id: `msg_${Date.now()}`,
+      ticket_id: payload.ticketId,
+      sender_id: payload.senderId,
+      sender_role: payload.senderRole,
+      message: payload.message,
+      attachment_url: payload.attachmentUrl || null,
+      attachment_name: payload.attachmentName || null,
+      is_internal: payload.isInternal || false,
+      created_at: now,
+    };
+    messages.push(newMsg);
+    setLS(`ticket_msgs_${payload.ticketId}`, messages);
+
+    // টিকিটের স্ট্যাটাস আপডেট
+    const allTickets = getLS<SupportTicket[]>('tickets', []);
+    const tIdx = allTickets.findIndex((t) => t.id === payload.ticketId);
+    if (tIdx >= 0) {
+      allTickets[tIdx].updated_at = now;
+      if (payload.updateStatus) {
+        allTickets[tIdx].status = payload.updateStatus;
+      } else if (payload.senderRole === 'customer') {
+        allTickets[tIdx].status = 'in_progress';
+      }
+      setLS('tickets', allTickets);
+
+      if ((payload.senderRole === 'admin' || payload.senderRole === 'staff') && !payload.isInternal) {
+        this.createNotification({
+          userId: allTickets[tIdx].user_id,
+          title: 'সহায়তা ডেস্ক থেকে উত্তর',
+          message: `আপনার টিকিট #${allTickets[tIdx].ticket_number}-এ সহায়তা প্রতিনিধি নতুন উত্তর দিয়েছেন।`,
+          link: '/dashboard/support',
+        });
+      }
+    }
+
+    return newMsg;
+  },
+
+  async updateTicketStatus(ticketId: string, status: TicketStatus, actorId?: string): Promise<void> {
+    const now = new Date().toISOString();
+    if (isSupabaseConfigured && supabase) {
+      await supabase.from('support_tickets').update({ status, updated_at: now }).eq('id', ticketId);
+      if (actorId) {
+        await this.logAudit({
+          actorId,
+          action: 'TICKET_STATUS_UPDATED',
+          targetType: 'ticket',
+          targetId: ticketId,
+          details: { new_status: status },
+        });
+      }
+      return;
+    }
+
+    const all = getLS<SupportTicket[]>('tickets', []);
+    const idx = all.findIndex((t) => t.id === ticketId);
+    if (idx >= 0) {
+      all[idx].status = status;
+      all[idx].updated_at = now;
+      setLS('tickets', all);
+    }
+  },
+
+  async updateTicketPriority(ticketId: string, priority: TicketPriority, actorId?: string): Promise<void> {
+    const now = new Date().toISOString();
+    if (isSupabaseConfigured && supabase) {
+      await supabase.from('support_tickets').update({ priority, updated_at: now }).eq('id', ticketId);
+      if (actorId) {
+        await this.logAudit({
+          actorId,
+          action: 'TICKET_PRIORITY_UPDATED',
+          targetType: 'ticket',
+          targetId: ticketId,
+          details: { new_priority: priority },
+        });
+      }
+      return;
+    }
+
+    const all = getLS<SupportTicket[]>('tickets', []);
+    const idx = all.findIndex((t) => t.id === ticketId);
+    if (idx >= 0) {
+      all[idx].priority = priority;
+      all[idx].updated_at = now;
+      setLS('tickets', all);
+    }
+  },
+
+  async assignTicket(ticketId: string, assignedTo: string | null, actorId?: string): Promise<void> {
+    const now = new Date().toISOString();
+    if (isSupabaseConfigured && supabase) {
+      await supabase.from('support_tickets').update({ assigned_to: assignedTo, updated_at: now }).eq('id', ticketId);
+      if (actorId) {
+        await this.logAudit({
+          actorId,
+          action: 'TICKET_ASSIGNED',
+          targetType: 'ticket',
+          targetId: ticketId,
+          details: { assigned_to: assignedTo },
+        });
+      }
+      return;
+    }
+
+    const all = getLS<SupportTicket[]>('tickets', []);
+    const idx = all.findIndex((t) => t.id === ticketId);
+    if (idx >= 0) {
+      all[idx].assigned_to = assignedTo;
+      all[idx].updated_at = now;
+      setLS('tickets', all);
+    }
+  },
+
+  async reopenTicket(ticketId: string, userId: string, reason: string): Promise<void> {
+    const now = new Date().toISOString();
+    if (isSupabaseConfigured && supabase) {
+      await supabase
+        .from('support_tickets')
+        .update({
+          status: 'open',
+          reopened_at: now,
+          reopen_reason: reason,
+          updated_at: now,
+        })
+        .eq('id', ticketId);
+
+      await supabase.from('ticket_messages').insert({
+        ticket_id: ticketId,
+        sender_id: userId,
+        sender_role: 'customer',
+        message: `[টিকিট পুনরায় খোলা হয়েছে]: ${reason}`,
+        is_internal: false,
+      });
+      return;
+    }
+
+    const all = getLS<SupportTicket[]>('tickets', []);
+    const idx = all.findIndex((t) => t.id === ticketId);
+    if (idx >= 0) {
+      all[idx].status = 'open';
+      all[idx].reopened_at = now;
+      all[idx].reopen_reason = reason;
+      all[idx].updated_at = now;
+      setLS('tickets', all);
+
+      const msgs = getLS<TicketMessage[]>(`ticket_msgs_${ticketId}`, []);
+      msgs.push({
+        id: `msg_${Date.now()}`,
+        ticket_id: ticketId,
+        sender_id: userId,
+        sender_role: 'customer',
+        message: `[টিকিট পুনরায় খোলা হয়েছে]: ${reason}`,
+        is_internal: false,
+        created_at: now,
+      });
+      setLS(`ticket_msgs_${ticketId}`, msgs);
+    }
   },
 
   // -------------------------------------------------------------

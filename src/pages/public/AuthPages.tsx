@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Mail, Lock, User, ArrowRight, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Mail, Lock, User, ArrowRight, CheckCircle2, AlertCircle, Shield } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 
@@ -8,8 +8,19 @@ interface AuthPagesProps {
   onNavigate: (path: string) => void;
 }
 
+// Safely validate that redirect URL is internal and harmless
+function getSafeInternalRedirect(rawPath: string | null): string | null {
+  if (!rawPath) return null;
+  const decoded = decodeURIComponent(rawPath).trim();
+  // Must start with '/' and not '//' or contain protocol/domain
+  if (!decoded.startsWith('/') || decoded.startsWith('//') || decoded.includes('\\')) {
+    return null;
+  }
+  return decoded;
+}
+
 export const AuthPages: React.FC<AuthPagesProps> = ({ mode, onNavigate }) => {
-  const { login, register, resetPassword, isSupabaseConfigured, switchDemoRole } = useAuth();
+  const { login, register, resetPassword, isSupabaseConfigured, switchDemoRole, isAuthenticated, isAdmin } = useAuth();
   const { showToast } = useNotification();
 
   const [email, setEmail] = useState('');
@@ -17,6 +28,22 @@ export const AuthPages: React.FC<AuthPagesProps> = ({ mode, onNavigate }) => {
   const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
   const [resetSent, setResetSent] = useState(false);
+
+  // Parse redirect & reason from current URL query
+  const searchParams = new URLSearchParams(window.location.search);
+  const rawRedirect = searchParams.get('redirect');
+  const reason = searchParams.get('reason');
+  const safeRedirect = getSafeInternalRedirect(rawRedirect);
+
+  const isDepositIntent = reason === 'deposit' || safeRedirect?.includes('wallet') || false;
+
+  // If already authenticated and not loading, redirect to target
+  useEffect(() => {
+    if (isAuthenticated) {
+      const destination = safeRedirect || (isAdmin ? '/admin' : '/dashboard');
+      onNavigate(destination);
+    }
+  }, [isAuthenticated, isAdmin, safeRedirect, onNavigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,9 +54,14 @@ export const AuthPages: React.FC<AuthPagesProps> = ({ mode, onNavigate }) => {
         const res = await login(email, password);
         if (res.success) {
           showToast({ type: 'success', title: 'স্বাগতম', message: 'সফলভাবে লগইন হয়েছে।' });
-          onNavigate('/dashboard');
+          const target = safeRedirect || '/dashboard';
+          onNavigate(target);
         } else {
-          showToast({ type: 'error', title: 'লগইন ব্যর্থ', message: res.error || 'ভুল ইমেইল বা পাসওয়ার্ড দেওয়া হয়েছে।' });
+          showToast({
+            type: 'error',
+            title: 'লগইন ব্যর্থ',
+            message: res.error || 'ভুল ইমেইল বা পাসওয়ার্ড দেওয়া হয়েছে।',
+          });
         }
       } else if (mode === 'register') {
         const res = await register(email, password, fullName);
@@ -39,9 +71,14 @@ export const AuthPages: React.FC<AuthPagesProps> = ({ mode, onNavigate }) => {
             title: 'অ্যাকাউন্ট তৈরি হয়েছে',
             message: 'আপনার প্রোফাইল এবং ওয়ালেট সক্রিয় করা হয়েছে।',
           });
-          onNavigate('/dashboard');
+          const target = safeRedirect || '/dashboard';
+          onNavigate(target);
         } else {
-          showToast({ type: 'error', title: 'নিবন্ধন ব্যর্থ', message: res.error || 'অ্যাকাউন্ট তৈরি করা যায়নি।' });
+          showToast({
+            type: 'error',
+            title: 'নিবন্ধন ব্যর্থ',
+            message: res.error || 'অ্যাকাউন্ট তৈরি করা যায়নি।',
+          });
         }
       } else if (mode === 'forgot-password') {
         const res = await resetPassword(email);
@@ -53,12 +90,24 @@ export const AuthPages: React.FC<AuthPagesProps> = ({ mode, onNavigate }) => {
             message: 'পাসওয়ার্ড পুনরুদ্ধারের লিংক আপনার ইমেইলে পাঠানো হয়েছে।',
           });
         } else {
-          showToast({ type: 'error', title: 'ব্যর্থ হয়েছে', message: res.error || 'পুনরুদ্ধার সম্পন্ন করা যায়নি।' });
+          showToast({
+            type: 'error',
+            title: 'ব্যর্থ হয়েছে',
+            message: res.error || 'পুনরুদ্ধার সম্পন্ন করা যায়নি।',
+          });
         }
       }
     } finally {
       setLoading(false);
     }
+  };
+
+  const getSwitchUrl = (targetMode: 'login' | 'register') => {
+    const params = new URLSearchParams();
+    if (safeRedirect) params.set('redirect', safeRedirect);
+    if (reason) params.set('reason', reason);
+    const qs = params.toString();
+    return `/${targetMode}${qs ? `?${qs}` : ''}`;
   };
 
   return (
@@ -75,11 +124,24 @@ export const AuthPages: React.FC<AuthPagesProps> = ({ mode, onNavigate }) => {
             {mode === 'forgot-password' && 'পাসওয়ার্ড পুনরুদ্ধার করুন'}
           </h2>
           <p className="text-xs text-slate-500 leading-relaxed">
-            {mode === 'login' && 'আপনার ওয়ালেট ব্যালেন্স দেখতে, অর্ডার ট্র্যাক করতে ও ফাইল ডাউনলোড করতে লগইন করুন।'}
+            {mode === 'login' && 'আপনার ওয়ালেট ব্যালেন্স দেখতে, টাকা জমা করতে ও অর্ডার ট্র্যাক করতে লগইন করুন।'}
             {mode === 'register' && 'নিবন্ধনের সাথে সাথে আপনার একটি নিজস্ব নিরাপদ ডিজিটাল ওয়ালেট তৈরি হয়ে যাবে।'}
             {mode === 'forgot-password' && 'আপনার নিবন্ধিত ইমেইল ঠিকানা প্রদান করুন।'}
           </p>
         </div>
+
+        {/* টাকা জমা দেওয়ার জন্য লগইন নোটিশ (Prompt 6 Requirement) */}
+        {isDepositIntent && (
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-3 shadow-xs">
+            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <span className="font-bold text-amber-950 block">লগইন প্রয়োজন</span>
+              <p className="leading-relaxed">
+                টাকা জমা করতে প্রথমে আপনার অ্যাকাউন্টে লগইন করুন। অ্যাকাউন্ট না থাকলে নতুন অ্যাকাউন্ট তৈরি করুন।
+              </p>
+            </div>
+          </div>
+        )}
 
         {resetSent ? (
           <div className="p-6 bg-emerald-50 border border-emerald-200 rounded-xl text-center space-y-3">
@@ -89,7 +151,7 @@ export const AuthPages: React.FC<AuthPagesProps> = ({ mode, onNavigate }) => {
               অনুগ্রহ করে আপনার ইনবক্স <span className="font-mono font-medium">{email}</span> চেক করুন।
             </p>
             <button
-              onClick={() => onNavigate('/login')}
+              onClick={() => onNavigate(getSwitchUrl('login'))}
               className="mt-2 text-xs font-semibold text-indigo-700 underline"
             >
               লগইন পেজে ফিরে যান
@@ -160,7 +222,7 @@ export const AuthPages: React.FC<AuthPagesProps> = ({ mode, onNavigate }) => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 px-4 text-xs font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors flex items-center justify-center gap-1.5"
+              className="w-full py-3 px-4 text-xs font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors flex items-center justify-center gap-1.5 shadow-xs"
             >
               <span>
                 {loading
@@ -176,18 +238,19 @@ export const AuthPages: React.FC<AuthPagesProps> = ({ mode, onNavigate }) => {
           </form>
         )}
 
-        {/* টেস্ট মোডে ১-ক্লিকে ভূমিকা বদল */}
+        {/* টেস্ট ও ইভালুয়েশন মোড (১-ক্লিক ভূমিকা নির্বাচন) */}
         {!isSupabaseConfigured && (
           <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-2">
             <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider block">
-              তাৎক্ষণিক টেস্ট লগইন (১-ক্লিক)
+              তাৎক্ষণিক টেস্ট লগইন (১-ক্লিক ডেমো ভূমিকা)
             </span>
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={() => {
                   switchDemoRole('user');
-                  onNavigate('/dashboard');
+                  const target = safeRedirect && !safeRedirect.startsWith('/admin') ? safeRedirect : '/dashboard';
+                  onNavigate(target);
                 }}
                 className="p-2 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 transition-colors text-center"
               >
@@ -197,7 +260,8 @@ export const AuthPages: React.FC<AuthPagesProps> = ({ mode, onNavigate }) => {
                 type="button"
                 onClick={() => {
                   switchDemoRole('admin');
-                  onNavigate('/admin');
+                  const target = safeRedirect && safeRedirect.startsWith('/admin') ? safeRedirect : '/admin';
+                  onNavigate(target);
                 }}
                 className="p-2 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 transition-colors text-center"
               >
@@ -207,7 +271,8 @@ export const AuthPages: React.FC<AuthPagesProps> = ({ mode, onNavigate }) => {
                 type="button"
                 onClick={() => {
                   switchDemoRole('super_admin');
-                  onNavigate('/admin');
+                  const target = safeRedirect && safeRedirect.startsWith('/admin') ? safeRedirect : '/admin';
+                  onNavigate(target);
                 }}
                 className="p-2 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 transition-colors text-center"
               >
@@ -222,7 +287,10 @@ export const AuthPages: React.FC<AuthPagesProps> = ({ mode, onNavigate }) => {
           {mode === 'login' && (
             <div>
               এখনও কোনো অ্যাকাউন্ট নেই?{' '}
-              <button onClick={() => onNavigate('/register')} className="font-semibold text-indigo-600 hover:underline">
+              <button
+                onClick={() => onNavigate(getSwitchUrl('register'))}
+                className="font-semibold text-indigo-600 hover:underline"
+              >
                 নতুন অ্যাকাউন্ট খুলুন
               </button>
             </div>
@@ -230,13 +298,19 @@ export const AuthPages: React.FC<AuthPagesProps> = ({ mode, onNavigate }) => {
           {mode === 'register' && (
             <div>
               ইতিমধ্যে একটি অ্যাকাউন্ট আছে?{' '}
-              <button onClick={() => onNavigate('/login')} className="font-semibold text-indigo-600 hover:underline">
+              <button
+                onClick={() => onNavigate(getSwitchUrl('login'))}
+                className="font-semibold text-indigo-600 hover:underline"
+              >
                 লগইন করুন
               </button>
             </div>
           )}
           {mode === 'forgot-password' && (
-            <button onClick={() => onNavigate('/login')} className="font-semibold text-indigo-600 hover:underline">
+            <button
+              onClick={() => onNavigate(getSwitchUrl('login'))}
+              className="font-semibold text-indigo-600 hover:underline"
+            >
               লগইন পেজে ফিরে যান
             </button>
           )}

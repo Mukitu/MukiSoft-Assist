@@ -19,6 +19,8 @@ import {
 import { t, toBengaliDigits, toBengaliCurrency } from '../../lib/i18n';
 import { api } from '../../services/api';
 import { ServiceCategory, ServiceItem } from '../../types/database';
+import { useAuth } from '../../context/AuthContext';
+import { useNotification } from '../../context/NotificationContext';
 
 interface HomePageProps {
   onNavigate: (path: string) => void;
@@ -50,6 +52,8 @@ export const getCategoryIcon = (iconName: string) => {
 };
 
 export const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
+  const { isAuthenticated } = useAuth();
+  const { showToast } = useNotification();
   const [searchQuery, setSearchQuery] = useState('');
   const [categories, setCategories] = useState<ServiceCategory[]>([]);
   const [featuredServices, setFeaturedServices] = useState<ServiceItem[]>([]);
@@ -354,8 +358,19 @@ export const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
               সেবা ক্যাটালগ দেখুন
             </button>
             <button
-              onClick={() => onNavigate('/dashboard/wallet')}
-              className="w-full sm:w-auto px-6 py-3 text-xs sm:text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors whitespace-nowrap text-center"
+              onClick={() => {
+                if (isAuthenticated) {
+                  onNavigate('/dashboard/wallet');
+                } else {
+                  showToast({
+                    type: 'info',
+                    title: 'লগইন প্রয়োজন',
+                    message: 'টাকা জমা করতে প্রথমে আপনার অ্যাকাউন্টে লগইন করুন। অ্যাকাউন্ট না থাকলে নতুন অ্যাকাউন্ট তৈরি করুন।',
+                  });
+                  onNavigate('/login?redirect=%2Fdashboard%2Fwallet&reason=deposit');
+                }
+              }}
+              className="w-full sm:w-auto px-6 py-3 text-xs sm:text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors whitespace-nowrap text-center shadow-xs"
             >
               ওয়ালেটে টাকা জমা দিন
             </button>

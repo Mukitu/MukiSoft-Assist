@@ -141,7 +141,7 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
           </p>
         </div>
 
-        <div className="sm:text-right">
+        <div className="sm:text-right flex flex-col sm:items-end gap-1.5">
           <span className="text-xs text-slate-400 block">এসক্রো পরিশোধিত মূল্য</span>
           <span className="text-2xl font-bold font-mono text-slate-900">
             {toBengaliCurrency(order.amount)}
@@ -151,6 +151,13 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
               (৳ {toBengaliDigits(order.amount)} ওয়ালেটে ফেরত দেওয়া হয়েছে)
             </span>
           )}
+          <button
+            onClick={() => onNavigate('/dashboard/support')}
+            className="mt-1 px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5 self-start sm:self-auto"
+          >
+            <HelpCircle className="w-3.5 h-3.5 text-indigo-600" />
+            <span>সহায়তা টিকিট খুলুন</span>
+          </button>
         </div>
       </div>
 

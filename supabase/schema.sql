@@ -45,7 +45,7 @@ EXCEPTION
 END $$;
 
 DO $$ BEGIN
-    CREATE TYPE ticket_status AS ENUM ('open', 'in_progress', 'resolved', 'closed');
+    CREATE TYPE ticket_status AS ENUM ('open', 'in_progress', 'waiting_for_user', 'resolved', 'closed');
 EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
@@ -191,13 +191,32 @@ CREATE TABLE IF NOT EXISTS public.support_tickets (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     ticket_number TEXT NOT NULL UNIQUE,
     user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT,
+    order_id UUID REFERENCES public.orders(id) ON DELETE SET NULL,
     subject TEXT NOT NULL,
     category TEXT NOT NULL,
     priority ticket_priority NOT NULL DEFAULT 'medium',
     status ticket_status NOT NULL DEFAULT 'open',
+    description TEXT,
+    attachment_url TEXT,
+    attachment_name TEXT,
     assigned_to UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+    reopened_at TIMESTAMPTZ,
+    reopen_reason TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- 12.1 TICKET MESSAGES TABLE (Prompt 5 Conversation History)
+CREATE TABLE IF NOT EXISTS public.ticket_messages (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    ticket_id UUID NOT NULL REFERENCES public.support_tickets(id) ON DELETE CASCADE,
+    sender_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT,
+    sender_role TEXT NOT NULL DEFAULT 'customer' CHECK (sender_role IN ('customer', 'admin', 'staff', 'system')),
+    message TEXT NOT NULL,
+    attachment_url TEXT,
+    attachment_name TEXT,
+    is_internal BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
 -- 13. NOTIFICATIONS TABLE
