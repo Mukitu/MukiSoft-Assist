@@ -17,6 +17,8 @@ import {
   PlatformSettings,
   UserRole,
   OrderStatus,
+  OrderReview,
+  OrderWorkMessage,
 } from '../types/database';
 import { INITIAL_CATEGORIES, INITIAL_SERVICES, INITIAL_PLATFORM_SETTINGS } from '../data/initialCatalog';
 import { communicationService } from './communicationService';
@@ -821,6 +823,434 @@ export const api = {
     }
 
     return true;
+  },
+
+  /**
+   * মাল্টি-অ্যাডমিন অর্ডার ক্লেইম / সেলফ-অ্যাসাইন (Claim Order)
+   * ২০-৩০ জন অ্যাডমিনের মধ্যে যিনি কাজটি পারবেন তিনি এক ক্লিকে নিজের দায়িত্বে নিয়ে নেবেন।
+   * কাজটি ইতিমধ্যে অন্য কেউ নিলে সিস্টেম স্বয়ংক্রিয়ভাবে লক করে দেবে।
+   */
+  async claimOrder(orderId: string, adminId: string, adminName: string, adminEmail?: string): Promise<Order> {
+    const existing = await this.getOrderById(orderId, undefined, true);
+    if (!existing) throw new Error('অর্ডারটি পাওয়া যায়নি।');
+
+    if (existing.assigned_admin && existing.assigned_admin !== adminId) {
+      throw new Error(`এই কাজটি ইতিমধ্যে অন্য একজন অ্যাডমিন (${existing.assigned_admin_name || 'অন্য কর্মকর্তা'}) গ্রহণ করেছেন। ডুপ্লিকেট কাজ এড়াতে এটি লক করা হয়েছে।`);
+    }
+
+    const now = new Date().toISOString();
+    const newStatus: OrderStatus = ['pending', 'accepted'].includes(existing.status) ? 'in_progress' : existing.status;
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase
+          .from('orders')
+          .update({
+            assigned_admin: adminId,
+            assigned_admin_name: adminName,
+            assigned_admin_email: adminEmail || null,
+            claimed_at: now,
+            status: newStatus,
+            updated_at: now,
+          })
+          .eq('id', orderId);
+
+        await supabase.from('order_events').insert({
+          order_id: orderId,
+          actor_id: adminId,
+          event_type: 'ORDER_CLAIMED',
+          message: `স্পেশালিস্ট অ্যাডমিন "${adminName}" কাজটি নিজের দায়িত্বে গ্রহণ করেছেন এবং কাজের দায়িত্ব নিয়েছেন।`,
+        });
+      } catch (err) {
+        console.warn('Supabase claim order error:', err);
+      }
+    }
+
+    // Local storage fallback sync
+    const orders = getLS<Order[]>('orders', []);
+    const idx = orders.findIndex((o) => o.id === orderId);
+    let updatedOrder: Order;
+    if (idx >= 0) {
+      orders[idx] = {
+        ...orders[idx],
+        assigned_admin: adminId,
+        assigned_admin_name: adminName,
+        assigned_admin_email: adminEmail || null,
+        claimed_at: now,
+        status: newStatus,
+        updated_at: now,
+      };
+      if (!orders[idx].events) orders[idx].events = [];
+      orders[idx].events!.unshift({
+        id: `evt_claim_${Date.now()}`,
+        order_id: orderId,
+        actor_id: adminId,
+        event_type: 'ORDER_CLAIMED',
+        message: `স্পেশালিস্ট অ্যাডমিন "${adminName}" কাজটি নিজের দায়িত্বে গ্রহণ করেছেন এবং কাজের দায়িত্ব নিয়েছেন।`,
+        created_at: now,
+      });
+      setLS('orders', orders);
+      updatedOrder = orders[idx];
+    } else {
+      updatedOrder = {
+        ...existing,
+        assigned_admin: adminId,
+        assigned_admin_name: adminName,
+        assigned_admin_email: adminEmail || null,
+        claimed_at: now,
+        status: newStatus,
+        updated_at: now,
+      };
+    }
+
+    // গ্রাহককে নোটিফিকেশন পাঠানো যে স্পেশালিস্ট অ্যাডমিন তার কাজ শুরু করেছেন
+    try {
+      const userProf = await this.getUserProfile(existing.user_id);
+      await communicationService.notifyAndEmail({
+        userId: existing.user_id,
+        recipientEmail: userProf?.email,
+        recipientName: userProf?.full_name,
+        title: 'আপনার অর্ডারে স্পেশালিস্ট অ্যাডমিন যুক্ত হয়েছেন',
+        message: `আপনার অর্ডার #${existing.order_number}-এর কাজ পরিচালনার দায়িত্ব নিয়েছেন স্পেশালিস্ট অ্যাডমিন "${adminName}"। আপনি ওনার সাথে যেকোনো বিষয়ে সরাসরি অর্ডার চ্যাটে কথা বলতে পারবেন।`,
+        link: `/dashboard/orders/${orderId}`,
+        category: 'orders',
+        templateType: 'order_status',
+        templateData: {
+          orderNumber: existing.order_number,
+          statusBengali: 'স্পেশালিস্ট নির্ধারিত',
+          statusNote: `দায়িত্বপ্রাপ্ত অ্যাডমিন: ${adminName}`,
+          actionUrl: `${window.location.origin}/dashboard/orders/${orderId}`,
+        },
+        eventKey: `order_claimed_${orderId}`,
+      });
+    } catch (err) {
+      console.warn('Claim notification failed:', err);
+    }
+
+    return updatedOrder;
+  },
+
+  /**
+   * অর্ডার রিলিজ / আন-অ্যাসাইন করা (যাতে অন্য কোনো যোগ্য অ্যাডমিন নিতে পারেন)
+   */
+  async releaseOrder(orderId: string, adminId: string, isSuperAdmin?: boolean): Promise<Order> {
+    const existing = await this.getOrderById(orderId, undefined, true);
+    if (!existing) throw new Error('অর্ডারটি পাওয়া যায়নি।');
+
+    if (!isSuperAdmin && existing.assigned_admin && existing.assigned_admin !== adminId) {
+      throw new Error('আপনি এই অর্ডারের দায়িত্বপ্রাপ্ত নন। শুধুমাত্র নির্ধারিত অ্যাডমিন বা সুপার অ্যাডমিন রিলিজ করতে পারবেন।');
+    }
+
+    const now = new Date().toISOString();
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase
+          .from('orders')
+          .update({
+            assigned_admin: null,
+            assigned_admin_name: null,
+            assigned_admin_email: null,
+            claimed_at: null,
+            updated_at: now,
+          })
+          .eq('id', orderId);
+
+        await supabase.from('order_events').insert({
+          order_id: orderId,
+          actor_id: adminId,
+          event_type: 'ORDER_RELEASED',
+          message: `অর্ডারটি অ্যাডমিন পুলের জন্য উন্মুক্ত করা হয়েছে যাতে অন্য একজন স্পেশালিস্ট দায়িত্ব নিতে পারেন।`,
+        });
+      } catch (err) {
+        console.warn('Supabase release order error:', err);
+      }
+    }
+
+    const orders = getLS<Order[]>('orders', []);
+    const idx = orders.findIndex((o) => o.id === orderId);
+    let updatedOrder: Order;
+    if (idx >= 0) {
+      orders[idx] = {
+        ...orders[idx],
+        assigned_admin: null,
+        assigned_admin_name: null,
+        assigned_admin_email: null,
+        claimed_at: null,
+        updated_at: now,
+      };
+      if (!orders[idx].events) orders[idx].events = [];
+      orders[idx].events!.unshift({
+        id: `evt_release_${Date.now()}`,
+        order_id: orderId,
+        actor_id: adminId,
+        event_type: 'ORDER_RELEASED',
+        message: `অর্ডারটি অ্যাডমিন পুলের জন্য উন্মুক্ত করা হয়েছে যাতে অন্য একজন স্পেশালিস্ট দায়িত্ব নিতে পারেন।`,
+        created_at: now,
+      });
+      setLS('orders', orders);
+      updatedOrder = orders[idx];
+    } else {
+      updatedOrder = {
+        ...existing,
+        assigned_admin: null,
+        assigned_admin_name: null,
+        assigned_admin_email: null,
+        claimed_at: null,
+        updated_at: now,
+      };
+    }
+
+    return updatedOrder;
+  },
+
+  /**
+   * গ্রাহক কর্তৃক কাজ অনুমোদন ও সম্পন্ন ঘোষণা (Delivery Confirmation)
+   */
+  async confirmOrderCompletion(orderId: string, userId: string): Promise<Order> {
+    const existing = await this.getOrderById(orderId, userId, false);
+    if (!existing) throw new Error('অর্ডার পাওয়া যায়নি।');
+
+    const now = new Date().toISOString();
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase
+          .from('orders')
+          .update({
+            status: 'completed',
+            completed_at: now,
+            updated_at: now,
+          })
+          .eq('id', orderId);
+
+        await supabase.from('order_events').insert({
+          order_id: orderId,
+          actor_id: userId,
+          event_type: 'ORDER_COMPLETED',
+          message: 'গ্রাহক ডেলিভারিকৃত কাজ যাচাই করে সন্তুষ্টি প্রকাশ করেছেন এবং অর্ডারটি সম্পন্ন করেছেন।',
+        });
+      } catch (err) {
+        console.warn('Supabase confirm completion error:', err);
+      }
+    }
+
+    const orders = getLS<Order[]>('orders', []);
+    const idx = orders.findIndex((o) => o.id === orderId);
+    let updatedOrder: Order;
+    if (idx >= 0) {
+      orders[idx] = {
+        ...orders[idx],
+        status: 'completed',
+        completed_at: now,
+        updated_at: now,
+      };
+      if (!orders[idx].events) orders[idx].events = [];
+      orders[idx].events!.unshift({
+        id: `evt_comp_${Date.now()}`,
+        order_id: orderId,
+        actor_id: userId,
+        event_type: 'ORDER_COMPLETED',
+        message: 'গ্রাহক ডেলিভারিকৃত কাজ যাচাই করে সন্তুষ্টি প্রকাশ করেছেন এবং অর্ডারটি সম্পন্ন করেছেন।',
+        created_at: now,
+      });
+      setLS('orders', orders);
+      updatedOrder = orders[idx];
+    } else {
+      updatedOrder = {
+        ...existing,
+        status: 'completed',
+        completed_at: now,
+        updated_at: now,
+      };
+    }
+
+    // অ্যাডমিনকে নোটিফাই করা
+    if (existing.assigned_admin) {
+      try {
+        await communicationService.notifyAndEmail({
+          userId: existing.assigned_admin,
+          title: 'গ্রাহক কাজ সম্পন্ন হিসেবে অনুমোদন করেছেন! 🎉',
+          message: `আপনার সম্পন্নকৃত অর্ডার #${existing.order_number} গ্রাহক অনুমোদন করেছেন। আপনি এখন গ্রাহককে একটি রিভিউ প্রদান করতে পারেন।`,
+          link: `/admin/orders`,
+          category: 'orders',
+        });
+      } catch (err) {
+        console.warn('Admin complete notify error:', err);
+      }
+    }
+
+    return updatedOrder;
+  },
+
+  /**
+   * মিউচুয়াল রিভিউ সাবমিশন (গ্রাহক বা অ্যাডমিন উভয়ই রিভিউ দিতে পারেন)
+   */
+  async submitOrderReview(
+    orderId: string,
+    reviewerId: string,
+    reviewerName: string,
+    reviewerRole: 'customer' | 'admin',
+    rating: number,
+    comment: string
+  ): Promise<OrderReview> {
+    const existing = await this.getOrderById(orderId, undefined, true);
+    if (!existing) throw new Error('অর্ডার পাওয়া যায়নি।');
+
+    const cleanRating = Math.max(1, Math.min(5, Math.round(rating)));
+    const now = new Date().toISOString();
+
+    const review: OrderReview = {
+      id: `rev_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      order_id: orderId,
+      reviewer_id: reviewerId,
+      reviewer_name: reviewerName,
+      reviewer_role: reviewerRole,
+      rating: cleanRating,
+      comment: comment.trim(),
+      created_at: now,
+    };
+
+    const updateField = reviewerRole === 'customer' ? { customer_review: review } : { admin_review: review };
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('orders').update({ ...updateField, updated_at: now }).eq('id', orderId);
+        await supabase.from('order_events').insert({
+          order_id: orderId,
+          actor_id: reviewerId,
+          event_type: 'REVIEW_SUBMITTED',
+          message: reviewerRole === 'customer'
+            ? `গ্রাহক কাজের মানের ওপর ${cleanRating}★ রিভিউ জমা দিয়েছেন: "${comment.trim()}"`
+            : `দায়িত্বপ্রাপ্ত অ্যাডমিন গ্রাহকের ওপর ${cleanRating}★ মূল্যায়ন জমা দিয়েছেন: "${comment.trim()}"`,
+        });
+      } catch (err) {
+        console.warn('Supabase review submit error:', err);
+      }
+    }
+
+    const orders = getLS<Order[]>('orders', []);
+    const idx = orders.findIndex((o) => o.id === orderId);
+    if (idx >= 0) {
+      if (reviewerRole === 'customer') {
+        orders[idx].customer_review = review;
+      } else {
+        orders[idx].admin_review = review;
+      }
+      if (!orders[idx].events) orders[idx].events = [];
+      orders[idx].events!.unshift({
+        id: `evt_rev_${Date.now()}`,
+        order_id: orderId,
+        actor_id: reviewerId,
+        event_type: 'REVIEW_SUBMITTED',
+        message: reviewerRole === 'customer'
+          ? `গ্রাহক কাজের মানের ওপর ${cleanRating}★ রিভিউ জমা দিয়েছেন: "${comment.trim()}"`
+          : `দায়িত্বপ্রাপ্ত অ্যাডমিন গ্রাহকের ওপর ${cleanRating}★ মূল্যায়ন জমা দিয়েছেন: "${comment.trim()}"`,
+        created_at: now,
+      });
+      setLS('orders', orders);
+    }
+
+    // প্রতিপক্ষকে নোটিফিকেশন পাঠানো
+    try {
+      const recipientId = reviewerRole === 'customer' ? existing.assigned_admin : existing.user_id;
+      if (recipientId) {
+        await communicationService.notifyAndEmail({
+          userId: recipientId,
+          title: reviewerRole === 'customer' ? 'গ্রাহক আপনাকে একটি রিভিউ দিয়েছেন! ⭐' : 'অ্যাডমিন আপনাকে একটি রিভিউ প্রদান করেছেন! ⭐',
+          message: `অর্ডার #${existing.order_number}-এ ${cleanRating}★ রেটিং ও মন্তব্য: "${comment.trim().slice(0, 80)}"`,
+          link: reviewerRole === 'customer' ? `/admin/orders` : `/dashboard/orders/${orderId}`,
+          category: 'orders',
+        });
+      }
+    } catch {
+      // ignore
+    }
+
+    return review;
+  },
+
+  /**
+   * অর্ডারের মেসেজ তালিকা সংগ্রহ (Order Workroom Messages)
+   */
+  async getOrderMessages(orderId: string): Promise<OrderWorkMessage[]> {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('order_messages')
+          .select('*')
+          .eq('order_id', orderId)
+          .order('created_at', { ascending: true });
+        if (!error && data) return data as OrderWorkMessage[];
+      } catch {
+        // fallback to local
+      }
+    }
+
+    return getLS<OrderWorkMessage[]>(`order_messages_${orderId}`, []);
+  },
+
+  /**
+   * অর্ডারের সরাসরি মেসেজ প্রেরণ (গ্রাহক ও দায়িত্বপ্রাপ্ত অ্যাডমিনের মধ্যে)
+   */
+  async sendOrderMessage(
+    orderId: string,
+    senderId: string,
+    senderName: string,
+    senderRole: 'customer' | 'admin',
+    messageText: string,
+    attachment?: { name: string; url: string }
+  ): Promise<OrderWorkMessage> {
+    if (!messageText.trim() && !attachment) {
+      throw new Error('মেসেজের টেক্সট বা ফাইল আবশ্যক।');
+    }
+
+    const order = await this.getOrderById(orderId, undefined, true);
+    if (!order) throw new Error('অর্ডার পাওয়া যায়নি।');
+
+    const now = new Date().toISOString();
+    const newMsg: OrderWorkMessage = {
+      id: `omsg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      order_id: orderId,
+      sender_id: senderId,
+      sender_name: senderName,
+      sender_role: senderRole,
+      message: messageText.trim(),
+      attachment_name: attachment?.name || null,
+      attachment_url: attachment?.url || null,
+      created_at: now,
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('order_messages').insert(newMsg);
+        await supabase.from('orders').update({ updated_at: now }).eq('id', orderId);
+      } catch (err) {
+        console.warn('Supabase order message save error:', err);
+      }
+    }
+
+    const list = getLS<OrderWorkMessage[]>(`order_messages_${orderId}`, []);
+    list.push(newMsg);
+    setLS(`order_messages_${orderId}`, list);
+
+    // প্রতিপক্ষকে নোটিফিকেশন পাঠানো
+    try {
+      const recipientId = senderRole === 'customer' ? order.assigned_admin : order.user_id;
+      if (recipientId) {
+        await communicationService.notifyAndEmail({
+          userId: recipientId,
+          title: `অর্ডার #${order.order_number}-এ নতুন বার্তা`,
+          message: `${senderName}: "${messageText.trim().slice(0, 60)}"`,
+          link: senderRole === 'customer' ? `/admin/orders` : `/dashboard/orders/${orderId}`,
+          category: 'orders',
+        });
+      }
+    } catch {
+      // ignore
+    }
+
+    return newMsg;
   },
 
   async refundOrder(orderId: string, adminId: string, refundReason: string): Promise<{ success: boolean; newBalance: number }> {

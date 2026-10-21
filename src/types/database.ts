@@ -113,6 +113,29 @@ export interface DepositRequest {
   profile?: Profile;
 }
 
+export interface OrderReview {
+  id: string;
+  order_id: string;
+  reviewer_id: string;
+  reviewer_name: string;
+  reviewer_role: 'customer' | 'admin';
+  rating: number; // 1 to 5
+  comment: string;
+  created_at: string;
+}
+
+export interface OrderWorkMessage {
+  id: string;
+  order_id: string;
+  sender_id: string;
+  sender_name: string;
+  sender_role: 'customer' | 'admin' | 'system';
+  message: string;
+  attachment_name?: string | null;
+  attachment_url?: string | null;
+  created_at: string;
+}
+
 export interface Order {
   id: string;
   order_number: string;
@@ -126,6 +149,12 @@ export interface Order {
   attachment_url?: string | null;
   notes?: string | null;
   assigned_admin?: string | null;
+  assigned_admin_name?: string | null;
+  assigned_admin_email?: string | null;
+  claimed_at?: string | null;
+  completed_at?: string | null;
+  customer_review?: OrderReview | null;
+  admin_review?: OrderReview | null;
   idempotency_key?: string | null;
   cancellation_reason?: string | null;
   refund_amount?: number | null;
@@ -135,6 +164,7 @@ export interface Order {
   customer?: Profile;
   deliverables?: OrderDeliverable[];
   events?: OrderEvent[];
+  messages?: OrderWorkMessage[];
 }
 
 export interface OrderEvent {

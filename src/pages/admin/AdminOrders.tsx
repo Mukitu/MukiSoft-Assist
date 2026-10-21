@@ -11,24 +11,46 @@ import {
   Eye,
   DollarSign,
   X,
+  UserCheck,
+  Lock,
+  Unlock,
+  Star,
+  MessageSquare,
+  Send,
+  Sparkles,
+  ShieldAlert,
+  Clock,
+  User,
+  Check,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { toBengaliCurrency, toBengaliDigits, toBengaliDate } from '../../lib/i18n';
 import { useNotification } from '../../context/NotificationContext';
 import { api } from '../../services/api';
-import { Order, OrderStatus } from '../../types/database';
+import { Order, OrderStatus, OrderWorkMessage } from '../../types/database';
 import { StatusBadge } from '../../components/common/StatusBadge';
 
 export const AdminOrders: React.FC = () => {
-  const { user } = useAuth();
+  const { user, profile, isSuperAdmin } = useAuth();
   const { showToast } = useNotification();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'unassigned' | 'my_orders' | 'other_orders' | 'delivered' | 'completed' | 'refunded'>('all');
 
   // বিস্তারিত দেখার জন্য সিলেক্টেড অর্ডার
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [modalTab, setModalTab] = useState<'brief' | 'chat' | 'deliverables' | 'reviews'>('brief');
+
+  // অর্ডার চ্যাট স্টেট
+  const [orderMessages, setOrderMessages] = useState<OrderWorkMessage[]>([]);
+  const [orderMessageInput, setOrderMessageInput] = useState('');
+  const [sendingOrderMessage, setSendingOrderMessage] = useState(false);
+
+  // অ্যাডমিন রিভিউ স্টেট
+  const [adminRating, setAdminRating] = useState<number>(5);
+  const [adminReviewComment, setAdminReviewComment] = useState('');
+  const [submittingAdminReview, setSubmittingAdminReview] = useState(false);
 
   // ফাইল ডেলিভারি ফর্ম স্টেট
   const [activeOrderForDeliverable, setActiveOrderForDeliverable] = useState<Order | null>(null);
@@ -45,15 +67,138 @@ export const AdminOrders: React.FC = () => {
   const [needsInfoOrderTarget, setNeedsInfoOrderTarget] = useState<Order | null>(null);
   const [needsInfoMessage, setNeedsInfoMessage] = useState('');
 
-  useEffect(() => {
-    async function load() {
+  // অর্ডার লোড
+  const loadOrders = async () => {
+    try {
       const data = await api.getAllOrders();
       setOrders(data);
+      if (selectedOrder) {
+        const refreshed = data.find((o) => o.id === selectedOrder.id);
+        if (refreshed) setSelectedOrder(refreshed);
+      }
+    } catch {
+      showToast({ type: 'error', title: 'ত্রুটি', message: 'অর্ডার তালিকা লোড করা যায়নি' });
+    } finally {
       setLoading(false);
     }
-    load();
+  };
+
+  useEffect(() => {
+    loadOrders();
   }, []);
 
+  // সিলেক্টেড অর্ডারের চ্যাট মেসেজ লোড
+  useEffect(() => {
+    if (!selectedOrder) {
+      setOrderMessages([]);
+      return;
+    }
+    api.getOrderMessages(selectedOrder.id).then(setOrderMessages);
+  }, [selectedOrder]);
+
+  // ১. কাজ নিজের দায়িত্বে ক্লেইম করা (Claim Order)
+  const handleClaimOrder = async (targetOrder: Order) => {
+    if (!user) return;
+    const adminName = profile?.full_name || user.email?.split('@')[0] || 'স্পেশালিস্ট অ্যাডমিন';
+
+    try {
+      const updated = await api.claimOrder(targetOrder.id, user.id, adminName, user.email || '');
+      setOrders((prev) => prev.map((o) => (o.id === targetOrder.id ? updated : o)));
+      if (selectedOrder && selectedOrder.id === targetOrder.id) {
+        setSelectedOrder(updated);
+      }
+      showToast({
+        type: 'success',
+        title: 'কাজটি সফলভাবে গ্রহণ করা হয়েছে! 🎯',
+        message: `অর্ডার #${targetOrder.order_number} এখন আপনার দায়িত্বে অ্যাসাইন করা হয়েছে। আপনি এখন ক্লায়েন্টের একমাত্র দায়িত্বপ্রাপ্ত অ্যাডমিন।`,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'কাজটি গ্রহণ করা সম্ভব হয়নি';
+      showToast({ type: 'error', title: 'ক্লেইম ব্যর্থ', message: msg });
+    }
+  };
+
+  // ২. কাজ রিলিজ / আন-অ্যাসাইন করা (Release Order)
+  const handleReleaseOrder = async (targetOrder: Order) => {
+    if (!user) return;
+    try {
+      const updated = await api.releaseOrder(targetOrder.id, user.id, isSuperAdmin);
+      setOrders((prev) => prev.map((o) => (o.id === targetOrder.id ? updated : o)));
+      if (selectedOrder && selectedOrder.id === targetOrder.id) {
+        setSelectedOrder(updated);
+      }
+      showToast({
+        type: 'info',
+        title: 'কাজটি উন্মুক্ত করা হয়েছে',
+        message: `অর্ডার #${targetOrder.order_number} এখন অন্যান্য অ্যাডমিনদের ক্লেইম করার জন্য উন্মুক্ত।`,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'রিলিজ করা সম্ভব হয়নি';
+      showToast({ type: 'error', title: 'ত্রুটি', message: msg });
+    }
+  };
+
+  // ৩. সরাসরি চ্যাটে বার্তা প্রেরণ
+  const handleSendOrderMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !selectedOrder || !orderMessageInput.trim() || sendingOrderMessage) return;
+
+    const adminName = profile?.full_name || 'দায়িত্বপ্রাপ্ত অ্যাডমিন';
+    const text = orderMessageInput.trim();
+    setOrderMessageInput('');
+    setSendingOrderMessage(true);
+
+    try {
+      const newMsg = await api.sendOrderMessage(selectedOrder.id, user.id, adminName, 'admin', text);
+      setOrderMessages((prev) => [...prev, newMsg]);
+      showToast({
+        type: 'success',
+        title: 'বার্তা প্রেরিত হয়েছে',
+        message: 'গ্রাহকের নিকট অর্ডার আপডেট ও মেসেজ পৌঁছেছে।',
+      });
+    } catch {
+      showToast({ type: 'error', title: 'ত্রুটি', message: 'বার্তা পাঠানো যায়নি' });
+    } finally {
+      setSendingOrderMessage(false);
+    }
+  };
+
+  // ৪. গ্রাহককে অ্যাডমিন কর্তৃক রিভিউ প্রদান
+  const handleSubmitAdminReview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !selectedOrder || !adminReviewComment.trim() || submittingAdminReview) return;
+
+    const adminName = profile?.full_name || 'দায়িত্বপ্রাপ্ত অ্যাডমিন';
+    setSubmittingAdminReview(true);
+
+    try {
+      const rev = await api.submitOrderReview(
+        selectedOrder.id,
+        user.id,
+        adminName,
+        'admin',
+        adminRating,
+        adminReviewComment.trim()
+      );
+      setSelectedOrder((prev) => (prev ? { ...prev, admin_review: rev } : null));
+      setOrders((prev) =>
+        prev.map((o) => (o.id === selectedOrder.id ? { ...o, admin_review: rev } : o))
+      );
+      showToast({
+        type: 'success',
+        title: 'মূল্যায়ন সফল হয়েছে ⭐',
+        message: 'গ্রাহকের ওপর আপনার রিভিউ সফলভাবে সংরক্ষিত হয়েছে।',
+      });
+      setAdminReviewComment('');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'রিভিউ সংরক্ষণ ব্যর্থ হয়েছে';
+      showToast({ type: 'error', title: 'ত্রুটি', message: msg });
+    } finally {
+      setSubmittingAdminReview(false);
+    }
+  };
+
+  // কাজের অবস্থা পরিবর্তন
   const handleStatusChange = async (orderId: string, newStatus: OrderStatus) => {
     if (!user) return;
     try {
@@ -74,9 +219,20 @@ export const AdminOrders: React.FC = () => {
     }
   };
 
+  // ফাইল ডেলিভারি
   const handleUploadDeliverable = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !activeOrderForDeliverable || !deliverableTitle.trim()) return;
+
+    // চেক: অন্য অ্যাডমিনের কাজ হলে নন-সুপার অ্যাডমিন ফাইল আপলোড করতে পারবে না
+    if (activeOrderForDeliverable.assigned_admin && activeOrderForDeliverable.assigned_admin !== user.id && !isSuperAdmin) {
+      showToast({
+        type: 'error',
+        title: 'অনুমতি নেই',
+        message: 'এই কাজটি অন্য একজন অ্যাডমিন সম্পাদন করছেন। শুধুমাত্র দায়িত্বপ্রাপ্ত অ্যাডমিন ডেলিভারি দিতে পারবেন।',
+      });
+      return;
+    }
 
     try {
       const fileUrl = deliverableUrl.trim() || 'https://mukisoft.com/deliverables/sample_output.pdf';
@@ -109,6 +265,7 @@ export const AdminOrders: React.FC = () => {
     }
   };
 
+  // রিফান্ড প্রসেস
   const handleProcessRefund = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !refundOrderTarget || !refundReason.trim()) return;
@@ -148,6 +305,7 @@ export const AdminOrders: React.FC = () => {
     }
   };
 
+  // অতিরিক্ত তথ্য চাওয়া
   const handleRequestNeedsInfo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !needsInfoOrderTarget || !needsInfoMessage.trim()) return;
@@ -177,19 +335,29 @@ export const AdminOrders: React.FC = () => {
     }
   };
 
+  // পরিসংখ্যান কাউন্ট
+  const unassignedCount = orders.filter((o) => !o.assigned_admin && !['cancelled', 'refunded', 'completed'].includes(o.status)).length;
+  const myOrdersCount = orders.filter((o) => o.assigned_admin === user?.id).length;
+  const otherOrdersCount = orders.filter((o) => o.assigned_admin && o.assigned_admin !== user?.id).length;
+  const deliveredCount = orders.filter((o) => o.status === 'delivered').length;
+  const completedCount = orders.filter((o) => o.status === 'completed').length;
+
   const filteredOrders = orders.filter((o) => {
     const searchLower = search.toLowerCase();
     const matchesSearch =
       !search ||
       o.order_number.toLowerCase().includes(searchLower) ||
       (o.customer?.email && o.customer.email.toLowerCase().includes(searchLower)) ||
+      (o.assigned_admin_name && o.assigned_admin_name.toLowerCase().includes(searchLower)) ||
       (o.service?.title_bn && o.service.title_bn.includes(search)) ||
       (o.service?.title && o.service.title.toLowerCase().includes(searchLower));
 
     if (!matchesSearch) return false;
 
     if (statusFilter === 'all') return true;
-    if (statusFilter === 'active') return ['pending', 'accepted', 'in_progress', 'needs_information', 'in_review'].includes(o.status);
+    if (statusFilter === 'unassigned') return !o.assigned_admin && !['cancelled', 'refunded', 'completed'].includes(o.status);
+    if (statusFilter === 'my_orders') return o.assigned_admin === user?.id;
+    if (statusFilter === 'other_orders') return Boolean(o.assigned_admin && o.assigned_admin !== user?.id);
     if (statusFilter === 'delivered') return o.status === 'delivered';
     if (statusFilter === 'completed') return o.status === 'completed';
     if (statusFilter === 'refunded') return ['cancelled', 'refunded'].includes(o.status);
@@ -198,23 +366,36 @@ export const AdminOrders: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* হেডার */}
       <div className="border-b border-slate-200 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <span className="text-xs font-semibold uppercase tracking-wider text-indigo-600 block">
-            ডেলিভারি পাইপলাইন ও সার্ভিসেস
+            মাল্টি-অ্যাডমিন ডেলিভারি পাইপলাইন
           </span>
-          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">অর্ডার ও ডেলিভারি ব্যবস্থাপনা</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">অর্ডার ও ডেলিভারি কনসোল</h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            গ্রাহকদের প্রজেক্ট ব্রিফ পর্যালোচনা করুন, কাজের স্ট্যাটাস আপডেট করুন এবং সম্পন্ন আউটপুট ডিসপ্যাচ করুন।
+            ১৫-৩০ জন অ্যাডমিনের মধ্যে কাজ অ্যাসাইন করুন, সরাসরি ক্লায়েন্টের সাথে যোগাযোগ করুন এবং রিভিউ আদান-প্রদান করুন।
           </p>
         </div>
 
-        <div className="text-xs bg-slate-100 text-slate-700 px-3 py-1.5 rounded-lg border border-slate-200 font-semibold self-start sm:self-auto">
-          মোট {toBengaliDigits(orders.length)}টি অর্ডার
+        <div className="flex items-center gap-2">
+          {unassignedCount > 0 && (
+            <button
+              onClick={() => setStatusFilter('unassigned')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 text-xs font-bold animate-pulse"
+            >
+              <UserCheck className="w-4 h-4 text-amber-600" />
+              <span>{toBengaliDigits(unassignedCount)}টি কাজ উন্মুক্ত রয়েছে!</span>
+            </button>
+          )}
+
+          <div className="text-xs bg-slate-100 text-slate-700 px-3 py-1.5 rounded-lg border border-slate-200 font-semibold">
+            মোট {toBengaliDigits(orders.length)}টি অর্ডার
+          </div>
         </div>
       </div>
 
-      {/* সার্চ ও ফিল্টার বার */}
+      {/* সার্চ ও মাল্টি-অ্যাডমিন ফিল্টার বার */}
       <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
         <div className="relative flex-1 max-w-sm">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
@@ -222,35 +403,80 @@ export const AdminOrders: React.FC = () => {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="অর্ডার নম্বর, গ্রাহকের ইমেইল বা সেবার নাম..."
+            placeholder="অর্ডার নম্বর, অ্যাডমিনের নাম বা সেবার নাম..."
             className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:border-indigo-500"
           />
         </div>
 
-        {/* স্ট্যাটাস ফিল্টার */}
+        {/* মাল্টি-অ্যাডমিন অ্যাসাইনমেন্ট ফিল্টার */}
         <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-lg overflow-x-auto scrollbar-none">
-          {[
-            { key: 'all', label: `সবগুলো (${toBengaliDigits(orders.length)})` },
-            { key: 'active', label: 'চলমান প্রজেক্ট' },
-            { key: 'delivered', label: 'ডেলিভারি সম্পন্ন' },
-            { key: 'completed', label: 'সম্পূর্ণ সমাপ্ত' },
-            { key: 'refunded', label: 'বাতিল / রিফান্ড' },
-          ].map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => setStatusFilter(key)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
-                statusFilter === key ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+          <button
+            onClick={() => setStatusFilter('all')}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
+              statusFilter === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            সবগুলো ({toBengaliDigits(orders.length)})
+          </button>
+
+          <button
+            onClick={() => setStatusFilter('unassigned')}
+            className={`px-3 py-1.5 text-xs font-bold rounded-md whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+              statusFilter === 'unassigned'
+                ? 'bg-amber-500 text-white shadow-xs'
+                : 'text-amber-800 bg-amber-50 hover:bg-amber-100'
+            }`}
+          >
+            <UserCheck className="w-3.5 h-3.5" />
+            <span>উন্মুক্ত / ক্লেইমযোগ্য ({toBengaliDigits(unassignedCount)})</span>
+          </button>
+
+          <button
+            onClick={() => setStatusFilter('my_orders')}
+            className={`px-3 py-1.5 text-xs font-bold rounded-md whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+              statusFilter === 'my_orders'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'text-emerald-800 bg-emerald-50 hover:bg-emerald-100'
+            }`}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>আমার কাজ ({toBengaliDigits(myOrdersCount)})</span>
+          </button>
+
+          <button
+            onClick={() => setStatusFilter('other_orders')}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors flex items-center gap-1 ${
+              statusFilter === 'other_orders'
+                ? 'bg-slate-800 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Lock className="w-3.5 h-3.5" />
+            <span>অন্যান্য অ্যাডমিন ({toBengaliDigits(otherOrdersCount)})</span>
+          </button>
+
+          <button
+            onClick={() => setStatusFilter('delivered')}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
+              statusFilter === 'delivered' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            ডেলিভারি প্রস্তুত ({toBengaliDigits(deliveredCount)})
+          </button>
+
+          <button
+            onClick={() => setStatusFilter('completed')}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
+              statusFilter === 'completed' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            সম্পূর্ণ সমাপ্ত ({toBengaliDigits(completedCount)})
+          </button>
         </div>
       </div>
 
-      {/* অর্ডার তালিকা */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      {/* অর্ডার তালিকা টেবিল */}
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
         {loading ? (
           <div className="p-8 text-center text-xs text-slate-500">অর্ডার লোড হচ্ছে...</div>
         ) : filteredOrders.length === 0 ? (
@@ -267,81 +493,121 @@ export const AdminOrders: React.FC = () => {
                   <th className="py-3 px-4 font-medium">গ্রাহক</th>
                   <th className="py-3 px-4 font-medium">সেবা</th>
                   <th className="py-3 px-4 font-medium text-right">মূল্য</th>
+                  <th className="py-3 px-4 font-medium">দায়িত্বপ্রাপ্ত অ্যাডমিন</th>
                   <th className="py-3 px-4 font-medium">কাজের অবস্থা</th>
-                  <th className="py-3 px-4 font-medium">তারিখ</th>
                   <th className="py-3 px-4 font-medium text-right">পদক্ষেপ</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
-                {filteredOrders.map((ord) => (
-                  <tr key={ord.id} className="hover:bg-slate-50/50">
-                    <td className="py-3.5 px-4 font-mono font-bold text-slate-900">{ord.order_number}</td>
-                    <td className="py-3.5 px-4 font-mono text-[11px] text-slate-700 max-w-[140px] truncate">
-                      {ord.customer?.email || ord.user_id}
-                    </td>
-                    <td className="py-3.5 px-4 font-semibold text-slate-900 max-w-[200px] truncate">
-                      {ord.service?.title_bn || ord.service?.title}
-                    </td>
-                    <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900">
-                      {toBengaliCurrency(ord.amount)}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <select
-                        value={ord.status}
-                        onChange={(e) => handleStatusChange(ord.id, e.target.value as OrderStatus)}
-                        className="p-1.5 text-xs bg-slate-50 border border-slate-300 rounded-md font-medium focus:outline-hidden"
-                      >
-                        <option value="pending">অপেক্ষমাণ (Pending)</option>
-                        <option value="accepted">গ্রহণ করা হয়েছে (Accepted)</option>
-                        <option value="in_progress">কাজ চলছে (In Progress)</option>
-                        <option value="needs_information">অতিরিক্ত তথ্য প্রয়োজন (Needs Info)</option>
-                        <option value="in_review">পর্যালোচনায় আছে (Review)</option>
-                        <option value="revision_requested">সংশোধনের অনুরোধ (Revision)</option>
-                        <option value="delivered">ডেলিভারি সম্পন্ন (Delivered)</option>
-                        <option value="completed">সম্পূর্ণ সমাপ্ত (Completed)</option>
-                        <option value="cancelled">বাতিলকৃত (Cancelled)</option>
-                        <option value="refunded">অর্থ ফেরত (Refunded)</option>
-                      </select>
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-500 whitespace-nowrap">
-                      {toBengaliDate(ord.created_at)}
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => setSelectedOrder(ord)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded text-xs transition-colors"
-                          title="বিস্তারিত তথ্য দেখুন"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>বিস্তারিত</span>
-                        </button>
+                {filteredOrders.map((ord) => {
+                  const isClaimedByMe = ord.assigned_admin === user?.id;
+                  const isUnassigned = !ord.assigned_admin;
 
-                        <button
-                          onClick={() => {
-                            setActiveOrderForDeliverable(ord);
-                            setDeliverableTitle(`ডেলিভারি ফাইল — ${ord.service?.title_bn || ord.service?.title}`);
-                          }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-medium rounded text-xs transition-colors"
-                          title="ফাইল ডেলিভারি করুন"
+                  return (
+                    <tr key={ord.id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="py-3.5 px-4 font-mono font-bold text-slate-900">{ord.order_number}</td>
+                      <td className="py-3.5 px-4 font-mono text-[11px] text-slate-700 max-w-[130px] truncate">
+                        {ord.customer?.email || ord.user_id}
+                      </td>
+                      <td className="py-3.5 px-4 font-semibold text-slate-900 max-w-[180px] truncate">
+                        {ord.service?.title_bn || ord.service?.title}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900">
+                        {toBengaliCurrency(ord.amount)}
+                      </td>
+
+                      {/* দায়িত্বপ্রাপ্ত অ্যাডমিন কলাম */}
+                      <td className="py-3.5 px-4">
+                        {isUnassigned ? (
+                          !['cancelled', 'refunded', 'completed'].includes(ord.status) ? (
+                            <button
+                              onClick={() => handleClaimOrder(ord)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-bold rounded-lg text-xs shadow-2xs transition-all animate-pulse"
+                              title="এই কাজটি নিজের দায়িত্বে নিয়ে নিন"
+                            >
+                              <UserCheck className="w-3.5 h-3.5" />
+                              <span>আমি কাজটি নিচ্ছি (Claim)</span>
+                            </button>
+                          ) : (
+                            <span className="text-slate-400 text-[11px] italic">উন্মুক্ত</span>
+                          )
+                        ) : isClaimedByMe ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 text-emerald-800 font-bold rounded-lg text-[11px] border border-emerald-300">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>আমার দায়িত্ব ({ord.assigned_admin_name || 'আমি'})</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 text-slate-700 font-medium rounded-lg text-[11px] border border-slate-200">
+                            <Lock className="w-3 h-3 text-slate-400" />
+                            <span>{ord.assigned_admin_name || 'অন্য অ্যাডমিন'}</span>
+                          </span>
+                        )}
+                      </td>
+
+                      {/* কাজের অবস্থা সিলেক্ট */}
+                      <td className="py-3.5 px-4">
+                        <select
+                          value={ord.status}
+                          onChange={(e) => handleStatusChange(ord.id, e.target.value as OrderStatus)}
+                          className="p-1.5 text-xs bg-slate-50 border border-slate-300 rounded-md font-medium focus:outline-hidden"
                         >
-                          <Upload className="w-3.5 h-3.5" />
-                          <span>ডেলিভারি</span>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          <option value="pending">অপেক্ষমাণ (Pending)</option>
+                          <option value="accepted">গ্রহণ করা হয়েছে (Accepted)</option>
+                          <option value="in_progress">কাজ চলছে (In Progress)</option>
+                          <option value="needs_information">অতিরিক্ত তথ্য প্রয়োজন (Needs Info)</option>
+                          <option value="in_review">পর্যালোচনায় আছে (Review)</option>
+                          <option value="revision_requested">সংশোধনের অনুরোধ (Revision)</option>
+                          <option value="delivered">ডেলিভারি সম্পন্ন (Delivered)</option>
+                          <option value="completed">সম্পূর্ণ সমাপ্ত (Completed)</option>
+                          <option value="cancelled">বাতিলকৃত (Cancelled)</option>
+                          <option value="refunded">অর্থ ফেরত (Refunded)</option>
+                        </select>
+                      </td>
+
+                      {/* পদক্ষেপ বোতামসমূহ */}
+                      <td className="py-3.5 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => {
+                              setSelectedOrder(ord);
+                              setModalTab('brief');
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg text-xs transition-colors"
+                            title="বিস্তারিত ও চ্যাট দেখুন"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>বিস্তারিত</span>
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setActiveOrderForDeliverable(ord);
+                              setDeliverableTitle(`ডেলিভারি ফাইল — ${ord.service?.title_bn || ord.service?.title}`);
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-medium rounded-lg text-xs transition-colors"
+                            title="ফাইল ডেলিভারি করুন"
+                          >
+                            <Upload className="w-3.5 h-3.5" />
+                            <span>ডেলিভারি</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
 
-      {/* অর্ডার বিস্তারিত মডাল */}
+      {/* ======================================================== */}
+      {/* পূর্ণাঙ্গ অর্ডার ওয়ার্করুম ও বিস্তারিত মডাল */}
+      {/* ======================================================== */}
       {selectedOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-2xl w-full p-6 space-y-5 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-3xl w-full p-6 space-y-4 max-h-[92vh] overflow-y-auto">
+            {/* মডাল হেডার */}
             <div className="flex items-start justify-between border-b border-slate-200 pb-3">
               <div>
                 <div className="flex items-center gap-2">
@@ -357,71 +623,366 @@ export const AdminOrders: React.FC = () => {
               </div>
               <button
                 onClick={() => setSelectedOrder(null)}
-                className="text-slate-400 hover:text-slate-600 p-1"
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* আর্থিক হিসাব */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs">
-              <div>
-                <span className="text-slate-400 block text-[11px]">এসক্রো ফি:</span>
-                <span className="font-mono font-bold text-slate-900 text-sm">
-                  {toBengaliCurrency(selectedOrder.amount)}
+            {/* অ্যাডমিন ক্লেইম ও অ্যাসাইনমেন্ট স্ট্যাটাস বক্স */}
+            <div className="p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs bg-slate-50 border-slate-200">
+              <div className="space-y-1">
+                <span className="font-bold block text-slate-900">
+                  {selectedOrder.assigned_admin
+                    ? `দায়িত্বপ্রাপ্ত স্পেশালিস্ট অ্যাডমিন: ${selectedOrder.assigned_admin_name || 'নির্ধারিত অ্যাডমিন'}`
+                    : '⚠️ কোনো অ্যাডমিন এখনও দায়িত্ব নেননি (উন্মুক্ত অর্ডার)'}
                 </span>
-              </div>
-              <div>
-                <span className="text-slate-400 block text-[11px]">অর্ডারের তারিখ:</span>
-                <span className="text-slate-800 font-medium">{toBengaliDate(selectedOrder.created_at)}</span>
-              </div>
-              <div>
-                <span className="text-slate-400 block text-[11px]">ডেলিভারি ফাইল:</span>
-                <span className="text-slate-800 font-medium">
-                  {toBengaliDigits(selectedOrder.deliverables?.length || 0)}টি প্রস্তুত
-                </span>
-              </div>
-            </div>
-
-            {/* গ্রাহকের ব্রিফ ও তথ্য */}
-            <div className="space-y-2 text-xs">
-              <span className="font-semibold text-slate-800 block">গ্রাহকের প্রদত্ত ব্রিফ ও নির্দেশনা:</span>
-              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 whitespace-pre-line leading-relaxed">
-                {selectedOrder.requirements_submitted || 'কোনো বিবরণ দেওয়া হয়নি।'}
+                <p className="text-[11px] text-slate-500">
+                  {selectedOrder.assigned_admin
+                    ? `ক্লেইম সময়: ${toBengaliDate(selectedOrder.claimed_at || selectedOrder.created_at)}। ডুপ্লিকেট কাজ রোধে এটি লক করা আছে।`
+                    : '২০-৩০ জন অ্যাডমিনের মধ্যে যিনি এই কাজে পারদর্শী, তিনি অবিলম্বে কাজটি ক্লেইম করে ক্লায়েন্টের সাথে যোগাযোগ শুরু করুন।'}
+                </p>
               </div>
 
-              {selectedOrder.reference_link && (
-                <div className="pt-1">
-                  <span className="font-semibold text-slate-700 block mb-0.5">রেফারেন্স লিংক:</span>
-                  <a
-                    href={selectedOrder.reference_link}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-indigo-600 hover:underline font-mono"
+              <div className="flex items-center gap-2 shrink-0">
+                {!selectedOrder.assigned_admin ? (
+                  <button
+                    onClick={() => handleClaimOrder(selectedOrder)}
+                    className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition-all animate-pulse"
                   >
-                    <span>{selectedOrder.reference_link}</span>
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                </div>
-              )}
-
-              {selectedOrder.attachment_name && (
-                <div className="pt-1">
-                  <span className="font-semibold text-slate-700 block mb-0.5">সংযুক্ত ফাইল:</span>
-                  <span className="font-mono bg-slate-100 px-2 py-1 rounded text-slate-800">
-                    {selectedOrder.attachment_name}
+                    <UserCheck className="w-4 h-4" />
+                    <span>এই কাজটি আমি নিচ্ছি (Claim)</span>
+                  </button>
+                ) : selectedOrder.assigned_admin === user?.id ? (
+                  <button
+                    onClick={() => handleReleaseOrder(selectedOrder)}
+                    className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-lg text-xs transition-colors flex items-center gap-1"
+                    title="অন্য অ্যাডমিনদের জন্য উন্মুক্ত করুন"
+                  >
+                    <Unlock className="w-3.5 h-3.5" />
+                    <span>রিলিজ করুন</span>
+                  </button>
+                ) : isSuperAdmin ? (
+                  <button
+                    onClick={() => handleReleaseOrder(selectedOrder)}
+                    className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold rounded-lg text-xs border border-rose-200 transition-colors"
+                  >
+                    পুনরায় উন্মুক্ত করুন (Super Admin)
+                  </button>
+                ) : (
+                  <span className="px-2.5 py-1 bg-slate-200 text-slate-600 rounded-md font-medium text-[11px]">
+                    লকড (অন্যের কাজ)
                   </span>
-                </div>
-              )}
+                )}
+              </div>
             </div>
+
+            {/* মডাল ট্যাব বার */}
+            <div className="flex items-center gap-2 border-b border-slate-200 text-xs font-semibold">
+              <button
+                onClick={() => setModalTab('brief')}
+                className={`pb-2.5 px-3 border-b-2 transition-colors ${
+                  modalTab === 'brief'
+                    ? 'border-indigo-600 text-indigo-600'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                প্রজেক্ট ব্রিফ ও তথ্য
+              </button>
+              <button
+                onClick={() => setModalTab('chat')}
+                className={`pb-2.5 px-3 border-b-2 transition-colors flex items-center gap-1.5 ${
+                  modalTab === 'chat'
+                    ? 'border-indigo-600 text-indigo-600'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span>সরাসরি অর্ডার চ্যাট ({toBengaliDigits(orderMessages.length)})</span>
+              </button>
+              <button
+                onClick={() => setModalTab('deliverables')}
+                className={`pb-2.5 px-3 border-b-2 transition-colors ${
+                  modalTab === 'deliverables'
+                    ? 'border-indigo-600 text-indigo-600'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                ডেলিভারি ফাইলসমূহ ({toBengaliDigits(selectedOrder.deliverables?.length || 0)})
+              </button>
+              <button
+                onClick={() => setModalTab('reviews')}
+                className={`pb-2.5 px-3 border-b-2 transition-colors flex items-center gap-1 ${
+                  modalTab === 'reviews'
+                    ? 'border-indigo-600 text-indigo-600'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Star className="w-3.5 h-3.5" />
+                <span>মিউচুয়াল রিভিউ ও রেটিং</span>
+              </button>
+            </div>
+
+            {/* ট্যাব ১: প্রজেক্ট ব্রিফ */}
+            {modalTab === 'brief' && (
+              <div className="space-y-4 text-xs">
+                {/* আর্থিক ও টাইমলাইন সামারি */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-3 rounded-lg bg-slate-50 border border-slate-200">
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">এসক্রো পরিশোধিত মূল্য:</span>
+                    <span className="font-mono font-bold text-slate-900 text-sm">
+                      {toBengaliCurrency(selectedOrder.amount)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">অর্ডারের তারিখ:</span>
+                    <span className="text-slate-800 font-medium">{toBengaliDate(selectedOrder.created_at)}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">দায়িত্বপ্রাপ্ত:</span>
+                    <span className="text-slate-800 font-semibold">{selectedOrder.assigned_admin_name || 'এখনও নির্ধারিত নয়'}</span>
+                  </div>
+                </div>
+
+                {/* গ্রাহকের ব্রিফ */}
+                <div className="space-y-1.5">
+                  <span className="font-semibold text-slate-800 block">গ্রাহকের প্রদত্ত ব্রিফ ও নির্দেশনা:</span>
+                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 whitespace-pre-line leading-relaxed">
+                    {selectedOrder.requirements_submitted || 'কোনো লিখিত বিবরণ নেই।'}
+                  </div>
+                </div>
+
+                {selectedOrder.reference_link && (
+                  <div>
+                    <span className="font-semibold text-slate-700 block mb-0.5">রেফারেন্স লিংক:</span>
+                    <a
+                      href={selectedOrder.reference_link}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-indigo-600 hover:underline font-mono"
+                    >
+                      <span>{selectedOrder.reference_link}</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                )}
+
+                {selectedOrder.attachment_name && (
+                  <div>
+                    <span className="font-semibold text-slate-700 block mb-0.5">সংযুক্ত ফাইল:</span>
+                    <span className="font-mono bg-slate-100 px-2.5 py-1 rounded text-slate-800">
+                      {selectedOrder.attachment_name}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ট্যাব ২: সরাসরি অর্ডার চ্যাট (Direct Workroom Chat) */}
+            {modalTab === 'chat' && (
+              <div className="space-y-3 flex flex-col h-[380px]">
+                {/* মেসেজ তালিকা */}
+                <div className="flex-1 overflow-y-auto p-3.5 bg-slate-50/60 rounded-xl border border-slate-200 space-y-3 text-xs">
+                  {orderMessages.length === 0 ? (
+                    <div className="py-12 text-center text-slate-400 space-y-1.5">
+                      <MessageSquare className="w-8 h-8 text-slate-300 mx-auto" />
+                      <p>এই অর্ডারের জন্য কোনো বার্তা নেই।</p>
+                      <p className="text-[11px]">গ্রাহকের সাথে সরাসরি কোনো প্রশ্ন বা ফাইল আদান-প্রদান করতে নিচে লিখুন।</p>
+                    </div>
+                  ) : (
+                    orderMessages.map((m) => {
+                      const isAdminMsg = m.sender_role === 'admin';
+                      return (
+                        <div
+                          key={m.id}
+                          className={`flex gap-2.5 ${isAdminMsg ? 'justify-end' : 'justify-start'}`}
+                        >
+                          <div className="max-w-[75%] space-y-1">
+                            <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                              <span className="font-semibold text-slate-700">{m.sender_name}</span>
+                              <span>•</span>
+                              <span>{new Date(m.created_at).toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' })}</span>
+                            </div>
+                            <div
+                              className={`p-3 rounded-2xl whitespace-pre-wrap leading-relaxed ${
+                                isAdminMsg
+                                  ? 'bg-slate-900 text-white rounded-br-xs'
+                                  : 'bg-white text-slate-800 border border-slate-200 rounded-bl-xs shadow-xs'
+                              }`}
+                            >
+                              {m.message}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* ইনপুট বার */}
+                <form onSubmit={handleSendOrderMessage} className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={orderMessageInput}
+                    onChange={(e) => setOrderMessageInput(e.target.value)}
+                    placeholder="ক্লায়েন্টের জন্য বার্তা লিখুন..."
+                    className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-hidden focus:bg-white"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!orderMessageInput.trim() || sendingOrderMessage}
+                    className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <span>পাঠান</span>
+                    <Send className="w-3.5 h-3.5" />
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {/* ট্যাব ৩: ডেলিভারি ফাইলসমূহ */}
+            {modalTab === 'deliverables' && (
+              <div className="space-y-3 text-xs">
+                <div className="flex items-center justify-between pb-1">
+                  <span className="font-bold text-slate-800">প্রস্তুতকৃত ফাইলসমূহ:</span>
+                  <button
+                    onClick={() => {
+                      setActiveOrderForDeliverable(selectedOrder);
+                      setDeliverableTitle(`ডেলিভারি ফাইল — ${selectedOrder.service?.title_bn || selectedOrder.service?.title}`);
+                    }}
+                    className="px-3 py-1.5 bg-slate-900 text-white font-semibold rounded-lg text-xs hover:bg-slate-800 flex items-center gap-1.5"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>নতুন ফাইল যুক্ত করুন</span>
+                  </button>
+                </div>
+
+                {!selectedOrder.deliverables || selectedOrder.deliverables.length === 0 ? (
+                  <div className="p-8 text-center text-slate-400 bg-slate-50 rounded-xl border border-slate-200">
+                    এখনও কোনো ডেলিভারি ফাইল আপলোড করা হয়নি।
+                  </div>
+                ) : (
+                  selectedOrder.deliverables.map((f) => (
+                    <div key={f.id} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <FileText className="w-5 h-5 text-indigo-600" />
+                        <div>
+                          <div className="font-bold text-slate-900">{f.title}</div>
+                          {f.deliverable_notes && <div className="text-[11px] text-slate-500">{f.deliverable_notes}</div>}
+                        </div>
+                      </div>
+                      <a
+                        href={f.file_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold rounded-lg text-xs"
+                      >
+                        ফাইল দেখুন
+                      </a>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* ট্যাব ৪: মিউচুয়াল রিভিউ ও রেটিং */}
+            {modalTab === 'reviews' && (
+              <div className="space-y-4 text-xs">
+                {/* গ্রাহকের রিভিউ প্রদর্শন */}
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 flex items-center gap-1.5">
+                      <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
+                      গ্রাহকের মূল্যায়ন (Customer Review)
+                    </span>
+                    {selectedOrder.customer_review && (
+                      <div className="flex items-center gap-0.5 text-amber-500">
+                        {[...Array(selectedOrder.customer_review.rating)].map((_, i) => (
+                          <Star key={i} className="w-3.5 h-3.5 fill-amber-500" />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {selectedOrder.customer_review ? (
+                    <p className="text-slate-700 italic bg-white p-3 rounded-lg border border-slate-100">
+                      "{selectedOrder.customer_review.comment}"
+                    </p>
+                  ) : (
+                    <p className="text-slate-400 italic">গ্রাহক এখনও এই অর্ডারের জন্য রিভিউ দেননি।</p>
+                  )}
+                </div>
+
+                {/* অ্যাডমিনের রিভিউ বক্স */}
+                <div className="p-4 rounded-xl bg-indigo-50/50 border border-indigo-100 space-y-3">
+                  <span className="font-bold text-indigo-950 block">গ্রাহকের সহযোগিতার ওপর আপনার মূল্যায়ন (Admin Review):</span>
+
+                  {selectedOrder.admin_review ? (
+                    <div className="space-y-1.5 bg-white p-3.5 rounded-lg border border-indigo-100">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-slate-800">প্রদত্ত রেটিং:</span>
+                        <div className="flex items-center gap-0.5 text-amber-500">
+                          {[...Array(selectedOrder.admin_review.rating)].map((_, i) => (
+                            <Star key={i} className="w-3.5 h-3.5 fill-amber-500" />
+                          ))}
+                        </div>
+                      </div>
+                      <p className="text-slate-700 italic">"{selectedOrder.admin_review.comment}"</p>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleSubmitAdminReview} className="space-y-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-700 mb-1">রেটিং প্রদান করুন:</label>
+                        <div className="flex items-center gap-1 text-amber-500">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <button
+                              key={star}
+                              type="button"
+                              onClick={() => setAdminRating(star)}
+                              className="p-1 hover:scale-110 transition-transform"
+                            >
+                              <Star
+                                className={`w-5 h-5 ${
+                                  star <= adminRating ? 'fill-amber-500 text-amber-500' : 'text-slate-300'
+                                }`}
+                              />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <textarea
+                          rows={2}
+                          required
+                          value={adminReviewComment}
+                          onChange={(e) => setAdminReviewComment(e.target.value)}
+                          placeholder="গ্রাহকের সাথে কাজের অভিজ্ঞতা, প্রয়োজনীয় ব্রিফ সঠিক সময়ে দেওয়ার ব্যাপারে মন্তব্য লিখুন..."
+                          className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-xs focus:outline-hidden"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={submittingAdminReview || !adminReviewComment.trim()}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>{submittingAdminReview ? 'সংরক্ষণ হচ্ছে...' : 'গ্রাহককে রিভিউ দিন'}</span>
+                      </button>
+                    </form>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* অ্যাকশন বোতামসমূহ */}
-            <div className="pt-4 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
+            <div className="pt-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setNeedsInfoOrderTarget(selectedOrder)}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 rounded text-xs font-semibold"
+                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 rounded-lg font-semibold"
                 >
                   <HelpCircle className="w-3.5 h-3.5" />
                   <span>তথ্য চান</span>
@@ -431,7 +992,7 @@ export const AdminOrders: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setRefundOrderTarget(selectedOrder)}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded text-xs font-semibold"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg font-semibold"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
                     <span>রিফান্ড করুন</span>
@@ -442,7 +1003,7 @@ export const AdminOrders: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setSelectedOrder(null)}
-                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg"
+                className="px-4 py-2 font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
               >
                 বন্ধ করুন
               </button>
@@ -475,20 +1036,20 @@ export const AdminOrders: React.FC = () => {
                   required
                   value={deliverableTitle}
                   onChange={(e) => setDeliverableTitle(e.target.value)}
-                  placeholder="যেমন: ফাইনাল ইনভেস্টর পিচ ডেক (PDF)"
+                  placeholder="যেমন: ফাইনাল ওয়েবসাইট ডেলিভারি প্যাকেজ (ZIP/PDF)"
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden"
                 />
               </div>
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">
-                  ফাইল ডাউনলোড লিংক / Supabase Storage URL
+                  ফাইল ডাউনলোড লিংক / Storage URL
                 </label>
                 <input
                   type="text"
                   value={deliverableUrl}
                   onChange={(e) => setDeliverableUrl(e.target.value)}
-                  placeholder="https://mukisoft.supabase.co/storage/v1/..."
+                  placeholder="https://drive.google.com/... অথবা স্টোরেজ লিংক"
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg font-mono focus:outline-hidden"
                 />
               </div>
