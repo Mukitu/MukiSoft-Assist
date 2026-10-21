@@ -22,6 +22,7 @@ import { api } from '../../services/api';
 import { SupportTicket, TicketMessage, Order } from '../../types/database';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { useNotification } from '../../context/NotificationContext';
+import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 
 const TICKET_CATEGORIES = [
   'অর্ডার সংক্রান্ত সমস্যা',
@@ -99,6 +100,55 @@ export const UserSupport: React.FC = () => {
       setLoadingMessages(false);
     }
   };
+
+  // রিয়েলটাইম মেসেজ ও স্ট্যাটাস সাবস্ক্রিপশন
+  useEffect(() => {
+    if (!selectedTicket || !isSupabaseConfigured || !supabase) return;
+
+    const channel = supabase
+      .channel(`user-ticket-chat-${selectedTicket.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'ticket_messages',
+          filter: `ticket_id=eq.${selectedTicket.id}`,
+        },
+        (payload) => {
+          const newMsg = payload.new as TicketMessage;
+          if (newMsg && !newMsg.is_internal) {
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === newMsg.id)) return prev;
+              return [...prev, newMsg];
+            });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'support_tickets',
+          filter: `id=eq.${selectedTicket.id}`,
+        },
+        (payload) => {
+          const updated = payload.new as SupportTicket;
+          if (updated) {
+            setSelectedTicket(updated);
+            setTickets((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      if (supabase) {
+        supabase.removeChannel(channel);
+      }
+    };
+  }, [selectedTicket?.id]);
 
   // নতুন টিকিট খোলার হ্যান্ডলার
   const handleCreateTicket = async (e: React.FormEvent) => {

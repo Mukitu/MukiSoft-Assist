@@ -14,6 +14,7 @@ import {
   X,
   Lock,
   HelpCircle,
+  Mail,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { StatusBadge } from '../common/StatusBadge';
@@ -74,6 +75,7 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
     { label: 'সহায়তা ডেস্ক ও টিকিট', path: '/admin/tickets', icon: HelpCircle },
     { label: 'ব্যবহারকারী ও ভূমিকা', path: '/admin/users', icon: Users },
     { label: 'নিরাপত্তা অডিট লগ', path: '/admin/audit-logs', icon: ShieldAlert, superAdminOnly: true },
+    { label: 'যোগাযোগ ও ইমেইল সেটিংস', path: '/admin/communication', icon: Mail, superAdminOnly: true },
     { label: 'প্ল্যাটফর্ম সেটিংস', path: '/admin/settings', icon: Sliders, superAdminOnly: true },
   ];
 
@@ -85,6 +87,7 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
     if (currentPath === '/admin/tickets') return ['প্রশাসনিক কনসোল', 'সহায়তা ডেস্ক ও টিকিট'];
     if (currentPath === '/admin/users') return ['প্রশাসনিক কনসোল', 'ব্যবহারকারী ও ভূমিকা'];
     if (currentPath === '/admin/audit-logs') return ['প্রশাসনিক কনসোল', 'অডিট লগ'];
+    if (currentPath === '/admin/communication') return ['প্রশাসনিক কনসোল', 'যোগাযোগ ও ইমেইল কনফিগারেশন'];
     if (currentPath === '/admin/settings') return ['প্রশাসনিক কনসোল', 'প্ল্যাটফর্ম সেটিংস'];
     return ['প্রশাসনিক কনসোল'];
   };

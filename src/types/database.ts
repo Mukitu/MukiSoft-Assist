@@ -201,8 +201,52 @@ export interface AppNotification {
   title: string;
   message: string;
   link?: string | null;
+  category?: 'orders' | 'wallet' | 'support' | 'security' | 'system';
   is_read: boolean;
   created_at: string;
+}
+
+export interface UserNotificationPreferences {
+  user_id: string;
+  orders_email: boolean;
+  deposits_email: boolean;
+  support_email: boolean;
+  marketing_email: boolean;
+  security_email: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type EmailTemplateType =
+  | 'welcome'
+  | 'password_reset'
+  | 'order_created'
+  | 'order_status'
+  | 'deliverable_ready'
+  | 'deposit_status'
+  | 'refund_processed'
+  | 'support_reply'
+  | 'system';
+
+export interface EmailOutboxItem {
+  id: string;
+  event_key?: string | null;
+  user_id?: string | null;
+  recipient_email: string;
+  recipient_name?: string | null;
+  subject: string;
+  template_type: EmailTemplateType | string;
+  category: 'orders' | 'wallet' | 'support' | 'security' | 'system';
+  body_html: string;
+  body_text?: string | null;
+  status: 'queued' | 'sent' | 'failed';
+  delivery_channel: 'email' | 'in_app';
+  retry_count: number;
+  max_retries: number;
+  error_message?: string | null;
+  sent_at?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface AuditLog {
@@ -234,6 +278,19 @@ export interface PaymentMethodItem {
   verification_time_note_bn?: string;
 }
 
+export interface CommunicationSettings {
+  sender_name: string;
+  sender_email: string;
+  support_email: string;
+  enabled_categories: {
+    orders: boolean;
+    deposits: boolean;
+    support: boolean;
+    security: boolean;
+    marketing: boolean;
+  };
+}
+
 export interface PlatformSettings {
   general: {
     platform_name: string;
@@ -244,4 +301,5 @@ export interface PlatformSettings {
     currency_symbol: string;
   };
   payment_methods: Record<string, PaymentMethodItem>;
+  communication?: CommunicationSettings;
 }

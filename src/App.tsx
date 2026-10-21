@@ -31,6 +31,7 @@ import { UserOrders } from './pages/dashboard/UserOrders';
 import { UserOrderDetail } from './pages/dashboard/UserOrderDetail';
 import { UserSupport } from './pages/dashboard/UserSupport';
 import { UserProfile } from './pages/dashboard/UserProfile';
+import { UserPreferences } from './pages/dashboard/UserPreferences';
 
 // Admin Pages
 import { AdminOverview } from './pages/admin/AdminOverview';
@@ -40,7 +41,9 @@ import { AdminOrders } from './pages/admin/AdminOrders';
 import { AdminTickets } from './pages/admin/AdminTickets';
 import { AdminUsers } from './pages/admin/AdminUsers';
 import { AdminAuditLogs } from './pages/admin/AdminAuditLogs';
+import { AdminCommunication } from './pages/admin/AdminCommunication';
 import { AdminSettings } from './pages/admin/AdminSettings';
+import { ResetPassword } from './pages/public/ResetPassword';
 
 function AppRouter() {
   const [currentUrl, setCurrentUrl] = useState<string>(() => {
@@ -95,6 +98,10 @@ function AppRouter() {
             <UserDashboardLayout currentPath={pathname} onNavigate={navigate}>
               <UserSupport />
             </UserDashboardLayout>
+          ) : pathname === '/dashboard/preferences' ? (
+            <UserDashboardLayout currentPath={pathname} onNavigate={navigate}>
+              <UserPreferences />
+            </UserDashboardLayout>
           ) : pathname === '/dashboard/profile' ? (
             <UserDashboardLayout currentPath={pathname} onNavigate={navigate}>
               <UserProfile />
@@ -138,6 +145,10 @@ function AppRouter() {
             <AdminDashboardLayout currentPath={pathname} onNavigate={navigate}>
               <AdminAuditLogs />
             </AdminDashboardLayout>
+          ) : pathname === '/admin/communication' ? (
+            <AdminDashboardLayout currentPath={pathname} onNavigate={navigate}>
+              <AdminCommunication />
+            </AdminDashboardLayout>
           ) : pathname === '/admin/settings' ? (
             <AdminDashboardLayout currentPath={pathname} onNavigate={navigate}>
               <AdminSettings />
@@ -180,6 +191,8 @@ function AppRouter() {
       pageContent = <AuthPages mode="register" onNavigate={navigate} />;
     } else if (pathname === '/forgot-password') {
       pageContent = <AuthPages mode="forgot-password" onNavigate={navigate} />;
+    } else if (pathname === '/reset-password') {
+      pageContent = <ResetPassword onNavigate={navigate} />;
     } else if (pathname === '/privacy') {
       pageContent = <LegalPages type="privacy" onNavigate={navigate} />;
     } else if (pathname === '/terms') {

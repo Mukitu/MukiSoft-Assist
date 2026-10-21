@@ -427,3 +427,110 @@ BEGIN
     RETURN jsonb_build_object('success', true, 'status', 'revision_requested');
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 5. ATOMIC CUSTOMER ORDER CANCELLATION & REFUND PROCEDURE
+CREATE OR REPLACE FUNCTION public.cancel_order_by_customer(
+    p_order_id UUID,
+    p_reason TEXT
+)
+RETURNS JSONB AS $$
+DECLARE
+    v_user_id UUID := auth.uid();
+    v_order RECORD;
+    v_wallet RECORD;
+    v_new_balance DECIMAL(14, 2);
+BEGIN
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'Authentication required.';
+    END IF;
+
+    IF p_reason IS NULL OR TRIM(p_reason) = '' THEN
+        RAISE EXCEPTION 'Cancellation reason is required.';
+    END IF;
+
+    SELECT * INTO v_order
+    FROM public.orders
+    WHERE id = p_order_id AND user_id = v_user_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Order not found or access denied.';
+    END IF;
+
+    IF v_order.status IN ('delivered', 'completed', 'refunded', 'cancelled') THEN
+        RAISE EXCEPTION 'This order cannot be cancelled directly in its current state.';
+    END IF;
+
+    -- Lock customer wallet
+    SELECT * INTO v_wallet
+    FROM public.wallets
+    WHERE user_id = v_user_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Wallet not found.';
+    END IF;
+
+    v_new_balance := v_wallet.balance + v_order.amount;
+
+    UPDATE public.wallets
+    SET balance = v_new_balance,
+        total_spent = GREATEST(0.00, total_spent - v_order.amount),
+        updated_at = timezone('utc'::text, now())
+    WHERE id = v_wallet.id;
+
+    INSERT INTO public.wallet_transactions (
+        wallet_id,
+        user_id,
+        type,
+        amount,
+        balance_after,
+        status,
+        reference_id,
+        reference_type,
+        description,
+        metadata
+    ) VALUES (
+        v_wallet.id,
+        v_user_id,
+        'refund',
+        v_order.amount,
+        v_new_balance,
+        'completed',
+        v_order.id::text,
+        'order',
+        'অর্ডার বাতিল ও রিফান্ড: #' || v_order.order_number || ' (কারণ: ' || TRIM(p_reason) || ')',
+        jsonb_build_object(
+            'order_id', v_order.id,
+            'order_number', v_order.order_number,
+            'reason', TRIM(p_reason)
+        )
+    );
+
+    UPDATE public.orders
+    SET status = 'refunded',
+        cancellation_reason = TRIM(p_reason),
+        refund_amount = v_order.amount,
+        updated_at = timezone('utc'::text, now())
+    WHERE id = p_order_id;
+
+    INSERT INTO public.order_events (
+        order_id,
+        actor_id,
+        event_type,
+        message
+    ) VALUES (
+        p_order_id,
+        v_user_id,
+        'ORDER_REFUNDED',
+        'গ্রাহক অর্ডার বাতিল করেছেন এবং ৳ ' || v_order.amount || ' সম্পূর্ণ রিফান্ড ওয়ালেটে যোগ হয়েছে। কারণ: ' || TRIM(p_reason)
+    );
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'order_id', v_order.id,
+        'new_balance', v_new_balance
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+

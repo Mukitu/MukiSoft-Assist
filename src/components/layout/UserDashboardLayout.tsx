@@ -11,6 +11,7 @@ import {
   Menu,
   X,
   CreditCard,
+  Bell,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { toBengaliCurrency } from '../../lib/i18n';
@@ -43,6 +44,7 @@ export const UserDashboardLayout: React.FC<UserDashboardLayoutProps> = ({
     { label: 'ওয়ালেট ও টাকা জমা', path: '/dashboard/wallet', icon: WalletIcon },
     { label: 'আমার অর্ডারসমূহ', path: '/dashboard/orders', icon: ShoppingBag },
     { label: 'সহায়তা টিকিট', path: '/dashboard/support', icon: HelpCircle },
+    { label: 'বিজ্ঞপ্তি পছন্দসমূহ', path: '/dashboard/preferences', icon: Bell },
     { label: 'প্রোফাইল সেটিংস', path: '/dashboard/profile', icon: UserIcon },
   ];
 
@@ -52,6 +54,7 @@ export const UserDashboardLayout: React.FC<UserDashboardLayoutProps> = ({
     if (currentPath.startsWith('/dashboard/orders/')) return ['ড্যাশবোর্ড', 'আমার অর্ডার', 'অর্ডারের বিবরণ'];
     if (currentPath === '/dashboard/orders') return ['ড্যাশবোর্ড', 'আমার অর্ডারসমূহ'];
     if (currentPath === '/dashboard/support') return ['ড্যাশবোর্ড', 'সহায়তা ডেস্ক'];
+    if (currentPath === '/dashboard/preferences') return ['ড্যাশবোর্ড', 'বিজ্ঞপ্তি ও ইমেইল পছন্দসমূহ'];
     if (currentPath === '/dashboard/profile') return ['ড্যাশবোর্ড', 'প্রোফাইল ও নিরাপত্তা'];
     return ['ড্যাশবোর্ড'];
   };

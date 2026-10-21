@@ -70,10 +70,18 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
                 : 'bg-white border-slate-200 text-slate-800'
             }`,
           },
-          createElement(
-            'div',
-            { className: 'flex-1' },
-            createElement('div', { className: 'font-semibold text-xs tracking-wide uppercase text-slate-500 mb-0.5' }, toast.type),
+            createElement('div', { className: 'flex-1' },
+            createElement(
+              'div',
+              { className: 'font-semibold text-xs tracking-wide text-slate-500 mb-0.5' },
+              toast.type === 'success'
+                ? 'সফলতা'
+                : toast.type === 'error'
+                ? 'সতর্কতা'
+                : toast.type === 'warning'
+                ? 'মনোযোগ দিন'
+                : 'বিজ্ঞপ্তি'
+            ),
             createElement('div', { className: 'font-medium text-slate-900' }, toast.title),
             toast.message && createElement('div', { className: 'text-xs text-slate-600 mt-1' }, toast.message)
           ),

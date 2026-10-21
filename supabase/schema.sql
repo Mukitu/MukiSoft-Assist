@@ -279,6 +279,7 @@ ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.order_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.order_deliverables ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.support_tickets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ticket_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.platform_settings ENABLE ROW LEVEL SECURITY;
@@ -305,70 +306,109 @@ RETURNS BOOLEAN AS $$
     );
 $$ LANGUAGE sql STABLE SECURITY DEFINER;
 
--- PROFILES POLICIES
-CREATE POLICY "Public read active profiles or own profile"
-    ON public.profiles FOR SELECT
-    USING (auth.uid() = id OR public.is_admin());
+-- PROFILES POLICIES (Idempotent policy creation preventing ERROR 42710)
+DO $$
+BEGIN
+    DROP POLICY IF EXISTS "Public read active profiles or own profile" ON public.profiles;
+    DROP POLICY IF EXISTS "Public read active profiles or own profile" ON profiles;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE tablename = 'profiles' 
+        AND policyname = 'Public read active profiles or own profile'
+    ) THEN
+        CREATE POLICY "Public read active profiles or own profile"
+            ON public.profiles FOR SELECT
+            USING (auth.uid() = id OR public.is_admin());
+    END IF;
 
-CREATE POLICY "Users can update own non-sensitive profile"
-    ON public.profiles FOR UPDATE
-    USING (auth.uid() = id)
-    WITH CHECK (auth.uid() = id AND role = (SELECT role FROM public.profiles WHERE id = auth.uid()));
+    DROP POLICY IF EXISTS "Users can update own non-sensitive profile" ON public.profiles;
+    DROP POLICY IF EXISTS "Users can update own non-sensitive profile" ON profiles;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE tablename = 'profiles' 
+        AND policyname = 'Users can update own non-sensitive profile'
+    ) THEN
+        CREATE POLICY "Users can update own non-sensitive profile"
+            ON public.profiles FOR UPDATE
+            USING (auth.uid() = id)
+            WITH CHECK (auth.uid() = id AND role = (SELECT role FROM public.profiles WHERE id = auth.uid()));
+    END IF;
 
-CREATE POLICY "Super admin can manage profiles"
-    ON public.profiles FOR ALL
-    USING (public.is_super_admin());
+    DROP POLICY IF EXISTS "Super admin can manage profiles" ON public.profiles;
+    DROP POLICY IF EXISTS "Super admin can manage profiles" ON profiles;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE tablename = 'profiles' 
+        AND policyname = 'Super admin can manage profiles'
+    ) THEN
+        CREATE POLICY "Super admin can manage profiles"
+            ON public.profiles FOR ALL
+            USING (public.is_super_admin());
+    END IF;
+END $$;
 
 -- SERVICE CATEGORIES & SERVICES POLICIES (Public read active, Admin write)
+DROP POLICY IF EXISTS "Anyone can view active categories" ON public.service_categories;
 CREATE POLICY "Anyone can view active categories"
     ON public.service_categories FOR SELECT
     USING (is_active = true OR public.is_admin());
 
+DROP POLICY IF EXISTS "Admins can manage categories" ON public.service_categories;
 CREATE POLICY "Admins can manage categories"
     ON public.service_categories FOR ALL
     USING (public.is_admin());
 
+DROP POLICY IF EXISTS "Anyone can view active services" ON public.services;
 CREATE POLICY "Anyone can view active services"
     ON public.services FOR SELECT
     USING (is_active = true OR public.is_admin());
 
+DROP POLICY IF EXISTS "Admins can manage services" ON public.services;
 CREATE POLICY "Admins can manage services"
     ON public.services FOR ALL
     USING (public.is_admin());
 
 -- WALLETS POLICIES (Users can only read own wallet, updates must occur through server functions)
+DROP POLICY IF EXISTS "Users can read own wallet" ON public.wallets;
 CREATE POLICY "Users can read own wallet"
     ON public.wallets FOR SELECT
     USING (auth.uid() = user_id OR public.is_admin());
 
 -- WALLET TRANSACTIONS POLICIES (Immutable ledger, read own only)
+DROP POLICY IF EXISTS "Users can read own transactions" ON public.wallet_transactions;
 CREATE POLICY "Users can read own transactions"
     ON public.wallet_transactions FOR SELECT
     USING (auth.uid() = user_id OR public.is_admin());
 
 -- DEPOSIT REQUESTS POLICIES
+DROP POLICY IF EXISTS "Users can read and submit own deposit requests" ON public.deposit_requests;
 CREATE POLICY "Users can read and submit own deposit requests"
     ON public.deposit_requests FOR SELECT
     USING (auth.uid() = user_id OR public.is_admin());
 
+DROP POLICY IF EXISTS "Users can create deposit request" ON public.deposit_requests;
 CREATE POLICY "Users can create deposit request"
     ON public.deposit_requests FOR INSERT
     WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Admins can review deposit requests" ON public.deposit_requests;
 CREATE POLICY "Admins can review deposit requests"
     ON public.deposit_requests FOR UPDATE
     USING (public.is_admin());
 
 -- ORDERS POLICIES
+DROP POLICY IF EXISTS "Users can read own orders, admins read all" ON public.orders;
 CREATE POLICY "Users can read own orders, admins read all"
     ON public.orders FOR SELECT
     USING (auth.uid() = user_id OR public.is_admin());
 
+DROP POLICY IF EXISTS "Admins can update orders" ON public.orders;
 CREATE POLICY "Admins can update orders"
     ON public.orders FOR UPDATE
     USING (public.is_admin());
 
 -- ORDER EVENTS POLICIES
+DROP POLICY IF EXISTS "Users can read events for own orders" ON public.order_events;
 CREATE POLICY "Users can read events for own orders"
     ON public.order_events FOR SELECT
     USING (
@@ -380,6 +420,7 @@ CREATE POLICY "Users can read events for own orders"
     );
 
 -- ORDER DELIVERABLES POLICIES
+DROP POLICY IF EXISTS "Users can read deliverables for own orders" ON public.order_deliverables;
 CREATE POLICY "Users can read deliverables for own orders"
     ON public.order_deliverables FOR SELECT
     USING (
@@ -390,42 +431,83 @@ CREATE POLICY "Users can read deliverables for own orders"
         )
     );
 
+DROP POLICY IF EXISTS "Admins can insert deliverables" ON public.order_deliverables;
 CREATE POLICY "Admins can insert deliverables"
     ON public.order_deliverables FOR INSERT
     WITH CHECK (public.is_admin());
 
 -- SUPPORT TICKETS POLICIES
+DROP POLICY IF EXISTS "Users can view and create own support tickets" ON public.support_tickets;
 CREATE POLICY "Users can view and create own support tickets"
     ON public.support_tickets FOR SELECT
     USING (auth.uid() = user_id OR public.is_admin());
 
+DROP POLICY IF EXISTS "Users can insert own tickets" ON public.support_tickets;
 CREATE POLICY "Users can insert own tickets"
     ON public.support_tickets FOR INSERT
     WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Admins can update tickets" ON public.support_tickets;
 CREATE POLICY "Admins can update tickets"
     ON public.support_tickets FOR UPDATE
     USING (public.is_admin());
 
+-- TICKET MESSAGES POLICIES
+DROP POLICY IF EXISTS "Ticket owners and admins can view ticket messages" ON public.ticket_messages;
+CREATE POLICY "Ticket owners and admins can view ticket messages"
+    ON public.ticket_messages FOR SELECT
+    USING (
+        public.is_admin() 
+        OR (
+            EXISTS (
+                SELECT 1 FROM public.support_tickets
+                WHERE support_tickets.id = ticket_messages.ticket_id
+                AND support_tickets.user_id = auth.uid()
+            )
+            AND is_internal = false
+        )
+    );
+
+DROP POLICY IF EXISTS "Ticket owners and admins can insert ticket messages" ON public.ticket_messages;
+CREATE POLICY "Ticket owners and admins can insert ticket messages"
+    ON public.ticket_messages FOR INSERT
+    WITH CHECK (
+        (public.is_admin())
+        OR (
+            EXISTS (
+                SELECT 1 FROM public.support_tickets
+                WHERE support_tickets.id = ticket_messages.ticket_id
+                AND support_tickets.user_id = auth.uid()
+            )
+            AND is_internal = false
+            AND sender_id = auth.uid()
+        )
+    );
+
 -- NOTIFICATIONS POLICIES
+DROP POLICY IF EXISTS "Users can view and update own notifications" ON public.notifications;
 CREATE POLICY "Users can view and update own notifications"
     ON public.notifications FOR SELECT
     USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can mark own notification read" ON public.notifications;
 CREATE POLICY "Users can mark own notification read"
     ON public.notifications FOR UPDATE
     USING (auth.uid() = user_id);
 
 -- AUDIT LOGS POLICIES (Super admin only)
+DROP POLICY IF EXISTS "Only super admin can view audit logs" ON public.audit_logs;
 CREATE POLICY "Only super admin can view audit logs"
     ON public.audit_logs FOR SELECT
     USING (public.is_super_admin());
 
 -- PLATFORM SETTINGS POLICIES
+DROP POLICY IF EXISTS "Anyone can view platform settings" ON public.platform_settings;
 CREATE POLICY "Anyone can view platform settings"
     ON public.platform_settings FOR SELECT
     USING (true);
 
+DROP POLICY IF EXISTS "Super admin can update platform settings" ON public.platform_settings;
 CREATE POLICY "Super admin can update platform settings"
     ON public.platform_settings FOR ALL
     USING (public.is_super_admin());
@@ -627,10 +709,14 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Atomic service purchase procedure with wallet balance check and debit
+-- Atomic service purchase procedure with wallet balance check, reference links, and attachments
 CREATE OR REPLACE FUNCTION public.purchase_service_with_wallet(
     p_service_id UUID,
     p_requirements_text TEXT,
-    p_idempotency_key TEXT
+    p_reference_link TEXT DEFAULT NULL,
+    p_attachment_name TEXT DEFAULT NULL,
+    p_attachment_url TEXT DEFAULT NULL,
+    p_idempotency_key TEXT DEFAULT NULL
 )
 RETURNS JSONB AS $$
 DECLARE
@@ -641,58 +727,68 @@ DECLARE
     v_order_number TEXT;
     v_order_id UUID;
     v_new_balance DECIMAL(14, 2);
-    v_existing_order UUID;
+    v_existing_order RECORD;
 BEGIN
     IF v_user_id IS NULL THEN
         RAISE EXCEPTION 'Authentication required to purchase service.';
     END IF;
 
-    -- Prevent double charging if idempotency key was already processed
-    IF p_idempotency_key IS NOT NULL THEN
-        SELECT id INTO v_existing_order FROM public.orders WHERE idempotency_key = p_idempotency_key;
+    -- 1. Idempotency check: if key already exists, return previous order without double charging
+    IF p_idempotency_key IS NOT NULL AND TRIM(p_idempotency_key) != '' THEN
+        SELECT id, order_number INTO v_existing_order 
+        FROM public.orders 
+        WHERE idempotency_key = p_idempotency_key;
+
         IF FOUND THEN
-            RETURN jsonb_build_object('success', true, 'order_id', v_existing_order, 'duplicate', true);
+            SELECT balance INTO v_new_balance FROM public.wallets WHERE user_id = v_user_id;
+            RETURN jsonb_build_object(
+                'success', true,
+                'order_id', v_existing_order.id,
+                'order_number', v_existing_order.order_number,
+                'remaining_balance', v_new_balance,
+                'duplicate', true
+            );
         END IF;
     END IF;
 
-    -- Fetch service details
+    -- 2. Fetch service and enforce active status
     SELECT * INTO v_service
     FROM public.services
     WHERE id = p_service_id AND is_active = true;
 
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'Service is either inactive or not found.';
+        RAISE EXCEPTION 'Service not found or is currently inactive.';
     END IF;
 
+    -- Use server-determined price (promotional price if active)
     v_final_price := COALESCE(v_service.promotional_price, v_service.price);
 
-    -- Lock wallet for this user
+    IF v_final_price < 0 THEN
+        RAISE EXCEPTION 'Invalid service price configuration.';
+    END IF;
+
+    -- 3. Strict row lock on user wallet to prevent race conditions & double-spending
     SELECT * INTO v_wallet
     FROM public.wallets
     WHERE user_id = v_user_id
     FOR UPDATE;
 
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'User wallet not found.';
+        RAISE EXCEPTION 'Wallet not found. Please initialize your wallet by making a deposit.';
     END IF;
 
-    -- Balance check
     IF v_wallet.balance < v_final_price THEN
-        RAISE EXCEPTION 'Insufficient balance: required BDT %, available BDT %', v_final_price, v_wallet.balance;
+        RAISE EXCEPTION 'পর্যাপ্ত ওয়ালেট ব্যালেন্স নেই। আপনার বর্তমান ব্যালেন্স ৳ %, কিন্তু প্রয়োজনীয় মূল্য ৳ %। দয়া করে আগে ওয়ালেটে টাকা জমা দিন।',
+            v_wallet.balance, v_final_price;
     END IF;
 
-    -- Generate order number
-    v_order_number := 'MS-' || to_char(now(), 'YYYYMMDD') || '-' || upper(substr(md5(random()::text), 1, 6));
+    -- 4. Calculate new balance
+    v_new_balance := v_wallet.balance - v_final_price;
 
-    -- Debit wallet balance
-    UPDATE public.wallets
-    SET balance = balance - v_final_price,
-        total_spent = total_spent + v_final_price,
-        updated_at = timezone('utc'::text, now())
-    WHERE id = v_wallet.id
-    RETURNING balance INTO v_new_balance;
+    -- 5. Generate readable order number
+    v_order_number := 'MS-' || to_char(now(), 'YYYYMMDD') || '-' || UPPER(SUBSTRING(uuid_generate_v4()::text, 1, 6));
 
-    -- Create order record
+    -- 6. Insert order record
     INSERT INTO public.orders (
         order_number,
         user_id,
@@ -700,18 +796,32 @@ BEGIN
         amount,
         status,
         requirements_submitted,
+        reference_link,
+        attachment_name,
+        attachment_url,
         idempotency_key
     ) VALUES (
         v_order_number,
         v_user_id,
-        v_service.id,
+        p_service_id,
         v_final_price,
-        'in_progress',
+        'accepted',
         p_requirements_text,
+        p_reference_link,
+        p_attachment_name,
+        p_attachment_url,
         p_idempotency_key
-    ) RETURNING id INTO v_order_id;
+    )
+    RETURNING id INTO v_order_id;
 
-    -- Record transaction in immutable financial ledger
+    -- 7. Deduct balance from user wallet atomically
+    UPDATE public.wallets
+    SET balance = v_new_balance,
+        total_spent = total_spent + v_final_price,
+        updated_at = timezone('utc'::text, now())
+    WHERE id = v_wallet.id;
+
+    -- 8. Write immutable financial ledger entry
     INSERT INTO public.wallet_transactions (
         wallet_id,
         user_id,
@@ -721,7 +831,8 @@ BEGIN
         status,
         reference_id,
         reference_type,
-        description
+        description,
+        metadata
     ) VALUES (
         v_wallet.id,
         v_user_id,
@@ -731,25 +842,42 @@ BEGIN
         'completed',
         v_order_id::text,
         'order',
-        'Purchased service: ' || v_service.title
+        'সেবা ক্রয়: ' || COALESCE(v_service.title_bn, v_service.title) || ' (অর্ডার #' || v_order_number || ')',
+        jsonb_build_object(
+            'order_id', v_order_id,
+            'order_number', v_order_number,
+            'service_id', v_service.id,
+            'service_title', v_service.title,
+            'price_debited', v_final_price
+        )
     );
 
-    -- Log initial event
-    INSERT INTO public.order_events (order_id, actor_id, event_type, message)
-    VALUES (
+    -- 9. Add timeline milestone
+    INSERT INTO public.order_events (
+        order_id,
+        actor_id,
+        event_type,
+        message,
+        metadata
+    ) VALUES (
         v_order_id,
         v_user_id,
         'ORDER_CREATED',
-        'Order initialized with requirements submitted. Payment verified through wallet balance.'
+        'অর্ডার গৃহীত হয়েছে এবং ওয়ালেট এসক্রো থেকে ৳ ' || v_final_price || ' সফলভাবে পরিশোধ করা হয়েছে।',
+        jsonb_build_object('amount', v_final_price)
     );
 
-    -- Notification
-    INSERT INTO public.notifications (user_id, title, message, link)
-    VALUES (
+    -- 10. Send customer Bengali notification
+    INSERT INTO public.notifications (
+        user_id,
+        title,
+        message,
+        link
+    ) VALUES (
         v_user_id,
-        'Order Confirmed',
-        'Order ' || v_order_number || ' for ' || v_service.title || ' has been received and is now in progress.',
-        '/dashboard/orders/' || v_order_id
+        'অর্ডার নিশ্চিত হয়েছে',
+        'আপনার অর্ডার #' || v_order_number || ' সফলভাবে গ্রহণ করা হয়েছে। কাজের অগ্রগতি পর্যবেক্ষণ করতে অর্ডারের বিস্তারিত দেখুন।',
+        '/dashboard/orders/' || v_order_id::text
     );
 
     RETURN jsonb_build_object(
@@ -758,6 +886,201 @@ BEGIN
         'order_number', v_order_number,
         'remaining_balance', v_new_balance
     );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 3. ATOMIC REFUND PROCEDURE (Financial Integrity)
+CREATE OR REPLACE FUNCTION public.refund_order(
+    p_order_id UUID,
+    p_refund_reason TEXT
+)
+RETURNS JSONB AS $$
+DECLARE
+    v_admin_id UUID := auth.uid();
+    v_order RECORD;
+    v_wallet RECORD;
+    v_new_balance DECIMAL(14, 2);
+BEGIN
+    -- Verify administrator role
+    IF NOT public.is_admin() THEN
+        RAISE EXCEPTION 'Access Denied: Only administrators can process refunds.';
+    END IF;
+
+    IF p_refund_reason IS NULL OR TRIM(p_refund_reason) = '' THEN
+        RAISE EXCEPTION 'A valid refund reason is required.';
+    END IF;
+
+    -- Strict row lock on order
+    SELECT * INTO v_order
+    FROM public.orders
+    WHERE id = p_order_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Order not found.';
+    END IF;
+
+    IF v_order.status = 'refunded' THEN
+        RAISE EXCEPTION 'This order has already been refunded.';
+    END IF;
+
+    -- Lock customer wallet
+    SELECT * INTO v_wallet
+    FROM public.wallets
+    WHERE user_id = v_order.user_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Customer wallet not found.';
+    END IF;
+
+    -- Calculate credited balance
+    v_new_balance := v_wallet.balance + v_order.amount;
+
+    -- Atomically credit wallet
+    UPDATE public.wallets
+    SET balance = v_new_balance,
+        total_spent = GREATEST(0.00, total_spent - v_order.amount),
+        updated_at = timezone('utc'::text, now())
+    WHERE id = v_wallet.id;
+
+    -- Insert immutable refund ledger entry
+    INSERT INTO public.wallet_transactions (
+        wallet_id,
+        user_id,
+        type,
+        amount,
+        balance_after,
+        status,
+        reference_id,
+        reference_type,
+        description,
+        metadata
+    ) VALUES (
+        v_wallet.id,
+        v_order.user_id,
+        'refund',
+        v_order.amount,
+        v_new_balance,
+        'completed',
+        v_order.id::text,
+        'order',
+        'অর্ডার রিফান্ড: #' || v_order.order_number || ' (কারণ: ' || TRIM(p_refund_reason) || ')',
+        jsonb_build_object(
+            'order_id', v_order.id,
+            'order_number', v_order.order_number,
+            'refunded_by', v_admin_id,
+            'reason', TRIM(p_refund_reason)
+        )
+    );
+
+    -- Update order status
+    UPDATE public.orders
+    SET status = 'refunded',
+        cancellation_reason = TRIM(p_refund_reason),
+        refund_amount = v_order.amount,
+        updated_at = timezone('utc'::text, now())
+    WHERE id = p_order_id;
+
+    -- Record event in timeline
+    INSERT INTO public.order_events (
+        order_id,
+        actor_id,
+        event_type,
+        message
+    ) VALUES (
+        p_order_id,
+        v_admin_id,
+        'ORDER_REFUNDED',
+        'অ্যাডমিন কর্তৃক ৳ ' || v_order.amount || ' সম্পূর্ণ রিফান্ড অনুমোদিত হয়েছে। কারণ: ' || TRIM(p_refund_reason)
+    );
+
+    -- Record in audit log
+    INSERT INTO public.audit_logs (
+        actor_id,
+        action,
+        target_type,
+        target_id,
+        details
+    ) VALUES (
+        v_admin_id,
+        'REFUND_ORDER',
+        'orders',
+        p_order_id::text,
+        jsonb_build_object(
+            'order_number', v_order.order_number,
+            'amount', v_order.amount,
+            'customer_id', v_order.user_id,
+            'reason', TRIM(p_refund_reason)
+        )
+    );
+
+    -- Notify customer
+    INSERT INTO public.notifications (
+        user_id,
+        title,
+        message,
+        link
+    ) VALUES (
+        v_order.user_id,
+        'টাকা ফেরত দেওয়া হয়েছে',
+        'আপনার অর্ডার #' || v_order.order_number || '-এর জন্য ৳ ' || v_order.amount || ' আপনার ওয়ালেটে ফেরত দেওয়া হয়েছে।',
+        '/dashboard/orders/' || v_order.id::text
+    );
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'order_id', p_order_id,
+        'refund_amount', v_order.amount,
+        'new_balance', v_new_balance
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 4. ATOMIC REVISION REQUEST PROCEDURE
+CREATE OR REPLACE FUNCTION public.request_order_revision(
+    p_order_id UUID,
+    p_revision_notes TEXT
+)
+RETURNS JSONB AS $$
+DECLARE
+    v_user_id UUID := auth.uid();
+    v_order RECORD;
+BEGIN
+    IF p_revision_notes IS NULL OR TRIM(p_revision_notes) = '' THEN
+        RAISE EXCEPTION 'Revision notes are required.';
+    END IF;
+
+    SELECT * INTO v_order
+    FROM public.orders
+    WHERE id = p_order_id AND user_id = v_user_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Order not found or permission denied.';
+    END IF;
+
+    IF v_order.status NOT IN ('delivered', 'in_review', 'completed') THEN
+        RAISE EXCEPTION 'Revision can only be requested after work is delivered or in review.';
+    END IF;
+
+    UPDATE public.orders
+    SET status = 'revision_requested',
+        updated_at = timezone('utc'::text, now())
+    WHERE id = p_order_id;
+
+    INSERT INTO public.order_events (
+        order_id,
+        actor_id,
+        event_type,
+        message
+    ) VALUES (
+        p_order_id,
+        v_user_id,
+        'REVISION_REQUESTED',
+        'গ্রাহক সংশোধনের অনুরোধ জানিয়েছেন: ' || TRIM(p_revision_notes)
+    );
+
+    RETURN jsonb_build_object('success', true, 'status', 'revision_requested');
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -1012,9 +1335,79 @@ VALUES
 ON CONFLICT (key) DO NOTHING;
 
 -- ==============================================================================
+-- 16. USER NOTIFICATION PREFERENCES & EMAIL OUTBOX
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.user_notification_preferences (
+    user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    orders_email BOOLEAN NOT NULL DEFAULT true,
+    deposits_email BOOLEAN NOT NULL DEFAULT true,
+    support_email BOOLEAN NOT NULL DEFAULT true,
+    marketing_email BOOLEAN NOT NULL DEFAULT false,
+    security_email BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+ALTER TABLE public.user_notification_preferences ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view own notification preferences" ON public.user_notification_preferences;
+CREATE POLICY "Users can view own notification preferences"
+    ON public.user_notification_preferences FOR SELECT
+    USING (auth.uid() = user_id OR public.is_admin());
+
+DROP POLICY IF EXISTS "Users can insert own notification preferences" ON public.user_notification_preferences;
+CREATE POLICY "Users can insert own notification preferences"
+    ON public.user_notification_preferences FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can update own notification preferences" ON public.user_notification_preferences;
+CREATE POLICY "Users can update own notification preferences"
+    ON public.user_notification_preferences FOR UPDATE
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE TABLE IF NOT EXISTS public.email_outbox (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    event_key TEXT UNIQUE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    recipient_email TEXT NOT NULL,
+    recipient_name TEXT,
+    subject TEXT NOT NULL,
+    template_type TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'system',
+    body_html TEXT NOT NULL,
+    body_text TEXT,
+    status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'sent', 'failed')),
+    delivery_channel TEXT NOT NULL DEFAULT 'email',
+    retry_count INT NOT NULL DEFAULT 0,
+    max_retries INT NOT NULL DEFAULT 3,
+    error_message TEXT,
+    sent_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_outbox_status ON public.email_outbox(status);
+CREATE INDEX IF NOT EXISTS idx_email_outbox_user_id ON public.email_outbox(user_id);
+CREATE INDEX IF NOT EXISTS idx_email_outbox_event_key ON public.email_outbox(event_key);
+
+ALTER TABLE public.email_outbox ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view own email outbox" ON public.email_outbox;
+CREATE POLICY "Users can view own email outbox"
+    ON public.email_outbox FOR SELECT
+    USING (auth.uid() = user_id OR public.is_admin());
+
+DROP POLICY IF EXISTS "Admins can manage email outbox" ON public.email_outbox;
+CREATE POLICY "Admins can manage email outbox"
+    ON public.email_outbox FOR ALL
+    USING (public.is_admin());
+
+-- ==============================================================================
 -- BOOTSTRAP INITIAL SUPER ADMIN INSTRUCTION
 -- ==============================================================================
 -- To promote an existing user account to super_admin safely after signing up:
 -- UPDATE public.profiles
 -- SET role = 'super_admin'
 -- WHERE email = 'your-admin-email@example.com';
+

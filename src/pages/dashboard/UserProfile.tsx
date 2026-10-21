@@ -3,23 +3,37 @@ import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import { StatusBadge } from '../../components/common/StatusBadge';
 
+import { api } from '../../services/api';
+
 export const UserProfile: React.FC = () => {
-  const { user, profile, role } = useAuth();
+  const { user, profile, role, refreshProfile } = useAuth();
   const { showToast } = useNotification();
 
   const [fullName, setFullName] = useState(profile?.full_name || user?.name || '');
   const [phone, setPhone] = useState(profile?.phone || '');
-  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaved(true);
-    showToast({
-      type: 'success',
-      title: 'সেটিংস সংরক্ষিত হয়েছে',
-      message: 'আপনার প্রোফাইলের তথ্য আপডেট করা হয়েছে।',
-    });
-    setTimeout(() => setSaved(false), 2500);
+    if (!user) return;
+    setSaving(true);
+    try {
+      await api.updateProfile(user.id, {
+        full_name: fullName.trim(),
+        phone: phone.trim() || undefined,
+      });
+      await refreshProfile();
+      showToast({
+        type: 'success',
+        title: 'সেটিংস সংরক্ষিত হয়েছে',
+        message: 'আপনার প্রোফাইলের তথ্য সফলভাবে আপডেট করা হয়েছে।',
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'সংরক্ষণ ব্যর্থ হয়েছে';
+      showToast({ type: 'error', title: 'ত্রুটি', message: msg });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -95,9 +109,10 @@ export const UserProfile: React.FC = () => {
           <div className="flex justify-end pt-4 border-t border-slate-100">
             <button
               type="submit"
-              className="px-6 py-2.5 text-xs font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+              disabled={saving}
+              className="px-6 py-2.5 text-xs font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors disabled:opacity-50"
             >
-              {saved ? 'সংরক্ষিত হয়েছে' : 'পরিবর্তন সংরক্ষণ করুন'}
+              {saving ? 'সংরক্ষণ হচ্ছে...' : 'পরিবর্তন সংরক্ষণ করুন'}
             </button>
           </div>
         </form>
