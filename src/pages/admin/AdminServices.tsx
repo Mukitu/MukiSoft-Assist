@@ -1,66 +1,146 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Plus,
   Search,
-  Filter,
   Edit2,
   Trash2,
-  CheckCircle,
-  XCircle,
-  Eye,
   Tag,
   Clock,
   Layers,
   Sparkles,
   AlertTriangle,
   X,
+  RefreshCw,
+  FolderTree,
+  CheckCircle2,
+  Database,
+  ArrowRight,
+  Code,
+  Globe,
+  Palette,
+  Shield,
+  Headphones,
+  ShoppingBag,
+  FileText,
+  Briefcase,
+  Sliders,
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { toBengaliCurrency, toBengaliDigits } from '../../lib/i18n';
 import { ServiceItem, ServiceCategory } from '../../types/database';
 import { useNotification } from '../../context/NotificationContext';
+import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 
-export const AdminServices: React.FC = () => {
+interface AdminServicesProps {
+  defaultTab?: 'services' | 'categories';
+  onNavigate?: (path: string) => void;
+}
+
+const AVAILABLE_ICONS = [
+  { name: 'Layers', label: 'Layers (ডিফল্ট)', icon: Layers },
+  { name: 'Code', label: 'Code (প্রোগ্রামিং)', icon: Code },
+  { name: 'Globe', label: 'Globe (ওয়েব/ইন্টারনেট)', icon: Globe },
+  { name: 'Palette', label: 'Palette (ডিজাইন/ক্রিয়েটিভ)', icon: Palette },
+  { name: 'Shield', label: 'Shield (নিরাপত্তা)', icon: Shield },
+  { name: 'Headphones', label: 'Headphones (সাপোর্ট)', icon: Headphones },
+  { name: 'ShoppingBag', label: 'ShoppingBag (ই-কমার্স)', icon: ShoppingBag },
+  { name: 'FileText', label: 'FileText (ডকুমেন্টেশন)', icon: FileText },
+  { name: 'Briefcase', label: 'Briefcase (ব্যবসা)', icon: Briefcase },
+  { name: 'Sparkles', label: 'Sparkles (বিশেষ)', icon: Sparkles },
+];
+
+export const AdminServices: React.FC<AdminServicesProps> = ({ defaultTab = 'services', onNavigate }) => {
   const { showToast } = useNotification();
+  const [activeTab, setActiveTab] = useState<'services' | 'categories'>(defaultTab);
+
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [categories, setCategories] = useState<ServiceCategory[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // ফিল্টার ও সার্চ স্টেট
+  // সার্ভিসেস ফিল্টার ও সার্চ স্টেট
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
-  // এডিট ও নতুন সেবা যুক্ত করার মডাল
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  // সার্ভিস এডিট ও নতুন সেবা যুক্ত করার মডাল
+  const [isServiceModalOpen, setIsServiceModalOpen] = useState(false);
   const [editingService, setEditingService] = useState<Partial<ServiceItem> | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  // ডিলিট কনফার্মেশন মডাল
+  const [savingService, setSavingService] = useState(false);
   const [deletingService, setDeletingService] = useState<ServiceItem | null>(null);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [srvs, cats] = await Promise.all([api.getServices(), api.getCategories()]);
-        setServices(srvs);
-        setCategories(cats);
-      } catch {
-        showToast({ type: 'error', title: 'ত্রুটি', message: 'ক্যাটালগ লোড করা যায়নি' });
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, []);
+  // ক্যাটাগরি এডিট ও নতুন ক্যাটাগরি যুক্ত করার মডাল
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<Partial<ServiceCategory> | null>(null);
+  const [savingCategory, setSavingCategory] = useState(false);
+  const [deletingCategory, setDeletingCategory] = useState<ServiceCategory | null>(null);
 
-  const handleToggleActive = async (service: ServiceItem) => {
+  // সিংক ফাংশন: ডাটা লোড
+  const loadData = useCallback(async (isSilent = false) => {
+    if (!isSilent) setLoading(true);
+    else setRefreshing(true);
+
+    try {
+      const [srvs, cats] = await Promise.all([api.getServices(), api.getCategories()]);
+      setServices(srvs);
+      setCategories(cats);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'ক্যাটালগ লোড করা সম্ভব হয়নি';
+      showToast({ type: 'error', title: 'ত্রুটি', message: msg });
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // সুপাবেস রিয়েল-টাইম লিসেনার (Realtime Subscription):
+  // যখনই সুপাবেসের টেবিল এডিটরে কোনো ডাটা যুক্ত, এডিট বা ডিলিট হবে, সাথে সাথে অ্যাপ রিফ্রেশ হবে!
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) return;
+
+    const client = supabase;
+    const channel = client
+      .channel('admin-services-categories-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, () => {
+        loadData(true);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'service_categories' }, () => {
+        loadData(true);
+      })
+      .subscribe();
+
+    return () => {
+      client.removeChannel(channel);
+    };
+  }, [loadData]);
+
+  useEffect(() => {
+    if (defaultTab) {
+      setActiveTab(defaultTab);
+    }
+  }, [defaultTab]);
+
+  const handleTabChange = (tab: 'services' | 'categories') => {
+    setActiveTab(tab);
+    if (onNavigate) {
+      onNavigate(tab === 'categories' ? '/admin/categories' : '/admin/services');
+    }
+  };
+
+  // ----------------------------------------------------------------------
+  // সার্ভিস অ্যাকশনস
+  // ----------------------------------------------------------------------
+  const handleToggleActiveService = async (service: ServiceItem) => {
     try {
       const updated = await api.createOrUpdateService({ ...service, is_active: !service.is_active });
       setServices((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
       showToast({
         type: 'info',
-        title: 'ক্যাটালগ আপডেট',
+        title: 'অবস্থা হালনাগাদ',
         message: `${service.title_bn || service.title} এখন ${updated.is_active ? 'সক্রিয়' : 'নিষ্ক্রিয়'} করা হয়েছে।`,
       });
     } catch {
@@ -76,11 +156,16 @@ export const AdminServices: React.FC = () => {
       return;
     }
 
-    setSaving(true);
+    setSavingService(true);
     try {
-      // স্লাগ তৈরি বা আপডেট
       const baseTitle = editingService.title || editingService.title_bn || 'service';
-      const autoSlug = editingService.slug || baseTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `service-${Date.now()}`;
+      const autoSlug =
+        editingService.slug ||
+        baseTitle
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/(^-|-$)/g, '') ||
+        `service-${Date.now()}`;
 
       const payload: Partial<ServiceItem> = {
         ...editingService,
@@ -112,12 +197,13 @@ export const AdminServices: React.FC = () => {
         title: 'সেবা সংরক্ষিত হয়েছে',
         message: 'ক্যাটালগে সেবার বিবরণ সফলভাবে হালনাগাদ করা হয়েছে।',
       });
-      setIsModalOpen(false);
+      setIsServiceModalOpen(false);
       setEditingService(null);
-    } catch {
-      showToast({ type: 'error', title: 'ত্রুটি', message: 'সেবা সংরক্ষণ করা সম্ভব হয়নি' });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'সেবা সংরক্ষণ করা সম্ভব হয়নি';
+      showToast({ type: 'error', title: 'ত্রুটি', message: msg });
     } finally {
-      setSaving(false);
+      setSavingService(false);
     }
   };
 
@@ -132,12 +218,102 @@ export const AdminServices: React.FC = () => {
         message: `${deletingService.title_bn || deletingService.title} সফলভাবে ক্যাটালগ থেকে মুছে ফেলা হয়েছে।`,
       });
       setDeletingService(null);
-    } catch {
-      showToast({ type: 'error', title: 'ত্রুটি', message: 'সেবা মুছে ফেলা যায়নি' });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'সেবা মুছে ফেলা যায়নি';
+      showToast({ type: 'error', title: 'ত্রুটি', message: msg });
     }
   };
 
-  // ফিল্টার লজিক
+  // ----------------------------------------------------------------------
+  // ক্যাটাগরি অ্যাকশনস
+  // ----------------------------------------------------------------------
+  const handleToggleActiveCategory = async (category: ServiceCategory) => {
+    try {
+      const updated = await api.createOrUpdateCategory({ ...category, is_active: !category.is_active });
+      setCategories((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      showToast({
+        type: 'info',
+        title: 'ক্যাটাগরি অবস্থা হালনাগাদ',
+        message: `${category.name_bn || category.name} এখন ${updated.is_active ? 'সক্রিয়' : 'নিষ্ক্রিয়'}।`,
+      });
+    } catch {
+      showToast({ type: 'error', title: 'ত্রুটি', message: 'অবস্থা পরিবর্তন করা যায়নি' });
+    }
+  };
+
+  const handleSaveCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCategory?.name && !editingCategory?.name_bn) {
+      showToast({ type: 'error', title: 'ত্রুটি', message: 'ক্যাটাগরির নাম প্রদান করুন।' });
+      return;
+    }
+
+    setSavingCategory(true);
+    try {
+      const baseName = editingCategory.name || editingCategory.name_bn || 'category';
+      const autoSlug =
+        editingCategory.slug ||
+        baseName
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/(^-|-$)/g, '') ||
+        `cat-${Date.now()}`;
+
+      const payload: Partial<ServiceCategory> = {
+        ...editingCategory,
+        name: editingCategory.name || editingCategory.name_bn,
+        name_bn: editingCategory.name_bn || editingCategory.name,
+        slug: autoSlug,
+        icon: editingCategory.icon || 'Layers',
+        display_order: Number(editingCategory.display_order ?? categories.length + 1),
+        is_active: editingCategory.is_active ?? true,
+      };
+
+      const saved = await api.createOrUpdateCategory(payload);
+
+      setCategories((prev) => {
+        const idx = prev.findIndex((c) => c.id === saved.id);
+        if (idx >= 0) {
+          const clone = [...prev];
+          clone[idx] = saved;
+          return clone;
+        }
+        return [...prev, saved];
+      });
+
+      showToast({
+        type: 'success',
+        title: 'ক্যাটাগরি সংরক্ষিত',
+        message: `${saved.name_bn || saved.name} সফলভাবে হালনাগাদ হয়েছে।`,
+      });
+      setIsCategoryModalOpen(false);
+      setEditingCategory(null);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'ক্যাটাগরি সংরক্ষণ ব্যর্থ হয়েছে';
+      showToast({ type: 'error', title: 'ত্রুটি', message: msg });
+    } finally {
+      setSavingCategory(false);
+    }
+  };
+
+  const handleDeleteCategory = async () => {
+    if (!deletingCategory) return;
+    try {
+      await api.deleteCategory(deletingCategory.id);
+      setCategories((prev) => prev.filter((c) => c.id !== deletingCategory.id));
+      showToast({
+        type: 'success',
+        title: 'ক্যাটাগরি মুছে ফেলা হয়েছে',
+        message: `${deletingCategory.name_bn || deletingCategory.name} সফলভাবে মুছে ফেলা হয়েছে।`,
+      });
+      setDeletingCategory(null);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'ক্যাটাগরি মুছে ফেলা যায়নি';
+      showToast({ type: 'error', title: 'ত্রুটি', message: msg });
+    }
+  };
+
+  // ফিল্টার করা সার্ভিস
   const filteredServices = services.filter((s) => {
     if (selectedCategoryFilter !== 'all' && s.category_id !== selectedCategoryFilter) return false;
     if (statusFilter === 'active' && !s.is_active) return false;
@@ -151,222 +327,409 @@ export const AdminServices: React.FC = () => {
     return true;
   });
 
-  const activeCount = services.filter((s) => s.is_active).length;
-  const inactiveCount = services.filter((s) => !s.is_active).length;
+  const activeServicesCount = services.filter((s) => s.is_active).length;
+  const activeCategoriesCount = categories.filter((c) => c.is_active).length;
 
   return (
     <div className="space-y-6">
-      {/* হেডার ও অ্যাকশন বোতাম */}
-      <div className="border-b border-slate-200 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* শীর্ষ হেডার ও ট্যাব সুইচ */}
+      <div className="border-b border-slate-200 pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <span className="text-xs font-semibold uppercase tracking-wider text-indigo-600 block">
-            ক্যাটালগ ও সার্ভিস ম্যানেজমেন্ট
-          </span>
-          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">সেবা ও ক্যাটালগ নিয়ন্ত্রণ</h1>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-indigo-600 block">
+              ক্যাটালগ ও সার্ভিস ম্যানেজমেন্ট
+            </span>
+            {isSupabaseConfigured && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-mono font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                <Database className="w-3 h-3 text-emerald-600" />
+                <span>Supabase Live Sync</span>
+              </span>
+            )}
+          </div>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">সেবা ও ক্যাটাগরি নিয়ন্ত্রণ</h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            সকল ৯টি বিভাগের ডিজিটাল সেবার বিবরণ, নির্ধারিত মূল্য, রিভিশন পলিসি এবং ডেলিভারি সময় নির্ধারণ করুন।
+            সার্ভিস ক্যাটাগরি এবং ডিজিটাল সেবাসমূহ যোগ, সম্পাদনা ও Supabase ডাটাবেজের সাথে স্বয়ংক্রিয়ভাবে সিংক রাখুন।
           </p>
         </div>
 
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => loadData(true)}
+            disabled={refreshing}
+            className="p-2.5 text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-xs"
+            title="Supabase থেকে পুনরায় সিংক করুন"
+          >
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-indigo-600' : ''}`} />
+          </button>
+
+          {activeTab === 'services' ? (
+            <button
+              onClick={() => {
+                setEditingService({
+                  category_id: categories[0]?.id || '',
+                  delivery_days: 3,
+                  price: 1500,
+                  is_active: true,
+                  is_featured: false,
+                  revision_policy: 'সর্বোচ্চ ২ বার ফ্রি রিভিশন',
+                  requirements: 'প্রয়োজনীয় নথি বা বিস্তারিত তথ্য জমা দিন।',
+                });
+                setIsServiceModalOpen(true);
+              }}
+              className="px-4 py-2.5 text-xs sm:text-sm font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 shadow-xs"
+            >
+              <Plus className="w-4 h-4" />
+              <span>নতুন সেবা যুক্ত করুন</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                setEditingCategory({
+                  display_order: categories.length + 1,
+                  icon: 'Layers',
+                  is_active: true,
+                });
+                setIsCategoryModalOpen(true);
+              }}
+              className="px-4 py-2.5 text-xs sm:text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 shadow-xs"
+            >
+              <Plus className="w-4 h-4" />
+              <span>নতুন ক্যাটাগরি যুক্ত করুন</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* সেকশন সুইচ ট্যাব (সার্ভিস সমূহ বনাম সার্ভিস ক্যাটাগরি) */}
+      <div className="flex items-center gap-3 border-b border-slate-200">
         <button
-          onClick={() => {
-            setEditingService({
-              category_id: categories[0]?.id || '',
-              delivery_days: 3,
-              price: 1500,
-              is_active: true,
-              is_featured: false,
-              revision_policy: 'সর্বোচ্চ ২ বার ফ্রি রিভিশন',
-              requirements: 'প্রয়োজনীয় নথি বা বিস্তারিত তথ্য জমা দিন।',
-            });
-            setIsModalOpen(true);
-          }}
-          className="px-4 py-2.5 text-xs sm:text-sm font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 shadow-xs shrink-0"
+          onClick={() => handleTabChange('services')}
+          className={`pb-3 px-2 text-sm font-semibold flex items-center gap-2 relative transition-colors ${
+            activeTab === 'services'
+              ? 'text-indigo-600 border-b-2 border-indigo-600'
+              : 'text-slate-500 hover:text-slate-900'
+          }`}
         >
-          <Plus className="w-4 h-4" />
-          <span>নতুন সেবা যুক্ত করুন</span>
+          <Layers className="w-4 h-4" />
+          <span>সেবা সমূহ (Services)</span>
+          <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+            {toBengaliDigits(services.length)}
+          </span>
+        </button>
+
+        <button
+          onClick={() => handleTabChange('categories')}
+          className={`pb-3 px-2 text-sm font-semibold flex items-center gap-2 relative transition-colors ${
+            activeTab === 'categories'
+              ? 'text-indigo-600 border-b-2 border-indigo-600'
+              : 'text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <Tag className="w-4 h-4" />
+          <span>সার্ভিস ক্যাটাগরি (Categories)</span>
+          <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
+            {toBengaliDigits(categories.length)}
+          </span>
         </button>
       </div>
 
-      {/* KPI সারসংক্ষেপ */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
-            মোট সেবা
-          </span>
-          <div className="text-2xl font-bold text-slate-900 mt-1 font-mono">
-            {toBengaliDigits(services.length)}
+      {/* ================================================================= */}
+      {/* ট্যাব ১: সেবা সমূহ (Services Management) */}
+      {/* ================================================================= */}
+      {activeTab === 'services' && (
+        <div className="space-y-6">
+          {/* KPI সারসংক্ষেপ */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+                মোট সেবা
+              </span>
+              <div className="text-2xl font-bold text-slate-900 mt-1 font-mono">
+                {toBengaliDigits(services.length)}
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-emerald-200 bg-emerald-50/20 shadow-xs">
+              <span className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider block">
+                সক্রিয় সেবা
+              </span>
+              <div className="text-2xl font-bold text-emerald-800 mt-1 font-mono">
+                {toBengaliDigits(activeServicesCount)}
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+                নিষ্ক্রিয় সেবা
+              </span>
+              <div className="text-2xl font-bold text-slate-700 mt-1 font-mono">
+                {toBengaliDigits(services.length - activeServicesCount)}
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-indigo-200 bg-indigo-50/20 shadow-xs">
+              <span className="text-[11px] font-semibold text-indigo-700 uppercase tracking-wider block">
+                মোট ক্যাটাগরি
+              </span>
+              <div className="text-2xl font-bold text-indigo-800 mt-1 font-mono">
+                {toBengaliDigits(categories.length)}
+              </div>
+            </div>
+          </div>
+
+          {/* সার্চ ও ফিল্টার বার */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 flex flex-col md:flex-row items-center justify-between gap-3 shadow-xs">
+            <div className="relative flex-1 w-full">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+              <input
+                type="text"
+                placeholder="সেবার নাম বা বিবরণ দিয়ে খুঁজুন..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-hidden focus:bg-white"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+              <select
+                value={selectedCategoryFilter}
+                onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+                className="py-2 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-hidden"
+              >
+                <option value="all">সকল ক্যাটাগরি ({toBengaliDigits(categories.length)})</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name_bn || c.name}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')}
+                className="py-2 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-hidden"
+              >
+                <option value="all">সকল অবস্থা</option>
+                <option value="active">শুধুমাত্র সক্রিয়</option>
+                <option value="inactive">শুধুমাত্র নিষ্ক্রিয়</option>
+              </select>
+            </div>
+          </div>
+
+          {/* সেবা তালিকা টেবিল */}
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+            {loading ? (
+              <div className="p-8 text-center text-xs text-slate-500">ক্যাটালগ লোড হচ্ছে...</div>
+            ) : filteredServices.length === 0 ? (
+              <div className="p-12 text-center text-xs text-slate-500 space-y-3">
+                <Layers className="w-10 h-10 text-slate-300 mx-auto" />
+                <p>কোনো সেবা পাওয়া যায়নি। নতুন সেবা যুক্ত করুন বা ফিল্টার পরিবর্তন করুন।</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                    <tr>
+                      <th className="py-3 px-4 font-medium">সেবার নাম ও স্লাগ</th>
+                      <th className="py-3 px-4 font-medium">ক্যাটাগরি</th>
+                      <th className="py-3 px-4 font-medium text-right">স্ট্যান্ডার্ড ফি</th>
+                      <th className="py-3 px-4 font-medium text-right">ছাড়ের মূল্য</th>
+                      <th className="py-3 px-4 font-medium">ডেলিভারি</th>
+                      <th className="py-3 px-4 font-medium">রিভিশন পলিসি</th>
+                      <th className="py-3 px-4 font-medium text-center">অবস্থা</th>
+                      <th className="py-3 px-4 font-medium text-right">অ্যাকশন</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-700">
+                    {filteredServices.map((srv) => (
+                      <tr key={srv.id} className="hover:bg-slate-50/50">
+                        <td className="py-3.5 px-4 max-w-xs">
+                          <div className="font-semibold text-slate-900">{srv.title_bn || srv.title}</div>
+                          <div className="text-[11px] text-slate-400 font-mono mt-0.5">{srv.slug}</div>
+                          {srv.is_featured && (
+                            <span className="inline-flex items-center gap-1 text-[10px] text-indigo-600 font-semibold bg-indigo-50 px-1.5 py-0.5 rounded mt-1">
+                              <Sparkles className="w-2.5 h-2.5" />
+                              <span>ফিচার্ড সেবা</span>
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-600 whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1.5 bg-slate-100 px-2 py-0.5 rounded-md font-medium text-slate-700">
+                            <Tag className="w-3 h-3 text-slate-500" />
+                            {srv.category?.name_bn || srv.category?.name || 'ক্যাটাগরি'}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono font-medium whitespace-nowrap text-slate-900">
+                          {toBengaliCurrency(srv.price)}
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono text-slate-500 whitespace-nowrap">
+                          {srv.promotional_price ? (
+                            <span className="text-emerald-700 font-semibold">
+                              {toBengaliCurrency(srv.promotional_price)}
+                            </span>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 font-medium whitespace-nowrap">
+                          {toBengaliDigits(srv.delivery_days)} দিন
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-500 text-[11px] max-w-[150px] truncate">
+                          {srv.revision_policy || '২ বার ফ্রি রিভিশন'}
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          <button
+                            onClick={() => handleToggleActiveService(srv)}
+                            className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors ${
+                              srv.is_active
+                                ? 'bg-emerald-50 text-emerald-800 border border-emerald-300'
+                                : 'bg-slate-100 text-slate-600 border border-slate-300'
+                            }`}
+                          >
+                            {srv.is_active ? 'সক্রিয়' : 'নিষ্ক্রিয়'}
+                          </button>
+                        </td>
+                        <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => {
+                                setEditingService(srv);
+                                setIsServiceModalOpen(true);
+                              }}
+                              className="px-2.5 py-1 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-md transition-colors flex items-center gap-1"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                              <span>সম্পাদনা</span>
+                            </button>
+                            <button
+                              onClick={() => setDeletingService(srv)}
+                              className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-md transition-colors"
+                              title="সেবা মুছে ফেলুন"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
+      )}
 
-        <div className="bg-white p-4 rounded-xl border border-emerald-200 bg-emerald-50/20 shadow-xs">
-          <span className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider block">
-            সক্রিয় সেবা
-          </span>
-          <div className="text-2xl font-bold text-emerald-800 mt-1 font-mono">
-            {toBengaliDigits(activeCount)}
+      {/* ================================================================= */}
+      {/* ট্যাব ২: সার্ভিস ক্যাটাগরি (Category Management) */}
+      {/* ================================================================= */}
+      {activeTab === 'categories' && (
+        <div className="space-y-6">
+          {/* ক্যাটাগরি KPI */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+                মোট ক্যাটাগরি
+              </span>
+              <div className="text-2xl font-bold text-slate-900 mt-1 font-mono">
+                {toBengaliDigits(categories.length)}
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-emerald-200 bg-emerald-50/20 shadow-xs">
+              <span className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider block">
+                সক্রিয় ক্যাটাগরি
+              </span>
+              <div className="text-2xl font-bold text-emerald-800 mt-1 font-mono">
+                {toBengaliDigits(activeCategoriesCount)}
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-indigo-200 bg-indigo-50/20 shadow-xs">
+              <span className="text-[11px] font-semibold text-indigo-700 uppercase tracking-wider block">
+                ক্যাটালগ কভারেজ
+              </span>
+              <div className="text-sm font-semibold text-slate-800 mt-2">
+                সকল ক্যাটাগরিতে মোট {toBengaliDigits(services.length)}টি সক্রিয় সেবা রয়েছে
+              </div>
+            </div>
           </div>
-        </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
-            নিষ্ক্রিয় সেবা
-          </span>
-          <div className="text-2xl font-bold text-slate-700 mt-1 font-mono">
-            {toBengaliDigits(inactiveCount)}
-          </div>
-        </div>
+          {/* ক্যাটাগরি কার্ড লিস্ট */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {categories.map((cat) => {
+              const matchedCount = services.filter((s) => s.category_id === cat.id).length;
+              return (
+                <div
+                  key={cat.id}
+                  className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between hover:border-slate-300 transition-colors"
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                          <FolderTree className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-slate-900 text-sm">{cat.name_bn || cat.name}</h3>
+                          <span className="text-[11px] font-mono text-slate-400 block">{cat.slug}</span>
+                        </div>
+                      </div>
 
-        <div className="bg-white p-4 rounded-xl border border-indigo-200 bg-indigo-50/20 shadow-xs">
-          <span className="text-[11px] font-semibold text-indigo-700 uppercase tracking-wider block">
-            মোট বিভাগ
-          </span>
-          <div className="text-2xl font-bold text-indigo-800 mt-1 font-mono">
-            {toBengaliDigits(categories.length)}
-          </div>
-        </div>
-      </div>
-
-      {/* সার্চ ও ফিল্টার বার */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 flex flex-col md:flex-row items-center justify-between gap-3 shadow-xs">
-        <div className="relative flex-1 w-full">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-          <input
-            type="text"
-            placeholder="সেবার নাম বা বিবরণ দিয়ে খুঁজুন..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-hidden focus:bg-white"
-          />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-          <select
-            value={selectedCategoryFilter}
-            onChange={(e) => setSelectedCategoryFilter(e.target.value)}
-            className="py-2 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-hidden"
-          >
-            <option value="all">সকল বিভাগ ({toBengaliDigits(categories.length)})</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name_bn || c.name}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')}
-            className="py-2 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-hidden"
-          >
-            <option value="all">সকল অবস্থা</option>
-            <option value="active">শুধুমাত্র সক্রিয়</option>
-            <option value="inactive">শুধুমাত্র নিষ্ক্রিয়</option>
-          </select>
-        </div>
-      </div>
-
-      {/* সেবা তালিকা টেবিল */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
-        {loading ? (
-          <div className="p-8 text-center text-xs text-slate-500">ক্যাটালগ লোড হচ্ছে...</div>
-        ) : filteredServices.length === 0 ? (
-          <div className="p-12 text-center text-xs text-slate-500 space-y-3">
-            <Layers className="w-10 h-10 text-slate-300 mx-auto" />
-            <p>কোনো সেবা পাওয়া যায়নি। ফিল্টার পরিবর্তন করুন বা নতুন সেবা যুক্ত করুন।</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
-                <tr>
-                  <th className="py-3 px-4 font-medium">সেবার নাম ও স্লাগ</th>
-                  <th className="py-3 px-4 font-medium">বিভাগ</th>
-                  <th className="py-3 px-4 font-medium text-right">স্ট্যান্ডার্ড ফি</th>
-                  <th className="py-3 px-4 font-medium text-right">ছাড়ের মূল্য</th>
-                  <th className="py-3 px-4 font-medium">ডেলিভারি সময়</th>
-                  <th className="py-3 px-4 font-medium">রিভিশন পলিসি</th>
-                  <th className="py-3 px-4 font-medium text-center">অবস্থা</th>
-                  <th className="py-3 px-4 font-medium text-right">অ্যাকশন</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700">
-                {filteredServices.map((srv) => (
-                  <tr key={srv.id} className="hover:bg-slate-50/50">
-                    <td className="py-3.5 px-4 max-w-xs">
-                      <div className="font-semibold text-slate-900">{srv.title_bn || srv.title}</div>
-                      <div className="text-[11px] text-slate-400 font-mono mt-0.5">{srv.slug}</div>
-                      {srv.is_featured && (
-                        <span className="inline-flex items-center gap-1 text-[10px] text-indigo-600 font-semibold bg-indigo-50 px-1.5 py-0.5 rounded mt-1">
-                          <Sparkles className="w-2.5 h-2.5" />
-                          <span>ফিচার্ড সেবা</span>
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-600 whitespace-nowrap">
-                      {srv.category?.name_bn || srv.category?.name || 'বিভাগ'}
-                    </td>
-                    <td className="py-3.5 px-4 text-right font-mono font-medium whitespace-nowrap text-slate-900">
-                      {toBengaliCurrency(srv.price)}
-                    </td>
-                    <td className="py-3.5 px-4 text-right font-mono text-slate-500 whitespace-nowrap">
-                      {srv.promotional_price ? (
-                        <span className="text-emerald-700 font-semibold">
-                          {toBengaliCurrency(srv.promotional_price)}
-                        </span>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 font-medium whitespace-nowrap">
-                      {toBengaliDigits(srv.delivery_days)} কর্মদিবস
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-500 text-[11px] max-w-[150px] truncate">
-                      {srv.revision_policy || '২ বার ফ্রি রিভিশন'}
-                    </td>
-                    <td className="py-3.5 px-4 text-center">
                       <button
-                        onClick={() => handleToggleActive(srv)}
-                        className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors ${
-                          srv.is_active
+                        onClick={() => handleToggleActiveCategory(cat)}
+                        className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors ${
+                          cat.is_active
                             ? 'bg-emerald-50 text-emerald-800 border border-emerald-300'
                             : 'bg-slate-100 text-slate-600 border border-slate-300'
                         }`}
                       >
-                        {srv.is_active ? 'সক্রিয়' : 'নিষ্ক্রিয়'}
+                        {cat.is_active ? 'সক্রিয়' : 'নিষ্ক্রিয়'}
                       </button>
-                    </td>
-                    <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => {
-                            setEditingService(srv);
-                            setIsModalOpen(true);
-                          }}
-                          className="px-2.5 py-1 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-md transition-colors flex items-center gap-1"
-                        >
-                          <Edit2 className="w-3 h-3" />
-                          <span>সম্পাদনা</span>
-                        </button>
-                        <button
-                          onClick={() => setDeletingService(srv)}
-                          className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-md transition-colors"
-                          title="সেবা মুছে ফেলুন"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+                    </div>
 
-      {/* এডিট ও নতুন সেবা যুক্ত করার মডাল */}
-      {isModalOpen && editingService && (
+                    <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">
+                      {cat.description_bn || cat.description || 'কোনো বিবরণ যুক্ত করা হয়নি।'}
+                    </p>
+
+                    <div className="pt-2 flex items-center justify-between text-[11px] text-slate-500 border-t border-slate-100">
+                      <span className="font-mono">ক্রম: #{toBengaliDigits(cat.display_order || 0)}</span>
+                      <span className="font-medium bg-slate-100 px-2 py-0.5 rounded-full text-slate-700">
+                        {toBengaliDigits(matchedCount)}টি সেবা যুক্ত
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 mt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                    <button
+                      onClick={() => {
+                        setEditingCategory(cat);
+                        setIsCategoryModalOpen(true);
+                      }}
+                      className="px-3 py-1 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-md transition-colors flex items-center gap-1"
+                    >
+                      <Edit2 className="w-3 h-3" />
+                      <span>সম্পাদনা</span>
+                    </button>
+                    <button
+                      onClick={() => setDeletingCategory(cat)}
+                      className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-md transition-colors"
+                      title="ক্যাটাগরি মুছে ফেলুন"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================= */}
+      {/* সার্ভিস এডিট ও নতুন সেবা যুক্ত করার মডাল */}
+      {/* ================================================================= */}
+      {isServiceModalOpen && editingService && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
           <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-2xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-200">
@@ -374,7 +737,7 @@ export const AdminServices: React.FC = () => {
                 {editingService.id ? 'সেবার বিবরণ ও মূল্য সম্পাদনা' : 'নতুন সেবা যোগ করুন'}
               </h3>
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={() => setIsServiceModalOpen(false)}
                 className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
               >
                 <X className="w-5 h-5" />
@@ -400,7 +763,7 @@ export const AdminServices: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">সেবার বিভাগ</label>
+                  <label className="block font-semibold text-slate-700 mb-1">ক্যাটাগরি নির্বাচন</label>
                   <select
                     value={editingService.category_id || ''}
                     onChange={(e) => setEditingService({ ...editingService, category_id: e.target.value })}
@@ -478,15 +841,13 @@ export const AdminServices: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">থাম্বনেইল ইমেজ ইউআরএল (ঐচ্ছিক)</label>
+                  <label className="block font-semibold text-slate-700 mb-1">কাস্টম স্লাগ (ঐচ্ছিক)</label>
                   <input
-                    type="url"
-                    placeholder="https://..."
-                    value={editingService.thumbnail || ''}
-                    onChange={(e) =>
-                      setEditingService({ ...editingService, thumbnail: e.target.value })
-                    }
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden"
+                    type="text"
+                    placeholder="স্বয়ংক্রিয়ভাবে তৈরি হবে..."
+                    value={editingService.slug || ''}
+                    onChange={(e) => setEditingService({ ...editingService, slug: e.target.value })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg font-mono focus:outline-hidden"
                   />
                 </div>
               </div>
@@ -550,17 +911,17 @@ export const AdminServices: React.FC = () => {
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={() => setIsServiceModalOpen(false)}
                   className="px-4 py-2 font-medium text-slate-600 hover:text-slate-800"
                 >
                   বাতিল
                 </button>
                 <button
                   type="submit"
-                  disabled={saving}
+                  disabled={savingService}
                   className="px-5 py-2 font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:opacity-50 transition-colors"
                 >
-                  {saving ? 'সংরক্ষণ করা হচ্ছে...' : 'সংরক্ষণ করুন'}
+                  {savingService ? 'সংরক্ষণ করা হচ্ছে...' : 'সংরক্ষণ করুন'}
                 </button>
               </div>
             </form>
@@ -568,7 +929,155 @@ export const AdminServices: React.FC = () => {
         </div>
       )}
 
-      {/* ডিলিট কনফার্মেশন মডাল */}
+      {/* ================================================================= */}
+      {/* ক্যাটাগরি এডিট ও নতুন ক্যাটাগরি যুক্ত করার মডাল */}
+      {/* ================================================================= */}
+      {isCategoryModalOpen && editingCategory && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-lg w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <h3 className="text-base font-bold text-slate-900">
+                {editingCategory.id ? 'ক্যাটাগরি সম্পাদনা' : 'নতুন ক্যাটাগরি তৈরি করুন'}
+              </h3>
+              <button
+                onClick={() => setIsCategoryModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCategory} className="space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    ক্যাটাগরির নাম (বাংলা) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="যেমন: ওয়েব ডেভেলপমেন্ট"
+                    value={editingCategory.name_bn || ''}
+                    onChange={(e) =>
+                      setEditingCategory({
+                        ...editingCategory,
+                        name_bn: e.target.value,
+                        name: editingCategory.name || e.target.value,
+                      })
+                    }
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    ক্যাটাগরির নাম (ইংরেজি) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Web Development"
+                    value={editingCategory.name || ''}
+                    onChange={(e) => setEditingCategory({ ...editingCategory, name: e.target.value })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">স্লাগ (URL Slug)</label>
+                  <input
+                    type="text"
+                    placeholder="স্বয়ংক্রিয়ভাবে তৈরি হবে..."
+                    value={editingCategory.slug || ''}
+                    onChange={(e) => setEditingCategory({ ...editingCategory, slug: e.target.value })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg font-mono focus:outline-hidden"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">ডিসপ্লে ক্রম (Order)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={editingCategory.display_order ?? 1}
+                    onChange={(e) =>
+                      setEditingCategory({ ...editingCategory, display_order: Number(e.target.value) })
+                    }
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg font-mono focus:outline-hidden"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">আইকন নির্বাচন</label>
+                <select
+                  value={editingCategory.icon || 'Layers'}
+                  onChange={(e) => setEditingCategory({ ...editingCategory, icon: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden"
+                >
+                  {AVAILABLE_ICONS.map((ic) => (
+                    <option key={ic.name} value={ic.name}>
+                      {ic.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">ক্যাটাগরি বিবরণ (বাংলা)</label>
+                <textarea
+                  rows={2}
+                  placeholder="এই ক্যাটাগরিতে কী কী সেবা পাওয়া যায় তার সংক্ষিপ্ত বিবরণ..."
+                  value={editingCategory.description_bn || ''}
+                  onChange={(e) =>
+                    setEditingCategory({
+                      ...editingCategory,
+                      description_bn: e.target.value,
+                      description: editingCategory.description || e.target.value,
+                    })
+                  }
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden"
+                />
+              </div>
+
+              <div className="pt-2">
+                <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={editingCategory.is_active ?? true}
+                    onChange={(e) => setEditingCategory({ ...editingCategory, is_active: e.target.checked })}
+                    className="rounded text-indigo-600 focus:ring-0"
+                  />
+                  <span>ক্যাটাগরিটি সক্রিয় রাখুন (কাস্টমাররা দেখতে পাবে)</span>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setIsCategoryModalOpen(false)}
+                  className="px-4 py-2 font-medium text-slate-600 hover:text-slate-800"
+                >
+                  বাতিল
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingCategory}
+                  className="px-5 py-2 font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                >
+                  {savingCategory ? 'সংরক্ষণ হচ্ছে...' : 'ক্যাটাগরি সংরক্ষণ করুন'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================= */}
+      {/* সার্ভিস ডিলিট কনফার্মেশন মডাল */}
+      {/* ================================================================= */}
       {deletingService && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
           <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-md w-full p-6 space-y-4">
@@ -579,7 +1088,7 @@ export const AdminServices: React.FC = () => {
               <h3 className="text-base font-bold text-slate-900">সেবাটি মুছে ফেলতে চান?</h3>
               <p className="text-xs text-slate-500 mt-1 leading-relaxed">
                 <strong className="text-slate-800">{deletingService.title_bn || deletingService.title}</strong>{' '}
-                ক্যাটালগ থেকে মুছে ফেলা হবে। পূর্বের সম্পন্ন হওয়া অর্ডারে এর কোনো নেতিবাচক প্রভাব পড়বে না।
+                ক্যাটালগ ও Supabase ডাটাবেজ থেকে মুছে ফেলা হবে।
               </p>
             </div>
 
@@ -595,6 +1104,48 @@ export const AdminServices: React.FC = () => {
                 className="px-4 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors"
               >
                 মুছে ফেলুন
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================= */}
+      {/* ক্যাটাগরি ডিলিট কনফার্মেশন মডাল */}
+      {/* ================================================================= */}
+      {deletingCategory && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-md w-full p-6 space-y-4">
+            <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <div className="text-center">
+              <h3 className="text-base font-bold text-slate-900">ক্যাটাগরি মুছে ফেলতে চান?</h3>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                <strong className="text-slate-800">{deletingCategory.name_bn || deletingCategory.name}</strong>{' '}
+                ক্যাটাগরিটি মুছে ফেলা হবে।
+              </p>
+              {services.some((s) => s.category_id === deletingCategory.id) && (
+                <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-[11px] text-left">
+                  ⚠️ <strong>সতর্কতা:</strong> এই ক্যাটাগরিতে{' '}
+                  {toBengaliDigits(services.filter((s) => s.category_id === deletingCategory.id).length)}টি সেবা রয়েছে।
+                  ক্যাটাগরি মুছে ফেলার আগে সেবাগুলো স্থানান্তর করুন অথবা মুছে ফেলুন।
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                onClick={() => setDeletingCategory(null)}
+                className="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-800"
+              >
+                বাতিল
+              </button>
+              <button
+                onClick={handleDeleteCategory}
+                className="px-4 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors"
+              >
+                ক্যাটাগরি মুছে ফেলুন
               </button>
             </div>
           </div>

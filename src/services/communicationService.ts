@@ -230,7 +230,16 @@ export const communicationService = {
         }),
       });
 
-      const dispatchResult = await res.json();
+      let dispatchResult: { success?: boolean; error?: string; unconfigured?: boolean } = { success: false, error: 'ডেলিভারি ব্যর্থ' };
+      try {
+        const text = await res.text();
+        if (text) {
+          dispatchResult = JSON.parse(text);
+        }
+      } catch {
+        console.warn('Non-JSON response from /api/email/dispatch');
+      }
+
       const isSent = dispatchResult.success === true;
 
       if (isSupabaseConfigured && supabase && recordId) {
@@ -309,7 +318,13 @@ export const communicationService = {
           text: item.body_text,
         }),
       });
-      const data = await res.json();
+      let data: any = { success: false, error: 'ডেলিভারি ব্যর্থ' };
+      try {
+        const text = await res.text();
+        if (text) data = JSON.parse(text);
+      } catch {
+        // non-JSON
+      }
       const isSent = data.success === true;
 
       if (isSupabaseConfigured && supabase) {
@@ -352,7 +367,8 @@ export const communicationService = {
     try {
       const res = await fetch('/api/email/status');
       if (res.ok) {
-        return await res.json();
+        const text = await res.text();
+        if (text) return JSON.parse(text);
       }
     } catch {
       // offline or mock
@@ -402,7 +418,15 @@ export const communicationService = {
         }),
       });
 
-      return await res.json();
+      const text = await res.text();
+      if (!text) {
+        return { success: false, error: 'সার্ভার থেকে কোনো উত্তর পাওয়া যায়নি।' };
+      }
+      try {
+        return JSON.parse(text);
+      } catch {
+        return { success: false, error: `সার্ভার অপ্রত্যাশিত উত্তর দিয়েছে (স্ট্যাটাস: ${res.status})। Vercel Functions সক্রিয় আছে কি না নিশ্চিত করুন।` };
+      }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : 'টেস্ট ইমেইল পাঠানো সম্ভব হয়নি';
       return { success: false, error: errMsg };

@@ -49,7 +49,10 @@ export const api = {
         .from('service_categories')
         .select('*')
         .order('display_order', { ascending: true });
-      if (!error && data && data.length > 0) return data as ServiceCategory[];
+      if (!error && data) {
+        setLS('categories', data);
+        return data as ServiceCategory[];
+      }
     }
     return getLS<ServiceCategory[]>('categories', INITIAL_CATEGORIES);
   },
@@ -59,15 +62,95 @@ export const api = {
     return categories.find((c) => c.slug === slug) || null;
   },
 
+  async createOrUpdateCategory(cat: Partial<ServiceCategory>): Promise<ServiceCategory> {
+    const baseTitle = cat.name || cat.name_bn || 'category';
+    const autoSlug = cat.slug || baseTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `category-${Date.now()}`;
+
+    const payload: Partial<ServiceCategory> = {
+      ...cat,
+      name: cat.name || cat.name_bn || 'New Category',
+      name_bn: cat.name_bn || cat.name || 'নতুন ক্যাটাগরি',
+      slug: autoSlug,
+      description: cat.description || '',
+      description_bn: cat.description_bn || '',
+      icon: cat.icon || 'Layers',
+      display_order: Number(cat.display_order ?? 0),
+      is_active: cat.is_active ?? true,
+      cover_image: cat.cover_image || null,
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase
+        .from('service_categories')
+        .upsert(payload)
+        .select()
+        .single();
+      if (error) throw new Error(error.message);
+      if (data) {
+        await this.getCategories(); // Refresh local cache
+        return data as ServiceCategory;
+      }
+    }
+
+    const current = getLS<ServiceCategory[]>('categories', INITIAL_CATEGORIES);
+    const idx = current.findIndex((c) => c.id === cat.id);
+    let updated: ServiceCategory;
+    if (idx >= 0) {
+      updated = { ...current[idx], ...payload } as ServiceCategory;
+      current[idx] = updated;
+    } else {
+      updated = {
+        id: cat.id || `cat_${Date.now()}`,
+        created_at: new Date().toISOString(),
+        ...payload,
+      } as ServiceCategory;
+      current.push(updated);
+    }
+    setLS('categories', current);
+    return updated;
+  },
+
+  async deleteCategory(id: string): Promise<boolean> {
+    if (isSupabaseConfigured && supabase) {
+      // Check if services are tied to this category
+      const { count } = await supabase
+        .from('services')
+        .select('id', { count: 'exact', head: true })
+        .eq('category_id', id);
+
+      if (count && count > 0) {
+        throw new Error(`এই ক্যাটাগরিতে ${count}টি সেবা সক্রিয় রয়েছে। ক্যাটাগরি মুছে ফেলার আগে সেবাগুলো মুছে ফেলুন বা অন্য ক্যাটাগরিতে স্থানান্তর করুন।`);
+      }
+
+      const { error } = await supabase.from('service_categories').delete().eq('id', id);
+      if (error) throw new Error(error.message);
+      await this.getCategories();
+      return true;
+    }
+
+    const current = getLS<ServiceCategory[]>('categories', INITIAL_CATEGORIES);
+    const services = getLS<ServiceItem[]>('services', INITIAL_SERVICES);
+    const hasServices = services.some((s) => s.category_id === id);
+    if (hasServices) {
+      throw new Error('এই ক্যাটাগরিতে সেবা বিদ্যমান রয়েছে। অনুগ্রহ করে প্রথমে সেবাগুলো মুছে ফেলুন।');
+    }
+    const filtered = current.filter((c) => c.id !== id);
+    setLS('categories', filtered);
+    return true;
+  },
+
   // -------------------------------------------------------------
   // SERVICES
   // -------------------------------------------------------------
   async getServices(categoryId?: string): Promise<ServiceItem[]> {
     if (isSupabaseConfigured && supabase) {
-      let query = supabase.from('services').select('*, category:service_categories(*)');
+      let query = supabase.from('services').select('*, category:service_categories(*)').order('created_at', { ascending: false });
       if (categoryId) query = query.eq('category_id', categoryId);
       const { data, error } = await query;
-      if (!error && data && data.length > 0) return data as ServiceItem[];
+      if (!error && data) {
+        setLS('services', data);
+        return data as ServiceItem[];
+      }
     }
     const local = getLS<ServiceItem[]>('services', INITIAL_SERVICES);
     const categories = await this.getCategories();
@@ -97,15 +180,27 @@ export const api = {
   },
 
   async createOrUpdateService(service: Partial<ServiceItem>): Promise<ServiceItem> {
+    // Strip joined relation 'category' before upserting to Postgres table
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { category, ...cleanService } = service as Record<string, unknown>;
+
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase.from('services').upsert(service).select().single();
-      if (!error && data) return data as ServiceItem;
+      const { data, error } = await supabase
+        .from('services')
+        .upsert(cleanService)
+        .select('*, category:service_categories(*)')
+        .single();
+      if (error) throw new Error(error.message);
+      if (data) {
+        await this.getServices();
+        return data as ServiceItem;
+      }
     }
     const current = getLS<ServiceItem[]>('services', INITIAL_SERVICES);
     const index = current.findIndex((s) => s.id === service.id);
     let updated: ServiceItem;
     if (index >= 0) {
-      updated = { ...current[index], ...service, updated_at: new Date().toISOString() } as ServiceItem;
+      updated = { ...current[index], ...cleanService, updated_at: new Date().toISOString() } as ServiceItem;
       current[index] = updated;
     } else {
       updated = {
@@ -136,7 +231,9 @@ export const api = {
   async deleteService(id: string): Promise<boolean> {
     if (isSupabaseConfigured && supabase) {
       const { error } = await supabase.from('services').delete().eq('id', id);
-      if (!error) return true;
+      if (error) throw new Error(error.message);
+      await this.getServices();
+      return true;
     }
     const current = getLS<ServiceItem[]>('services', INITIAL_SERVICES);
     const filtered = current.filter((s) => s.id !== id);

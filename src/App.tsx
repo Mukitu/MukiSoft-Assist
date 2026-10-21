@@ -121,9 +121,9 @@ function AppRouter() {
     if (isAdminDashboard) {
       return (
         <ProtectedRoute currentPath={currentUrl} onNavigate={navigate} requireAdmin>
-          {pathname === '/admin/services' ? (
+          {pathname === '/admin/services' || pathname === '/admin/categories' ? (
             <AdminDashboardLayout currentPath={pathname} onNavigate={navigate}>
-              <AdminServices />
+              <AdminServices defaultTab={pathname === '/admin/categories' ? 'categories' : 'services'} onNavigate={navigate} />
             </AdminDashboardLayout>
           ) : pathname === '/admin/deposits' ? (
             <AdminDashboardLayout currentPath={pathname} onNavigate={navigate}>
