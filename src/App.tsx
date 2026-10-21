@@ -43,7 +43,9 @@ import { AdminUsers } from './pages/admin/AdminUsers';
 import { AdminAuditLogs } from './pages/admin/AdminAuditLogs';
 import { AdminCommunication } from './pages/admin/AdminCommunication';
 import { AdminSettings } from './pages/admin/AdminSettings';
+import { AdminLiveChat } from './pages/admin/AdminLiveChat';
 import { ResetPassword } from './pages/public/ResetPassword';
+import { LiveChatWidget } from './components/chat/LiveChatWidget';
 
 function AppRouter() {
   const [currentUrl, setCurrentUrl] = useState<string>(() => {
@@ -121,7 +123,11 @@ function AppRouter() {
     if (isAdminDashboard) {
       return (
         <ProtectedRoute currentPath={currentUrl} onNavigate={navigate} requireAdmin>
-          {pathname === '/admin/services' || pathname === '/admin/categories' ? (
+          {pathname === '/admin/live-chat' ? (
+            <AdminDashboardLayout currentPath={pathname} onNavigate={navigate}>
+              <AdminLiveChat />
+            </AdminDashboardLayout>
+          ) : pathname === '/admin/services' || pathname === '/admin/categories' ? (
             <AdminDashboardLayout currentPath={pathname} onNavigate={navigate}>
               <AdminServices defaultTab={pathname === '/admin/categories' ? 'categories' : 'services'} onNavigate={navigate} />
             </AdminDashboardLayout>
@@ -225,6 +231,7 @@ function AppRouter() {
   return (
     <div className="min-h-screen flex flex-col font-sans">
       {renderContent()}
+      <LiveChatWidget onNavigate={navigate} />
     </div>
   );
 }

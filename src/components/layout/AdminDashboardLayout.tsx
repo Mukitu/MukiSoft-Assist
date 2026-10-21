@@ -16,6 +16,7 @@ import {
   HelpCircle,
   Mail,
   Tag,
+  MessageCircle,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { StatusBadge } from '../common/StatusBadge';
@@ -70,6 +71,7 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
 
   const navItems = [
     { label: 'প্রশাসনিক ড্যাশবোর্ড', path: '/admin', icon: LayoutDashboard },
+    { label: 'লাইভ সাপোর্ট চ্যাট', path: '/admin/live-chat', icon: MessageCircle },
     { label: 'সেবা সমূহ', path: '/admin/services', icon: Layers },
     { label: 'সার্ভিস ক্যাটাগরি', path: '/admin/categories', icon: Tag },
     { label: 'টাকা জমার অনুরোধ যাচাই', path: '/admin/deposits', icon: CheckSquare },
@@ -82,6 +84,7 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
 
   const getBreadcrumbs = () => {
     if (currentPath === '/admin') return ['প্রশাসনিক কনসোল', 'সারসংক্ষেপ'];
+    if (currentPath === '/admin/live-chat') return ['প্রশাসনিক কনসোল', 'লাইভ সাপোর্ট চ্যাট'];
     if (currentPath === '/admin/services') return ['প্রশাসনিক কনসোল', 'সেবা সমূহ'];
     if (currentPath === '/admin/categories') return ['প্রশাসনিক কনসোল', 'সার্ভিস ক্যাটাগরি'];
     if (currentPath === '/admin/deposits') return ['প্রশাসনিক কনসোল', 'টাকা জমার অনুরোধ যাচাই'];

@@ -303,3 +303,47 @@ export interface PlatformSettings {
   payment_methods: Record<string, PaymentMethodItem>;
   communication?: CommunicationSettings;
 }
+
+export type LiveChatStatus = 'ai_mode' | 'waiting_for_agent' | 'agent_connected' | 'closed';
+export type LiveChatSender = 'customer' | 'ai' | 'admin' | 'system';
+
+export interface LiveChatRecommendedService {
+  id: string;
+  title: string;
+  title_bn: string;
+  slug: string;
+  price: number;
+  promotional_price?: number | null;
+  delivery_days: number;
+}
+
+export interface LiveChatMessage {
+  id: string;
+  session_id: string;
+  sender_type: LiveChatSender;
+  sender_name: string;
+  message: string;
+  metadata?: {
+    services?: LiveChatRecommendedService[];
+    action_url?: string;
+    action_label?: string;
+  };
+  created_at: string;
+}
+
+export interface LiveChatSession {
+  id: string;
+  session_token: string;
+  customer_name: string;
+  customer_phone: string;
+  user_id?: string | null;
+  status: LiveChatStatus;
+  assigned_admin_id?: string | null;
+  assigned_admin_name?: string | null;
+  created_at: string;
+  updated_at: string;
+  closed_at?: string | null;
+  last_message?: string;
+  unread_admin_count?: number;
+  unread_customer_count?: number;
+}

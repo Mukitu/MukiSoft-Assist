@@ -1404,6 +1404,56 @@ CREATE POLICY "Admins can manage email outbox"
     USING (public.is_admin());
 
 -- ==============================================================================
+-- LIVE CHAT ARCHITECTURE (AI + MULTI-ADMIN HAND-OFF)
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.live_chat_sessions (
+    id TEXT PRIMARY KEY,
+    session_token TEXT NOT NULL,
+    customer_name TEXT NOT NULL,
+    customer_phone TEXT NOT NULL,
+    user_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'ai_mode', -- 'ai_mode', 'waiting_for_agent', 'agent_connected', 'closed'
+    assigned_admin_id TEXT,
+    assigned_admin_name TEXT,
+    last_message TEXT,
+    unread_admin_count INT NOT NULL DEFAULT 0,
+    unread_customer_count INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    closed_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS public.live_chat_messages (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES public.live_chat_sessions(id) ON DELETE CASCADE,
+    sender_type VARCHAR(20) NOT NULL, -- 'customer', 'ai', 'admin', 'system'
+    sender_name TEXT NOT NULL,
+    message TEXT NOT NULL,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+CREATE INDEX IF NOT EXISTS idx_livechat_sessions_status ON public.live_chat_sessions(status);
+CREATE INDEX IF NOT EXISTS idx_livechat_messages_session ON public.live_chat_messages(session_id);
+
+ALTER TABLE public.live_chat_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.live_chat_messages ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Anyone can create and view live chat sessions" ON public.live_chat_sessions;
+CREATE POLICY "Anyone can create and view live chat sessions"
+    ON public.live_chat_sessions FOR ALL
+    USING (true);
+
+DROP POLICY IF EXISTS "Anyone can create and view live chat messages" ON public.live_chat_messages;
+CREATE POLICY "Anyone can create and view live chat messages"
+    ON public.live_chat_messages FOR ALL
+    USING (true);
+
+-- Enable Supabase Realtime for live chat tables
+ALTER PUBLICATION supabase_realtime ADD TABLE public.live_chat_sessions;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.live_chat_messages;
+
+-- ==============================================================================
 -- BOOTSTRAP INITIAL SUPER ADMIN INSTRUCTION
 -- ==============================================================================
 -- To promote an existing user account to super_admin safely after signing up:

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Sliders, Save, CheckCircle2, Lock, ShieldCheck, Phone, Mail, Building, CreditCard } from 'lucide-react';
+import { Sliders, Save, CheckCircle2, Lock, ShieldCheck, Phone, Mail, Building, CreditCard, Bot, Key, Eye, EyeOff, Sparkles } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import { api } from '../../services/api';
@@ -17,6 +17,12 @@ export const AdminSettings: React.FC = () => {
   const [parentCompany, setParentCompany] = useState('');
   const [supportEmail, setSupportEmail] = useState('');
   const [supportPhone, setSupportPhone] = useState('');
+
+  // AI ও Grok API সেটিংস
+  const [grokApiKey, setGrokApiKey] = useState('');
+  const [grokModel, setGrokModel] = useState('grok-beta');
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [testingGrok, setTestingGrok] = useState(false);
 
   // পেমেন্ট তথ্য
   const [bkashNumber, setBkashNumber] = useState('');
@@ -45,10 +51,60 @@ export const AdminSettings: React.FC = () => {
         setBankName(s.payment_methods?.bank?.bank_name || s.payment_methods?.Bank_Transfer?.bank_name || 'The City Bank PLC');
         setBankRouting(s.payment_methods?.bank?.routing || s.payment_methods?.Bank_Transfer?.routing || '085272183');
       }
+
+      const savedGrok = localStorage.getItem('mukisoft_grok_key') || '';
+      const defaultModel = savedGrok.startsWith('gsk_') ? 'openai/gpt-oss-120b' : 'openai/gpt-oss-120b';
+      const savedGrokModel = localStorage.getItem('mukisoft_grok_model') || defaultModel;
+      setGrokApiKey(savedGrok);
+      setGrokModel(savedGrokModel);
+
+      // Check central server AI key
+      try {
+        const keyStatusRes = await fetch('/api/admin/ai-key-status');
+        const keyStatus = await keyStatusRes.json();
+        if (keyStatus.configured && !savedGrok && keyStatus.maskedKey) {
+          setGrokApiKey(keyStatus.maskedKey);
+        }
+      } catch {
+        // ignore
+      }
+
       setLoading(false);
     }
     load();
   }, []);
+
+  const handleTestGrokConnection = async () => {
+    setTestingGrok(true);
+    try {
+      const res = await fetch('/api/chat/grok', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: 'Hello test AI connection',
+          customApiKey: grokApiKey.includes('...') ? undefined : grokApiKey.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast({
+          type: 'success',
+          title: 'MukiSoft AI সহকারী কানেকশন সফল!',
+          message: `AI সহকারী সার্ভারের সাথে সফলভাবে সংযোগ স্থাপিত হয়েছে। সক্রিয় মডেল: ${data.modelUsed || 'স্বয়ংক্রিয় সর্বোত্তম'}`,
+        });
+      } else {
+        showToast({
+          type: 'error',
+          title: 'AI কানেকশন ত্রুটি',
+          message: data.error || data.reply || 'API কি ভ্যালিডেশন ব্যর্থ হয়েছে। অনুগ্রহ করে কি সঠিক কি না যাচাই করুন।',
+        });
+      }
+    } catch {
+      showToast({ type: 'error', title: 'ত্রুটি', message: 'সার্ভারে সংযোগ করা সম্ভব হয়নি।' });
+    } finally {
+      setTestingGrok(false);
+    }
+  };
 
   if (!isSuperAdmin) {
     return (
@@ -68,6 +124,20 @@ export const AdminSettings: React.FC = () => {
     setIsSaving(true);
 
     try {
+      if (grokApiKey.trim() && !grokApiKey.includes('...')) {
+        localStorage.setItem('mukisoft_grok_key', grokApiKey.trim());
+        localStorage.setItem('mukisoft_grok_model', grokModel);
+
+        await fetch('/api/admin/set-ai-key', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            apiKey: grokApiKey.trim(),
+            model: grokModel,
+          }),
+        });
+      }
+
       const updated = await api.updateSettings(
         {
           general: {
@@ -222,7 +292,76 @@ export const AdminSettings: React.FC = () => {
             </div>
           </div>
 
-          {/* ২. পেমেন্ট গেটওয়ে তথ্য */}
+          {/* ২. MukiSoft AI সহকারী কনফিগারেশন */}
+          <div className="border-t border-slate-100 pt-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <div className="flex items-center gap-2 text-slate-900">
+                <Bot className="w-4 h-4 text-indigo-600" />
+                <h3 className="font-bold text-sm">MukiSoft AI সহকারী কনফিগারেশন</h3>
+              </div>
+              <span
+                className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
+                  grokApiKey
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    : 'bg-amber-50 text-amber-700 border border-amber-200'
+                }`}
+              >
+                {grokApiKey ? 'API Key সক্রিয়' : 'API Key প্রয়োজন'}
+              </span>
+            </div>
+
+            <p className="text-xs text-slate-500 leading-relaxed">
+              গ্রাহক লাইভ চ্যাটে সমস্যা লিখলে MukiSoft AI সহকারী স্বয়ংক্রিয়ভাবে আমাদের ওয়েবসাইটের ক্যাটালগ ও ডাটাবেজ বিশ্লেষণ করে সঠিক পরামর্শ ও লিঙ্কসহ উত্তর দেবে। আপনার সিক্রেট API Key এখানে পেস্ট করে সংরক্ষণ করুন (মডেল স্বয়ংক্রিয়ভাবে সর্বোত্তম কনফিগারেশনে সেট হয়ে যাবে)।
+            </p>
+
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">
+                MukiSoft AI Secret API Key
+              </label>
+              <div className="relative">
+                <Key className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                <input
+                  type={showApiKey ? 'text' : 'password'}
+                  placeholder="আপনার API Key এখানে পেস্ট করুন..."
+                  value={grokApiKey}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setGrokApiKey(val);
+                    if (val.trim().startsWith('gsk_')) {
+                      setGrokModel('llama-3.3-70b-versatile');
+                    } else if (val.trim().startsWith('xai-')) {
+                      setGrokModel('grok-beta');
+                    }
+                  }}
+                  className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-lg font-mono text-xs focus:outline-hidden focus:bg-white focus:border-indigo-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="absolute right-3 top-3 text-slate-400 hover:text-slate-600"
+                >
+                  {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-[11px] text-slate-400">
+                টিপ: AI সহকারী মডেল ব্যাকএন্ড থেকে স্বয়ংক্রিয়ভাবে সর্বোত্তম কনফিগারেশনে পরিচালিত হয়।
+              </span>
+              <button
+                type="button"
+                onClick={handleTestGrokConnection}
+                disabled={testingGrok || !grokApiKey.trim()}
+                className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50 transition-colors"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>{testingGrok ? 'যাচাই করা হচ্ছে...' : 'কানেকশন টেস্ট করুন'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* ৩. পেমেন্ট গেটওয়ে তথ্য */}
           <div className="border-t border-slate-100 pt-5 space-y-4">
             <div className="flex items-center gap-2 text-slate-900 border-b border-slate-100 pb-2">
               <CreditCard className="w-4 h-4 text-emerald-600" />
