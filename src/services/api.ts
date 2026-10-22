@@ -1027,44 +1027,134 @@ export const api = {
     };
   },
 
-  async getUserOrders(userId: string): Promise<Order[]> {
+  async enrichOrders(rawOrders: any[]): Promise<Order[]> {
+    if (!rawOrders || rawOrders.length === 0) return [];
+
+    const serviceIds = Array.from(new Set(rawOrders.map((o) => o.service_id).filter(Boolean)));
+    const userIds = Array.from(new Set(rawOrders.map((o) => o.user_id).filter(Boolean)));
+    const orderIds = Array.from(new Set(rawOrders.map((o) => o.id).filter(Boolean)));
+
+    const servicesMap = new Map<string, ServiceItem>();
+    const profilesMap = new Map<string, Profile>();
+    const deliverablesMap = new Map<string, OrderDeliverable[]>();
+    const eventsMap = new Map<string, OrderEvent[]>();
+
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*, service:services(*), deliverables:order_deliverables(*), events:order_events(*)')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
-      if (!error && data) return data as Order[];
+      try {
+        if (serviceIds.length > 0) {
+          const { data: srvs } = await supabase.from('services').select('*').in('id', serviceIds);
+          if (srvs) srvs.forEach((s: ServiceItem) => servicesMap.set(s.id, s));
+        }
+        if (userIds.length > 0) {
+          const { data: profs } = await supabase.from('profiles').select('*').in('id', userIds);
+          if (profs) profs.forEach((p: Profile) => profilesMap.set(p.id, p));
+        }
+        if (orderIds.length > 0) {
+          const { data: delivs } = await supabase.from('order_deliverables').select('*').in('order_id', orderIds);
+          if (delivs) {
+            delivs.forEach((d: OrderDeliverable) => {
+              const list = deliverablesMap.get(d.order_id) || [];
+              list.push(d);
+              deliverablesMap.set(d.order_id, list);
+            });
+          }
+          const { data: evts } = await supabase.from('order_events').select('*').in('order_id', orderIds);
+          if (evts) {
+            evts.forEach((e: OrderEvent) => {
+              const list = eventsMap.get(e.order_id) || [];
+              list.push(e);
+              eventsMap.set(e.order_id, list);
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('enrichOrders warning:', err);
+      }
     }
-    const orders = getLS<Order[]>('orders', []);
-    return orders.filter((o) => o.user_id === userId);
+
+    return rawOrders.map((o) => ({
+      ...o,
+      service: servicesMap.get(o.service_id) || o.service || undefined,
+      customer: profilesMap.get(o.user_id) || o.customer || undefined,
+      deliverables: deliverablesMap.get(o.id) || o.deliverables || [],
+      events: eventsMap.get(o.id) || o.events || [],
+    })) as Order[];
+  },
+
+  async getUserOrders(userId: string): Promise<Order[]> {
+    let remoteOrders: Order[] = [];
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('orders')
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false });
+        if (!error && data && Array.isArray(data)) {
+          remoteOrders = await this.enrichOrders(data);
+        }
+      } catch (err) {
+        console.error('getUserOrders exception:', err);
+      }
+    }
+    const localOrders = getLS<Order[]>('orders', []).filter((o) => o.user_id === userId);
+    const map = new Map<string, Order>();
+    remoteOrders.forEach((o) => map.set(o.id, o));
+    localOrders.forEach((o) => { if (!map.has(o.id)) map.set(o.id, o); });
+
+    return Array.from(map.values()).sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
   },
 
   async getAllOrders(): Promise<Order[]> {
+    let remoteOrders: Order[] = [];
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*, service:services(*), customer:profiles(*), deliverables:order_deliverables(*), events:order_events(*)')
-        .order('created_at', { ascending: false });
-      if (!error && data) return data as Order[];
+      try {
+        const { data, error } = await supabase
+          .from('orders')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!error && data && Array.isArray(data)) {
+          remoteOrders = await this.enrichOrders(data);
+        } else if (error) {
+          console.error('Error fetching orders from Supabase:', error);
+        }
+      } catch (err) {
+        console.error('getAllOrders exception:', err);
+      }
     }
-    return getLS<Order[]>('orders', []);
+
+    const localOrders = getLS<Order[]>('orders', []);
+    const map = new Map<string, Order>();
+    remoteOrders.forEach((o) => map.set(o.id, o));
+    localOrders.forEach((o) => { if (!map.has(o.id)) map.set(o.id, o); });
+
+    return Array.from(map.values()).sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
   },
 
   async getOrderById(orderId: string, currentUserId?: string, isAdmin?: boolean): Promise<Order | null> {
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*, service:services(*), customer:profiles(*), deliverables:order_deliverables(*), events:order_events(*)')
-        .eq('id', orderId)
-        .single();
-      if (!error && data) {
-        if (currentUserId && !isAdmin && data.user_id !== currentUserId) {
-          return null; // unauthorized access
+      try {
+        const { data, error } = await supabase
+          .from('orders')
+          .select('*')
+          .eq('id', orderId)
+          .maybeSingle();
+
+        if (!error && data) {
+          if (currentUserId && !isAdmin && data.user_id !== currentUserId) {
+            return null; // unauthorized access
+          }
+          const enriched = await this.enrichOrders([data]);
+          return enriched[0] || (data as Order);
         }
-        return data as Order;
+      } catch (err) {
+        console.error('getOrderById exception:', err);
       }
-      return null;
     }
     const orders = getLS<Order[]>('orders', []);
     const found = orders.find((o) => o.id === orderId);
