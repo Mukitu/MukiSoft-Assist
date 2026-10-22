@@ -42,11 +42,13 @@ export const LiveChatWidget: React.FC<LiveChatWidgetProps> = ({ onNavigate }) =>
   // অপঠিত মেসেজ কাউন্ট
   const [hasUnread, setHasUnread] = useState(false);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
-  // অটো-স্ক্রোল টু বটম
+  // অটো-স্ক্রোল টু বটম (শুধুমাত্র ইনটেনাল চ্যাট স্ক্রল)
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
   };
 
   useEffect(() => {
@@ -173,7 +175,13 @@ export const LiveChatWidget: React.FC<LiveChatWidgetProps> = ({ onNavigate }) =>
   return (
     <>
       {/* ফ্লোটিং চ্যাট লঞ্চার বোতাম */}
-      <div className="fixed bottom-24 sm:bottom-6 right-4 sm:right-6 z-40">
+      <div
+        className={`fixed transition-all duration-300 right-4 sm:right-6 z-30 ${
+          typeof window !== 'undefined' && window.location.pathname.includes('/orders')
+            ? 'bottom-28 sm:bottom-24'
+            : 'bottom-20 sm:bottom-6'
+        }`}
+      >
         {!isOpen && (
           <button
             onClick={() => {
@@ -342,7 +350,7 @@ export const LiveChatWidget: React.FC<LiveChatWidgetProps> = ({ onNavigate }) =>
             /* সক্রিয় মেসেজ স্ক্রিন */
             <div className="flex-1 flex flex-col justify-between overflow-hidden bg-slate-50/50">
               {/* মেসেজ তালিকা */}
-              <div className="flex-1 p-4 overflow-y-auto space-y-3.5 text-xs">
+              <div ref={messagesContainerRef} className="flex-1 p-4 overflow-y-auto space-y-3.5 text-xs">
                 {messages.map((msg) => {
                   const isCustomer = msg.sender_type === 'customer';
                   const isSystem = msg.sender_type === 'system';
@@ -442,7 +450,6 @@ export const LiveChatWidget: React.FC<LiveChatWidgetProps> = ({ onNavigate }) =>
                     </div>
                   );
                 })}
-                <div ref={messagesEndRef} />
               </div>
 
               {/* অপশন বাটন: লাইভ এজেন্ট হ্যান্ডঅফ (যখন এআই মোডে থাকে) */}

@@ -760,10 +760,16 @@ export const api = {
           .order('created_at', { ascending: true });
 
         if (!error && data && data.length > 0) {
+          setLS('payment_method_configs', data);
           return data as PaymentMethodConfig[];
         }
 
-        if (!error && data && data.length === 0) {
+        if (error) {
+          console.warn('getPaymentMethodConfigs Supabase error, falling back to cache:', error.message);
+          return getLS<PaymentMethodConfig[]>('payment_method_configs', DEFAULT_PAYMENT_METHODS);
+        }
+
+        if (data && data.length === 0) {
           // Auto-seed default payment methods to Supabase table
           try {
             await supabase.from('payment_method_configs').upsert(DEFAULT_PAYMENT_METHODS);
@@ -789,12 +795,20 @@ export const api = {
       try {
         const { error } = await supabase.from('payment_method_configs').upsert(configs, { onConflict: 'id' });
         if (error) {
-          console.error('Supabase payment method configs save error:', error);
-          throw new Error(error.message);
+          console.warn('Supabase payment method configs save error, retrying without optional column:', error.message);
+          // If account_type_label column is missing in Supabase schema, retry upsert without account_type_label column
+          const sanitizedConfigs = configs.map((c) => {
+            const copy = { ...c };
+            delete (copy as any).account_type_label;
+            return copy;
+          });
+          const { error: retryError } = await supabase.from('payment_method_configs').upsert(sanitizedConfigs, { onConflict: 'id' });
+          if (retryError) {
+            console.warn('Retry updating payment_method_configs failed:', retryError.message);
+          }
         }
       } catch (err: any) {
-        console.error('Failed to update payment_method_configs in Supabase:', err);
-        throw err;
+        console.warn('Failed to update payment_method_configs in Supabase:', err);
       }
     }
 
@@ -1185,24 +1199,36 @@ export const api = {
 
   async updateOrderStatus(orderId: string, status: OrderStatus, adminId: string, eventMessage?: string): Promise<boolean> {
     if (isSupabaseConfigured && supabase) {
-      const { error } = await supabase.from('orders').update({ status, updated_at: new Date().toISOString() }).eq('id', orderId);
-      if (error) throw new Error(error.message);
-      if (eventMessage) {
-        await supabase.from('order_events').insert({
-          order_id: orderId,
-          actor_id: adminId,
-          event_type: 'STATUS_UPDATED',
-          message: eventMessage,
-        });
+      try {
+        const { error } = await supabase.from('orders').update({ status, updated_at: new Date().toISOString() }).eq('id', orderId);
+        if (error) {
+          console.warn('Supabase updateOrderStatus warning:', error.message);
+        }
+        if (eventMessage) {
+          try {
+            await supabase.from('order_events').insert({
+              order_id: orderId,
+              actor_id: adminId,
+              event_type: 'STATUS_UPDATED',
+              message: eventMessage,
+            });
+          } catch (eventErr) {
+            console.warn('Order event insert error:', eventErr);
+          }
+        }
+      } catch (err) {
+        console.warn('updateOrderStatus Supabase exception:', err);
       }
-    } else {
-      const orders = getLS<Order[]>('orders', []);
-      const order = orders.find((o) => o.id === orderId);
-      if (!order) throw new Error('Order not found');
+    }
+
+    // Always keep LocalStorage and in-memory state updated
+    const orders = getLS<Order[]>('orders', []);
+    const order = orders.find((o) => o.id === orderId);
+    if (order) {
       order.status = status;
       order.updated_at = new Date().toISOString();
       if (!order.events) order.events = [];
-      order.events.push({
+      order.events.unshift({
         id: `event_${Date.now()}`,
         order_id: orderId,
         actor_id: adminId,
@@ -1211,6 +1237,10 @@ export const api = {
         created_at: new Date().toISOString(),
       });
       setLS('orders', orders);
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('orders_updated'));
     }
 
     // Notify relevant customer of order status change
@@ -1637,17 +1667,46 @@ export const api = {
   /**
    * অর্ডারের মেসেজ তালিকা সংগ্রহ (Order Workroom Messages)
    */
+  /**
+   * অর্ডারের মেসেজ তালিকা সংগ্রহ (Order Messages)
+   * order_messages এবং order_work_messages উভয় টেবিলই স্বয়ংক্রিয়ভাবে সমর্থন করে।
+   */
   async getOrderMessages(orderId: string): Promise<OrderWorkMessage[]> {
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data, error } = await supabase
+        // ১. order_messages টেবিল থেকে ডাটা নেওয়া
+        const { data: omData, error: omErr } = await supabase
           .from('order_messages')
           .select('*')
           .eq('order_id', orderId)
           .order('created_at', { ascending: true });
-        if (!error && data) return data as OrderWorkMessage[];
-      } catch {
-        // fallback to local
+
+        if (!omErr && omData && Array.isArray(omData) && omData.length > 0) {
+          return omData.map((row: any) => ({
+            id: row.id,
+            order_id: row.order_id,
+            sender_id: row.sender_id,
+            sender_name: row.sender_name || (row.sender_role === 'customer' ? 'গ্রাহক' : 'অ্যাডমিন'),
+            sender_role: row.sender_role || 'customer',
+            message: row.message_content || row.message || '',
+            attachment_name: row.attachment_name || null,
+            attachment_url: row.attachment_url || null,
+            created_at: row.created_at || new Date().toISOString(),
+          }));
+        }
+
+        // ২. order_work_messages টেবিল ফলব্যাক
+        const { data: owmData, error: owmErr } = await supabase
+          .from('order_work_messages')
+          .select('*')
+          .eq('order_id', orderId)
+          .order('created_at', { ascending: true });
+
+        if (!owmErr && owmData && Array.isArray(owmData) && owmData.length > 0) {
+          return owmData as OrderWorkMessage[];
+        }
+      } catch (err) {
+        console.warn('getOrderMessages Supabase query exception:', err);
       }
     }
 
@@ -1678,12 +1737,15 @@ export const api = {
     }
 
     const now = new Date().toISOString();
+    const cleanRole = senderRole === 'worker' ? 'admin' : senderRole;
+    const recipientId = senderRole === 'customer' ? order.assigned_admin || null : order.user_id;
+
     const newMsg: OrderWorkMessage = {
       id: `omsg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       order_id: orderId,
       sender_id: senderId,
       sender_name: senderName,
-      sender_role: senderRole === 'worker' ? 'admin' : senderRole,
+      sender_role: cleanRole,
       message: messageText.trim(),
       attachment_name: attachment?.name || null,
       attachment_url: attachment?.url || null,
@@ -1691,11 +1753,46 @@ export const api = {
     };
 
     if (isSupabaseConfigured && supabase) {
+      // ১. order_messages টেবিলে ইনসার্ট (সকল কলাম সমর্থন সহ)
       try {
-        await supabase.from('order_messages').insert(newMsg);
+        await supabase.from('order_messages').insert({
+          id: newMsg.id,
+          order_id: orderId,
+          sender_id: senderId,
+          receiver_id: recipientId,
+          message_content: messageText.trim(),
+          is_read: false,
+          sender_name: senderName,
+          sender_role: cleanRole,
+          attachment_name: attachment?.name || null,
+          attachment_url: attachment?.url || null,
+          created_at: now,
+        });
+      } catch (err) {
+        console.warn('order_messages insert warn:', err);
+      }
+
+      // ২. order_work_messages টেবিলেও ইনসার্ট (যদি টেবিল উপস্থিত থাকে)
+      try {
+        await supabase.from('order_work_messages').insert({
+          id: newMsg.id,
+          order_id: orderId,
+          sender_id: senderId,
+          sender_name: senderName,
+          sender_role: cleanRole,
+          message: messageText.trim(),
+          attachment_name: attachment?.name || null,
+          attachment_url: attachment?.url || null,
+          created_at: now,
+        });
+      } catch (err) {
+        console.warn('order_work_messages insert warn:', err);
+      }
+
+      try {
         await supabase.from('orders').update({ updated_at: now }).eq('id', orderId);
       } catch (err) {
-        console.warn('Supabase order message save error:', err);
+        console.warn('orders update timestamp error:', err);
       }
     }
 

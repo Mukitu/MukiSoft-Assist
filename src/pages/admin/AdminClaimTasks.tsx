@@ -30,6 +30,8 @@ import { api } from '../../services/api';
 import { Order, OrderStatus, OrderWorkMessage } from '../../types/database';
 import { StatusBadge } from '../../components/common/StatusBadge';
 
+import { supabase, isSupabaseConfigured } from '../../lib/supabase';
+
 interface AdminClaimTasksProps {
   onNavigate?: (path: string) => void;
 }
@@ -47,7 +49,7 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
   const [chatMessages, setChatMessages] = useState<OrderWorkMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [sendingChat, setSendingChat] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
 
   // ফাইল ডেলিভারি মডাল
   const [deliverableModalOpen, setDeliverableModalOpen] = useState(false);
@@ -83,8 +85,8 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
     window.addEventListener('order_claimed', handleOrdersUpdated);
     window.addEventListener('order_released', handleOrdersUpdated);
 
-    // অটো পোলিং (৩ সেকেন্ড পরপর যাতে অন্যান্য অ্যাডমিনের ক্লেইম সাথে সাথে সিঙ্ক হয়)
-    const interval = setInterval(loadOrders, 3000);
+    // অটো পোলিং
+    const interval = setInterval(loadOrders, 4000);
 
     return () => {
       window.removeEventListener('orders_updated', handleOrdersUpdated);
@@ -112,7 +114,47 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
 
     loadChat(selectedOrderId);
 
-    // লাইভ চ্যাট ইভেন্ট লিসেনার
+    // Supabase Realtime চ্যানেল সাবস্ক্রিপশন
+    let channel: ReturnType<NonNullable<typeof supabase>['channel']> | null = null;
+    const sb = supabase;
+    if (isSupabaseConfigured && sb) {
+      channel = sb
+        .channel(`admin-claim-chat-${selectedOrderId}`)
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'order_messages', filter: `order_id=eq.${selectedOrderId}` },
+          (payload) => {
+            const raw = payload.new as any;
+            if (raw) {
+              const formatted: OrderWorkMessage = {
+                id: raw.id,
+                order_id: raw.order_id,
+                sender_id: raw.sender_id,
+                sender_name: raw.sender_name || (raw.sender_role === 'customer' ? 'গ্রাহক' : 'অ্যাডমিন'),
+                sender_role: raw.sender_role || 'admin',
+                message: raw.message_content || raw.message || '',
+                attachment_name: raw.attachment_name || null,
+                attachment_url: raw.attachment_url || null,
+                created_at: raw.created_at || new Date().toISOString(),
+              };
+              setChatMessages((prev) => (prev.some((m) => m.id === formatted.id) ? prev : [...prev, formatted]));
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'order_work_messages', filter: `order_id=eq.${selectedOrderId}` },
+          (payload) => {
+            const raw = payload.new as OrderWorkMessage;
+            if (raw) {
+              setChatMessages((prev) => (prev.some((m) => m.id === raw.id) ? prev : [...prev, raw]));
+            }
+          }
+        )
+        .subscribe();
+    }
+
+    // লাইভ চ্যাট কাস্টম ইভেন্ট লিসেনার
     const handleNewMessage = (e: Event) => {
       const customEvt = e as CustomEvent<{ orderId: string; message: OrderWorkMessage }>;
       if (customEvt.detail && customEvt.detail.orderId === selectedOrderId) {
@@ -125,19 +167,21 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
 
     window.addEventListener('order_message_sent', handleNewMessage);
 
-    // চ্যাট ওপেন থাকা অবস্থায় ২.৫ সেকেন্ড পরপর লাইভ পোলিং
     const chatInterval = setInterval(() => {
       loadChat(selectedOrderId);
-    }, 2500);
+    }, 3000);
 
     return () => {
+      if (sb && channel) sb.removeChannel(channel);
       window.removeEventListener('order_message_sent', handleNewMessage);
       clearInterval(chatInterval);
     };
   }, [selectedOrderId]);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
   }, [chatMessages]);
 
   // ফিল্টারিং ও দৃষ্টিসীমা নির্ধারণ (Privacy & Sight Rule)
@@ -465,10 +509,23 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                         </a>
                       )}
                       {ord.attachment_name && (
-                        <span className="inline-flex items-center gap-1 text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
-                          <Paperclip className="w-3 h-3" />
-                          <span className="truncate max-w-[120px]">{ord.attachment_name}</span>
-                        </span>
+                        ord.attachment_url ? (
+                          <a
+                            href={ord.attachment_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            download={ord.attachment_name}
+                            className="inline-flex items-center gap-1 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 font-semibold px-2 py-0.5 rounded border border-indigo-200 transition-colors"
+                          >
+                            <Paperclip className="w-3 h-3 text-indigo-600" />
+                            <span className="truncate max-w-[140px]">{ord.attachment_name} (পিডিএফ/ডাউনলোড)</span>
+                          </a>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
+                            <Paperclip className="w-3 h-3" />
+                            <span className="truncate max-w-[120px]">{ord.attachment_name}</span>
+                          </span>
+                        )
                       )}
                     </div>
                   </div>
@@ -628,7 +685,7 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                     )}
 
                     {/* লাইভ চ্যাট মেসেজ ফিড */}
-                    <div className="flex-1 p-4 space-y-3 overflow-y-auto max-h-[380px] min-h-[300px] bg-slate-50/30">
+                    <div ref={chatContainerRef} className="flex-1 p-4 space-y-3 overflow-y-auto max-h-[380px] min-h-[300px] bg-slate-50/30">
                       {chatMessages.length === 0 ? (
                         <div className="text-center py-12 text-xs text-slate-400 space-y-2">
                           <MessageSquare className="w-8 h-8 text-slate-300 mx-auto" />
@@ -678,7 +735,6 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                           );
                         })
                       )}
-                      <div ref={chatEndRef} />
                     </div>
 
                     {/* কুইক রেসপন্স চিপস */}

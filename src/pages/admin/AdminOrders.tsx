@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Upload,
+  Download,
   Search,
   CheckCircle2,
   AlertCircle,
@@ -29,6 +30,7 @@ import { useNotification } from '../../context/NotificationContext';
 import { api } from '../../services/api';
 import { Order, OrderStatus, OrderWorkMessage } from '../../types/database';
 import { StatusBadge } from '../../components/common/StatusBadge';
+import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 
 export const AdminOrders: React.FC = () => {
   const { user, profile, isSuperAdmin } = useAuth();
@@ -46,6 +48,7 @@ export const AdminOrders: React.FC = () => {
   const [orderMessages, setOrderMessages] = useState<OrderWorkMessage[]>([]);
   const [orderMessageInput, setOrderMessageInput] = useState('');
   const [sendingOrderMessage, setSendingOrderMessage] = useState(false);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
 
   // অ্যাডমিন রিভিউ স্টেট
   const [adminRating, setAdminRating] = useState<number>(5);
@@ -109,6 +112,46 @@ export const AdminOrders: React.FC = () => {
     }
     api.getOrderMessages(selectedOrder.id).then(setOrderMessages);
 
+    // Supabase Realtime সাবস্ক্রিপশন
+    let channel: ReturnType<NonNullable<typeof supabase>['channel']> | null = null;
+    const sb = supabase;
+    if (isSupabaseConfigured && sb) {
+      channel = sb
+        .channel(`admin-order-modal-${selectedOrder.id}`)
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'order_messages', filter: `order_id=eq.${selectedOrder.id}` },
+          (payload) => {
+            const raw = payload.new as any;
+            if (raw) {
+              const formatted: OrderWorkMessage = {
+                id: raw.id,
+                order_id: raw.order_id,
+                sender_id: raw.sender_id,
+                sender_name: raw.sender_name || (raw.sender_role === 'customer' ? 'গ্রাহক' : 'অ্যাডমিন'),
+                sender_role: raw.sender_role || 'admin',
+                message: raw.message_content || raw.message || '',
+                attachment_name: raw.attachment_name || null,
+                attachment_url: raw.attachment_url || null,
+                created_at: raw.created_at || new Date().toISOString(),
+              };
+              setOrderMessages((prev) => (prev.some((m) => m.id === formatted.id) ? prev : [...prev, formatted]));
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'order_work_messages', filter: `order_id=eq.${selectedOrder.id}` },
+          (payload) => {
+            const raw = payload.new as OrderWorkMessage;
+            if (raw) {
+              setOrderMessages((prev) => (prev.some((m) => m.id === raw.id) ? prev : [...prev, raw]));
+            }
+          }
+        )
+        .subscribe();
+    }
+
     const handleChatEvt = (e: Event) => {
       const customEvt = e as CustomEvent<{ orderId: string; message: OrderWorkMessage }>;
       if (customEvt.detail && customEvt.detail.orderId === selectedOrder.id) {
@@ -120,8 +163,17 @@ export const AdminOrders: React.FC = () => {
     };
 
     window.addEventListener('order_message_sent', handleChatEvt);
-    return () => window.removeEventListener('order_message_sent', handleChatEvt);
+    return () => {
+      if (sb && channel) sb.removeChannel(channel);
+      window.removeEventListener('order_message_sent', handleChatEvt);
+    };
   }, [selectedOrder]);
+
+  useEffect(() => {
+    if (modalTab === 'chat' && chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [orderMessages, modalTab]);
 
   // ১. কাজ নিজের দায়িত্বে ক্লেইম করা (Claim Order)
   const handleClaimOrder = async (targetOrder: Order) => {
@@ -338,6 +390,8 @@ export const AdminOrders: React.FC = () => {
     if (!user || !needsInfoOrderTarget || !needsInfoMessage.trim()) return;
 
     try {
+      const adminName = profile?.full_name || user.email?.split('@')[0] || 'স্পেশালিস্ট অ্যাডমিন';
+
       await api.updateOrderStatus(
         needsInfoOrderTarget.id,
         'needs_information',
@@ -345,19 +399,33 @@ export const AdminOrders: React.FC = () => {
         `অ্যাডমিন তথ্যের অনুরোধ করেছেন: ${needsInfoMessage.trim()}`
       );
 
+      // চ্যাটেও লাইভ বার্তা যুক্ত করা
+      await api.sendOrderMessage(
+        needsInfoOrderTarget.id,
+        user.id,
+        adminName,
+        'admin',
+        `⚠️ অতিরিক্ত তথ্য প্রয়োজন:\n${needsInfoMessage.trim()}`
+      ).catch((err) => console.warn('Info request chat message warning:', err));
+
       showToast({
         type: 'info',
         title: 'তথ্যের অনুরোধ পাঠানো হয়েছে',
-        message: 'গ্রাহকের অর্ডারের অবস্থা "অতিরিক্ত তথ্য প্রয়োজন" হিসেবে আপডেট করা হয়েছে।',
+        message: 'গ্রাহকের অর্ডারের অবস্থা "অতিরিক্ত তথ্য প্রয়োজন" হিসেবে সফলভাবে আপডেট করা হয়েছে।',
       });
 
       setOrders((prev) =>
         prev.map((o) => (o.id === needsInfoOrderTarget.id ? { ...o, status: 'needs_information' } : o))
       );
 
+      if (selectedOrder && selectedOrder.id === needsInfoOrderTarget.id) {
+        setSelectedOrder((prev) => (prev ? { ...prev, status: 'needs_information' } : null));
+      }
+
       setNeedsInfoOrderTarget(null);
       setNeedsInfoMessage('');
-    } catch {
+    } catch (err) {
+      console.warn('Info request error:', err);
       showToast({ type: 'error', title: 'ত্রুটি', message: 'অনুরোধ পাঠাতে ব্যর্থ হয়েছে' });
     }
   };
@@ -803,11 +871,24 @@ export const AdminOrders: React.FC = () => {
                 )}
 
                 {selectedOrder.attachment_name && (
-                  <div>
-                    <span className="font-semibold text-slate-700 block mb-0.5">সংযুক্ত ফাইল:</span>
-                    <span className="font-mono bg-slate-100 px-2.5 py-1 rounded text-slate-800">
-                      {selectedOrder.attachment_name}
-                    </span>
+                  <div className="space-y-1">
+                    <span className="font-semibold text-slate-700 block mb-0.5">সংযুক্ত প্রজেক্ট ফাইল / পিডিএফ:</span>
+                    {selectedOrder.attachment_url ? (
+                      <a
+                        href={selectedOrder.attachment_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        download={selectedOrder.attachment_name}
+                        className="inline-flex items-center gap-2 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg border border-indigo-200 transition-colors"
+                      >
+                        <Download className="w-4 h-4 text-indigo-600" />
+                        <span>{selectedOrder.attachment_name} (ডাউনলোড / দেখুন)</span>
+                      </a>
+                    ) : (
+                      <span className="font-mono bg-slate-100 px-2.5 py-1 rounded text-slate-800">
+                        {selectedOrder.attachment_name}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
@@ -817,7 +898,7 @@ export const AdminOrders: React.FC = () => {
             {modalTab === 'chat' && (
               <div className="space-y-3 flex flex-col h-[380px]">
                 {/* মেসেজ তালিকা */}
-                <div className="flex-1 overflow-y-auto p-3.5 bg-slate-50/60 rounded-xl border border-slate-200 space-y-3 text-xs">
+                <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-3.5 bg-slate-50/60 rounded-xl border border-slate-200 space-y-3 text-xs">
                   {orderMessages.length === 0 ? (
                     <div className="py-12 text-center text-slate-400 space-y-1.5">
                       <MessageSquare className="w-8 h-8 text-slate-300 mx-auto" />

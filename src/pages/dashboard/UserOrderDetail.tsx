@@ -27,6 +27,8 @@ import { api } from '../../services/api';
 import { Order, OrderWorkMessage, OrderReview } from '../../types/database';
 import { StatusBadge } from '../../components/common/StatusBadge';
 
+import { supabase, isSupabaseConfigured } from '../../lib/supabase';
+
 interface UserOrderDetailProps {
   orderId: string;
   onNavigate: (path: string) => void;
@@ -59,7 +61,7 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
   const [messages, setMessages] = useState<OrderWorkMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [sendingChat, setSendingChat] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
 
   // ক্লায়েন্ট রিভিউ স্টেট
   const [customerRating, setCustomerRating] = useState<number>(5);
@@ -84,7 +86,47 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
   useEffect(() => {
     loadData();
 
-    // লাইভ চ্যাট মেসেজ লিসেনার
+    // Supabase Realtime চ্যানেল সাবস্ক্রিপশন
+    let channel: ReturnType<NonNullable<typeof supabase>['channel']> | null = null;
+    const sb = supabase;
+    if (isSupabaseConfigured && sb) {
+      channel = sb
+        .channel(`user-order-chat-${orderId}`)
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'order_messages', filter: `order_id=eq.${orderId}` },
+          (payload) => {
+            const raw = payload.new as any;
+            if (raw) {
+              const formatted: OrderWorkMessage = {
+                id: raw.id,
+                order_id: raw.order_id,
+                sender_id: raw.sender_id,
+                sender_name: raw.sender_name || (raw.sender_role === 'customer' ? 'গ্রাহক' : 'অ্যাডমিন'),
+                sender_role: raw.sender_role || 'customer',
+                message: raw.message_content || raw.message || '',
+                attachment_name: raw.attachment_name || null,
+                attachment_url: raw.attachment_url || null,
+                created_at: raw.created_at || new Date().toISOString(),
+              };
+              setMessages((prev) => (prev.some((m) => m.id === formatted.id) ? prev : [...prev, formatted]));
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'order_work_messages', filter: `order_id=eq.${orderId}` },
+          (payload) => {
+            const raw = payload.new as OrderWorkMessage;
+            if (raw) {
+              setMessages((prev) => (prev.some((m) => m.id === raw.id) ? prev : [...prev, raw]));
+            }
+          }
+        )
+        .subscribe();
+    }
+
+    // লাইভ চ্যাট মেসেজ কাস্টম ইভেন্ট লিসেনার
     const handleChatEvt = (e: Event) => {
       const customEvt = e as CustomEvent<{ orderId: string; message: OrderWorkMessage }>;
       if (customEvt.detail && customEvt.detail.orderId === orderId) {
@@ -105,12 +147,12 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
     window.addEventListener('order_message_sent', handleChatEvt);
     window.addEventListener('order_claimed', handleClaimEvt);
 
-    // লাইভ পোলিং
     const interval = setInterval(() => {
       loadData();
-    }, 3000);
+    }, 4000);
 
     return () => {
+      if (sb && channel) sb.removeChannel(channel);
       window.removeEventListener('order_message_sent', handleChatEvt);
       window.removeEventListener('order_claimed', handleClaimEvt);
       clearInterval(interval);
@@ -118,8 +160,8 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
   }, [orderId, user]);
 
   useEffect(() => {
-    if (activeTab === 'chat') {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (activeTab === 'chat' && chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
   }, [messages, activeTab]);
 
@@ -659,11 +701,24 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
 
               {/* সংযুক্ত ফাইল যদি থাকে */}
               {order.attachment_name && (
-                <div className="text-xs">
-                  <span className="font-semibold text-slate-700 block mb-1">সংযুক্ত প্রজেক্ট ফাইল:</span>
-                  <span className="font-mono bg-slate-100 px-2 py-1 rounded text-slate-800">
-                    {order.attachment_name}
-                  </span>
+                <div className="text-xs space-y-1">
+                  <span className="font-semibold text-slate-700 block">সংযুক্ত প্রজেক্ট ফাইল / পিডিএফ:</span>
+                  {order.attachment_url ? (
+                    <a
+                      href={order.attachment_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      download={order.attachment_name}
+                      className="inline-flex items-center gap-2 px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg border border-indigo-200 transition-colors"
+                    >
+                      <Download className="w-4 h-4 text-indigo-600" />
+                      <span>{order.attachment_name} (ডাউনলোড / দেখুন)</span>
+                    </a>
+                  ) : (
+                    <span className="font-mono bg-slate-100 px-2.5 py-1 rounded text-slate-800">
+                      {order.attachment_name}
+                    </span>
+                  )}
                 </div>
               )}
             </div>
@@ -734,7 +789,7 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
           </div>
 
           {/* চ্যাট ফিড */}
-          <div className="p-4 space-y-3 min-h-[300px] max-h-[460px] overflow-y-auto bg-slate-50/40">
+          <div ref={chatContainerRef} className="p-4 space-y-3 min-h-[300px] max-h-[460px] overflow-y-auto bg-slate-50/40">
             {messages.length === 0 ? (
               <div className="text-center py-12 text-xs text-slate-400 space-y-2">
                 <MessageSquare className="w-8 h-8 mx-auto text-slate-300" />
@@ -782,25 +837,24 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
                 );
               })
             )}
-            <div ref={messagesEndRef} />
           </div>
 
           {/* চ্যাট সেন্ড ইনপুট */}
-          <form onSubmit={handleSendChatMessage} className="p-3.5 bg-white border-t border-slate-200 flex items-center gap-2 pb-8 sm:pb-3.5">
+          <form onSubmit={handleSendChatMessage} className="p-3.5 bg-white border-t border-slate-200 flex items-center gap-2 pb-10 sm:pb-3.5">
             <input
               type="text"
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               placeholder="অ্যাডমিনের জন্য বার্তা লিখুন..."
-              className="flex-1 px-4 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500 focus:bg-white transition-all"
+              className="flex-1 px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500 focus:bg-white transition-all min-w-0"
             />
             <button
               type="submit"
               disabled={sendingChat || !chatInput.trim()}
-              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50 shrink-0"
+              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50 shrink-0 shadow-xs"
             >
               <Send className="w-3.5 h-3.5" />
-              <span>{sendingChat ? 'পাঠানো হচ্ছে...' : 'পাঠান'}</span>
+              <span>{sendingChat ? 'পাঠানো...' : 'পাঠান'}</span>
             </button>
           </form>
         </div>

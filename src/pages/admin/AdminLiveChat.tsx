@@ -36,10 +36,12 @@ export const AdminLiveChat: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<'all' | 'waiting' | 'connected' | 'closed'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
   };
 
   useEffect(() => {
@@ -421,7 +423,7 @@ export const AdminLiveChat: React.FC = () => {
               </div>
 
               {/* কনভারসেশন মেসেজ স্ক্রিন (মসৃণ ইন্টারনাল স্ক্রলিং) */}
-              <div className="flex-1 p-5 overflow-y-auto space-y-3.5 text-xs bg-slate-50/30 min-h-0">
+              <div ref={messagesContainerRef} className="flex-1 p-5 overflow-y-auto space-y-3.5 text-xs bg-slate-50/30 min-h-0">
                 {messages.map((m) => {
                   const isCustomer = m.sender_type === 'customer';
                   const isSystem = m.sender_type === 'system';
@@ -476,7 +478,6 @@ export const AdminLiveChat: React.FC = () => {
                     </div>
                   );
                 })}
-                <div ref={messagesEndRef} />
               </div>
 
               {/* অ্যাডমিন ইনপুট বার */}

@@ -139,8 +139,21 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({ serviceSlu
 
     setIsSubmitting(true);
     try {
-      const attachUrl = attachmentFile ? `https://storage.mukisoft.com/attachments/${encodeURIComponent(attachmentFile.name)}` : undefined;
+      let attachUrl: string | undefined = undefined;
       const attachName = attachmentFile ? attachmentFile.name : undefined;
+
+      if (attachmentFile) {
+        try {
+          attachUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(attachmentFile);
+          });
+        } catch {
+          attachUrl = `https://storage.mukisoft.com/attachments/${encodeURIComponent(attachmentFile.name)}`;
+        }
+      }
 
       const result = await api.purchaseService(
         service.id,
