@@ -786,18 +786,18 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
           </div>
 
           {/* চ্যাট সেন্ড ইনপুট */}
-          <form onSubmit={handleSendChatMessage} className="p-3 bg-white border-t border-slate-200 flex items-center gap-2">
+          <form onSubmit={handleSendChatMessage} className="p-3.5 bg-white border-t border-slate-200 flex items-center gap-2 pb-8 sm:pb-3.5">
             <input
               type="text"
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               placeholder="অ্যাডমিনের জন্য বার্তা লিখুন..."
-              className="flex-1 px-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500 focus:bg-white transition-all"
+              className="flex-1 px-4 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500 focus:bg-white transition-all"
             />
             <button
               type="submit"
               disabled={sendingChat || !chatInput.trim()}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50 shrink-0"
             >
               <Send className="w-3.5 h-3.5" />
               <span>{sendingChat ? 'পাঠানো হচ্ছে...' : 'পাঠান'}</span>

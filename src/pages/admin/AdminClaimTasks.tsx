@@ -707,19 +707,19 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                     {/* চ্যাট ইনপুট বার */}
                     <form
                       onSubmit={(e) => handleSendChat(e)}
-                      className="p-3 bg-white border-t border-slate-200 flex items-center gap-2"
+                      className="p-3.5 bg-white border-t border-slate-200 flex items-center gap-2 pb-8 sm:pb-3.5"
                     >
                       <input
                         type="text"
                         value={chatInput}
                         onChange={(e) => setChatInput(e.target.value)}
                         placeholder="গ্রাহকের নিকট সরাসরি লাইভ বার্তা লিখুন (Enter চাপুন)..."
-                        className="flex-1 px-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500 focus:bg-white transition-all"
+                        className="flex-1 px-4 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500 focus:bg-white transition-all"
                       />
                       <button
                         type="submit"
                         disabled={sendingChat || !chatInput.trim()}
-                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                        className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors shrink-0"
                       >
                         <Send className="w-3.5 h-3.5" />
                         <span>{sendingChat ? 'পাঠানো হচ্ছে...' : 'পাঠান'}</span>

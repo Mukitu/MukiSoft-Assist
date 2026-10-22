@@ -115,7 +115,7 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
         badge: pendingClaimCount,
         highlight: pendingClaimCount > 0,
       },
-      { label: 'আমার অর্ডারের কাজ ও ডেলিভারি', path: '/admin/orders', icon: ShoppingBag },
+      { label: 'আমার অর্ডারের কাজ ও চ্যাট', path: '/admin/orders', icon: ShoppingBag },
       { label: 'আমার উপার্জন ও উত্তোলন', path: '/admin/my-withdraw', icon: DollarSign },
     ];
   } else if (role === 'admin') {
@@ -128,7 +128,7 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
         badge: pendingClaimCount,
         highlight: pendingClaimCount > 0,
       },
-      { label: 'অর্ডার ও ফাইল ডেলিভারি', path: '/admin/orders', icon: ShoppingBag },
+      { label: 'অর্ডার ও বার্তা চ্যাট', path: '/admin/orders', icon: ShoppingBag },
       { label: 'সহায়তা ডেস্ক ও টিকিট', path: '/admin/tickets', icon: HelpCircle },
       { label: 'সেবা সমূহ', path: '/admin/services', icon: Layers },
       { label: 'সার্ভিস ক্যাটাগরি', path: '/admin/categories', icon: Tag },
@@ -149,7 +149,7 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
       { label: 'সেবা সমূহ', path: '/admin/services', icon: Layers },
       { label: 'সার্ভিস ক্যাটাগরি', path: '/admin/categories', icon: Tag },
       { label: 'টাকা জমার অনুরোধ যাচাই (Super Admin)', path: '/admin/deposits', icon: CheckSquare },
-      { label: 'অর্ডার ও ফাইল ডেলিভারি', path: '/admin/orders', icon: ShoppingBag },
+      { label: 'অর্ডার ও বার্তা চ্যাট', path: '/admin/orders', icon: ShoppingBag },
       { label: 'সহায়তা ডেস্ক ও টিকিট', path: '/admin/tickets', icon: HelpCircle },
       { label: 'ব্যবহারকারী ও ভূমিকা', path: '/admin/users', icon: Users },
       { label: 'ওয়ার্কার ও ইনকাম প্যানেল', path: '/admin/commission', icon: DollarSign },

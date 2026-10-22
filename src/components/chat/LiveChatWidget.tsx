@@ -173,14 +173,14 @@ export const LiveChatWidget: React.FC<LiveChatWidgetProps> = ({ onNavigate }) =>
   return (
     <>
       {/* ফ্লোটিং চ্যাট লঞ্চার বোতাম */}
-      <div className="fixed bottom-5 right-5 z-40">
+      <div className="fixed bottom-24 sm:bottom-6 right-4 sm:right-6 z-40">
         {!isOpen && (
           <button
             onClick={() => {
               setIsOpen(true);
               setHasUnread(false);
             }}
-            className="group relative flex items-center gap-2.5 bg-slate-900 hover:bg-slate-800 text-white pl-4 pr-5 py-3 rounded-full shadow-2xl transition-all duration-200 hover:scale-105 active:scale-95 border border-slate-700/60"
+            className="group relative flex items-center gap-2.5 bg-slate-900 hover:bg-slate-800 text-white pl-3.5 pr-4 sm:pl-4 sm:pr-5 py-2.5 sm:py-3 rounded-full shadow-2xl transition-all duration-200 hover:scale-105 active:scale-95 border border-slate-700/60"
             aria-label="লাইভ চ্যাট ওপেন করুন"
           >
             <div className="relative">
@@ -190,8 +190,8 @@ export const LiveChatWidget: React.FC<LiveChatWidgetProps> = ({ onNavigate }) =>
               )}
             </div>
             <div className="text-left">
-              <span className="text-xs font-bold block leading-none">লাইভ সাপোর্ট ও AI চ্যাট</span>
-              <span className="text-[10px] text-slate-300 font-medium block mt-0.5">সহযোগিতার জন্য ক্লিক করুন</span>
+              <span className="text-[11px] sm:text-xs font-bold block leading-none">লাইভ সাপোর্ট ও AI চ্যাট</span>
+              <span className="text-[9px] sm:text-[10px] text-slate-300 font-medium block mt-0.5">সহযোগিতার জন্য ক্লিক করুন</span>
             </div>
           </button>
         )}
@@ -199,7 +199,7 @@ export const LiveChatWidget: React.FC<LiveChatWidgetProps> = ({ onNavigate }) =>
 
       {/* চ্যাট উইন্ডো ডায়ালগ */}
       {isOpen && (
-        <div className="fixed bottom-5 right-5 z-50 w-[92vw] sm:w-[410px] h-[580px] max-h-[85vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
+        <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 w-[94vw] sm:w-[410px] h-[580px] max-h-[85vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
           {/* হেডার */}
           <div className="bg-slate-900 text-white px-4 py-3.5 flex items-center justify-between border-b border-slate-800 shrink-0">
             <div className="flex items-center gap-3">
