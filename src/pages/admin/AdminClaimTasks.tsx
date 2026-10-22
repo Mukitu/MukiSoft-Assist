@@ -22,6 +22,8 @@ import {
   Check,
   DollarSign,
   Info,
+  AlertTriangle,
+  XCircle,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { toBengaliCurrency, toBengaliDigits, toBengaliDate } from '../../lib/i18n';
@@ -55,6 +57,11 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
   const [deliverableUrl, setDeliverableUrl] = useState('');
   const [deliverableNotes, setDeliverableNotes] = useState('');
   const [submittingDeliverable, setSubmittingDeliverable] = useState(false);
+
+  // অর্ডার বাতিল ও রিফান্ড মডাল
+  const [refundModalOpen, setRefundModalOpen] = useState(false);
+  const [refundReason, setRefundReason] = useState('গ্রাহকের অনুরোধে অর্ডার বাতিল ও সম্পূর্ণ রিফান্ড করা হয়েছে');
+  const [isRefunding, setIsRefunding] = useState(false);
 
   // সার্চ
   const [search, setSearch] = useState('');
@@ -245,6 +252,31 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
       showToast({ type: 'error', title: 'ত্রুটি', message: msg });
     } finally {
       setSubmittingDeliverable(false);
+    }
+  };
+
+  const handleRefundOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedOrder) return;
+    if (!refundReason.trim()) {
+      showToast({ type: 'error', title: 'ত্রুটি', message: 'রিফান্ডের একটি কারণ লিখুন' });
+      return;
+    }
+    setIsRefunding(true);
+    try {
+      await api.refundOrder(selectedOrder.id, refundReason.trim());
+      showToast({
+        type: 'success',
+        title: 'অর্ডার বাতিল ও রিফান্ড সফল',
+        message: `অর্ডার #${selectedOrder.order_number} বাতিল করে গ্রাহকের ওয়ালেটে সম্পূর্ণ টাকা ফেরত দেওয়া হয়েছে।`
+      });
+      setRefundModalOpen(false);
+      await loadOrders();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'রিফান্ড সম্পন্ন করা যায়নি';
+      showToast({ type: 'error', title: 'ত্রুটি', message: msg });
+    } finally {
+      setIsRefunding(false);
     }
   };
 
@@ -578,6 +610,18 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                         </button>
 
                         <button
+                          onClick={() => {
+                            setRefundReason('গ্রাহকের অনুরোধে অর্ডার বাতিল ও সম্পূর্ণ রিফান্ড করা হয়েছে');
+                            setRefundModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-lg text-xs font-semibold transition-colors"
+                          title="গ্রাহকের অনুরোধে অর্ডার বাতিল ও ওয়ালেটে রিফান্ড দিন"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
+                          <span>বাতিল ও রিফান্ড</span>
+                        </button>
+
+                        <button
                           onClick={() => handleRelease(selectedOrder)}
                           className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 rounded-lg text-xs font-medium transition-colors"
                           title="কাজটি করতে না পারলে কিউ-তে ফিরিয়ে দিন"
@@ -618,7 +662,7 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                             >
                               <div className="flex items-center gap-1.5 mb-1 text-[10px] text-slate-400">
                                 <span className="font-bold text-slate-700">
-                                  {isMe ? 'আপনি (দায়িত্বপ্রাপ্ত কর্মকর্তা)' : `${msg.sender_name || 'গ্রাহক'} (গ্রাহক)`}
+                                   {isMe ? 'আপনি (দায়িত্বপ্রাপ্ত কর্মকর্তা)' : `${msg.sender_name || 'গ্রাহক'} (গ্রাহক)`}
                                 </span>
                                 <span>•</span>
                                 <span>{toBengaliDate(msg.created_at)}</span>
@@ -630,7 +674,7 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                                     : 'bg-white border border-slate-200 text-slate-800 rounded-bl-none shadow-2xs'
                                 }`}
                               >
-                                <p className="whitespace-pre-line">{msg.message}</p>
+                                <p className="whitespace-pre-line">{msg.message || msg.message_content || ''}</p>
                                 {msg.attachment_url && (
                                   <a
                                     href={msg.attachment_url}
@@ -850,6 +894,63 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                 >
                   <Upload className="w-3.5 h-3.5" />
                   <span>{submittingDeliverable ? 'ডেলিভারি হচ্ছে...' : 'ডেলিভারি কনফার্ম করুন'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* অর্ডার বাতিল ও রিফান্ড মডাল */}
+      {refundModalOpen && selectedOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="w-full max-w-md p-6 bg-white rounded-2xl shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
+            <div className="mb-4">
+              <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 uppercase tracking-wider">
+                গ্রাহক অনুরোধে রিফান্ড
+              </span>
+              <h3 className="text-base font-bold text-slate-900 mt-1">
+                অর্ডার বাতিল ও গ্রাহকের ওয়ালেটে ১০০% রিফান্ড
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                অর্ডার: <code className="font-mono text-slate-800">#{selectedOrder.order_number}</code> | রিফান্ডযোগ্য মূল্য: {toBengaliCurrency(selectedOrder.amount)}
+              </p>
+              <p className="text-[11px] text-amber-700 bg-amber-50 p-2.5 rounded-xl border border-amber-200 mt-2">
+                সতর্কতা: নিশ্চিত করার সাথে সাথে গ্রাহকের ওয়ালেটে সরাসরি {toBengaliCurrency(selectedOrder.amount)} ব্যালেন্স যোগ হয়ে যাবে এবং অর্ডারটি বাতিল ও রিফান্ডেড হিসেবে সংরক্ষিত হবে।
+              </p>
+            </div>
+
+            <form onSubmit={handleRefundOrder} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  বাতিল ও রিফান্ডের কারণ <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  value={refundReason}
+                  onChange={(e) => setRefundReason(e.target.value)}
+                  placeholder="যেমন: গ্রাহক চ্যাটে অর্ডার বাতিলের অনুরোধ করেছেন / প্রজেক্ট রিকোয়ারমেন্ট অমিল"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-amber-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setRefundModalOpen(false)}
+                  className="px-4 py-2 font-medium text-slate-600 hover:text-slate-800"
+                  disabled={isRefunding}
+                >
+                  বাতিল
+                </button>
+                <button
+                  type="submit"
+                  disabled={isRefunding}
+                  className="px-5 py-2 font-bold text-white bg-amber-600 rounded-xl hover:bg-amber-700 transition-colors flex items-center gap-1.5"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>{isRefunding ? 'রিফান্ড হচ্ছে...' : 'বাতিল ও রিফান্ড নিশ্চিত করুন'}</span>
                 </button>
               </div>
             </form>

@@ -51,6 +51,33 @@ if (isSupabaseConfigured && supabase) {
       )
       .on(
         'postgres_changes',
+        { event: '*', schema: 'public', table: 'chat_messages' },
+        (payload) => {
+          const raw = (payload.new || payload.old) as any;
+          if (typeof window !== 'undefined' && raw && raw.order_id) {
+            const formatted = {
+              id: String(raw.id),
+              order_id: String(raw.order_id),
+              sender_id: String(raw.sender_id),
+              receiver_id: raw.receiver_id ? String(raw.receiver_id) : null,
+              sender_name: raw.sender_name || (raw.sender_role === 'customer' ? 'গ্রাহক' : 'অ্যাডমিন'),
+              sender_role: raw.sender_role || 'customer',
+              message: raw.message || raw.message_content || '',
+              message_content: raw.message || raw.message_content || '',
+              attachment_name: raw.attachment_name || null,
+              attachment_url: raw.attachment_url || null,
+              created_at: raw.created_at || new Date().toISOString(),
+            };
+            window.dispatchEvent(
+              new CustomEvent('order_message_sent', {
+                detail: { orderId: raw.order_id, message: formatted },
+              })
+            );
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
         { event: '*', schema: 'public', table: 'order_messages' },
         (payload) => {
           const raw = (payload.new || payload.old) as any;

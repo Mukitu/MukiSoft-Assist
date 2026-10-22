@@ -48,6 +48,20 @@ export function useMessages(orderId: string | null | undefined) {
           {
             event: '*',
             schema: 'public',
+            table: 'chat_messages',
+          },
+          (payload) => {
+            const raw = (payload.new || payload.old) as any;
+            if (raw && isMounted && String(raw.order_id) === String(orderId)) {
+              fetchMessages();
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
             table: 'order_messages',
           },
           (payload) => {

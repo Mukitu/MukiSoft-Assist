@@ -310,14 +310,19 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
             </span>
           )}
           <div className="flex flex-wrap items-center gap-2 mt-1 self-start sm:self-auto">
-            {['accepted', 'in_review', 'needs_information'].includes(order.status) && (
+            {!order.assigned_admin && !['cancelled', 'refunded', 'completed', 'delivered'].includes(order.status) && (
               <button
                 onClick={() => setCancelModalOpen(true)}
-                className="px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5"
+                className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-md text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
               >
                 <XCircle className="w-3.5 h-3.5 text-rose-600" />
                 <span>অর্ডার বাতিল ও রিফান্ড</span>
               </button>
+            )}
+            {Boolean(order.assigned_admin) && !['cancelled', 'refunded', 'completed', 'delivered'].includes(order.status) && (
+              <span className="text-[11px] text-slate-600 bg-slate-50 px-2.5 py-1 rounded-md border border-slate-200">
+                কাজ চলমান: বাতিলের প্রয়োজন হলে সরাসরি চ্যাটে জানান
+              </span>
             )}
             <button
               onClick={() => onNavigate('/dashboard/support')}
@@ -772,7 +777,7 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
                           : 'bg-white border border-slate-200 text-slate-800 rounded-bl-none shadow-2xs'
                       }`}
                     >
-                      <p className="whitespace-pre-line">{msg.message}</p>
+                      <p className="whitespace-pre-line">{msg.message || msg.message_content || ''}</p>
                       {msg.attachment_url && (
                         <a
                           href={msg.attachment_url}

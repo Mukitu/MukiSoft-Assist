@@ -862,7 +862,7 @@ export const AdminOrders: React.FC = () => {
                                   : 'bg-white text-slate-800 border border-slate-200 rounded-bl-xs shadow-xs'
                               }`}
                             >
-                              {m.message}
+                              {m.message || m.message_content || ''}
                             </div>
                           </div>
                         </div>

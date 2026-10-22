@@ -1669,7 +1669,7 @@ export const api = {
    */
   /**
    * অর্ডারের সম্পূর্ণ মেসেজ তালিকা সংগ্রহ (Order Messages)
-   * order_messages, order_events এবং স্থানীয় স্টোরেজ থেকে সকল বার্তা সংগ্রহ ও ডুপ্লিকেটমুক্ত একত্রীকরণ।
+   * chat_messages, order_messages, order_events এবং স্থানীয় স্টোরেজ থেকে সকল বার্তা সংগ্রহ ও ডুপ্লিকেটমুক্ত একত্রীকরণ।
    */
   async getOrderMessages(orderId: string): Promise<OrderWorkMessage[]> {
     const rawList: OrderWorkMessage[] = [];
@@ -1683,7 +1683,55 @@ export const api = {
     }
 
     if (isSupabaseConfigured && supabase) {
-      // ১. order_messages টেবিল থেকে ডাটা নেওয়া
+      // ১. ইউনিফাইড chat_messages টেবিল থেকে ডাটা নেওয়া (Primary Table)
+      try {
+        const { data: cmData, error: cmErr } = await supabase
+          .from('chat_messages')
+          .select('*')
+          .eq('order_id', String(orderId))
+          .order('created_at', { ascending: true });
+
+        if (!cmErr && cmData && Array.isArray(cmData)) {
+          cmData.forEach((row: any) => {
+            let derivedRole: 'customer' | 'admin' | 'worker' = 'customer';
+            if (row.sender_role === 'admin' || row.sender_role === 'worker') {
+              derivedRole = 'admin';
+            } else if (row.sender_role === 'customer') {
+              derivedRole = 'customer';
+            } else if (orderContext) {
+              derivedRole = row.sender_id === orderContext.user_id ? 'customer' : 'admin';
+            }
+
+            let sName = row.sender_name;
+            if (!sName || sName === 'গ্রাহক' || sName === 'অ্যাডমিন') {
+              if (derivedRole === 'customer') {
+                sName = orderContext?.customer_name || 'গ্রাহক';
+              } else {
+                sName = orderContext?.assigned_admin_name || 'দায়িত্বপ্রাপ্ত স্পেশালিস্ট';
+              }
+            }
+
+            rawList.push({
+              id: String(row.id),
+              order_id: String(row.order_id),
+              sender_id: String(row.sender_id),
+              receiver_id: row.receiver_id ? String(row.receiver_id) : null,
+              sender_name: sName,
+              sender_role: derivedRole,
+              message: row.message || row.message_content || '',
+              message_content: row.message || row.message_content || '',
+              is_read: Boolean(row.is_read),
+              attachment_name: row.attachment_name || null,
+              attachment_url: row.attachment_url || null,
+              created_at: row.created_at || new Date().toISOString(),
+            });
+          });
+        }
+      } catch (err) {
+        console.warn('chat_messages fetch exception:', err);
+      }
+
+      // ২. order_messages টেবিল থেকে ডাটা নেওয়া (Backward Compatibility)
       try {
         const { data: omData, error: omErr } = await supabase
           .from('order_messages')
@@ -1726,14 +1774,12 @@ export const api = {
               created_at: row.created_at || new Date().toISOString(),
             });
           });
-        } else if (omErr) {
-          console.warn('order_messages fetch warning:', omErr);
         }
       } catch (err) {
         console.warn('order_messages fetch exception:', err);
       }
 
-      // ২. order_events টেবিল থেকে চ্যাট মেসেজ সিঙ্ক (দ্বিমুখী আরএলএস-মুক্ত ব্যাকআপ)
+      // ৩. order_events টেবিল থেকে চ্যাট মেসেজ সিঙ্ক (দ্বিমুখী ব্যাকআপ)
       try {
         const { data: oeData } = await supabase
           .from('order_events')
@@ -1784,11 +1830,11 @@ export const api = {
       }
     }
 
-    // ৩. লোকাল স্টোরেজ থেকে ডাটা মার্জ করা
+    // ৪. লোকাল স্টোরেজ থেকে ডাটা মার্জ করা
     const localMsgs = getLS<OrderWorkMessage[]>(`order_messages_${orderId}`, []);
     rawList.push(...localMsgs);
 
-    // ৪. ডুপ্লিকেশন প্রতিরোধ (Deduplication by ID and Content/Timestamp)
+    // ৫. ডুপ্লিকেশন প্রতিরোধ (Deduplication by ID and Content/Timestamp)
     const seenIds = new Set<string>();
     const seenFingerprints = new Set<string>();
     const deduplicated: OrderWorkMessage[] = [];
@@ -1845,6 +1891,7 @@ export const api = {
 
     const now = new Date().toISOString();
     const cleanRole = senderRole === 'worker' ? 'admin' : senderRole;
+    // Explicit recipient identification
     const recipientId = senderRole === 'customer' ? order.assigned_admin || null : order.user_id;
 
     // PostgreSQL UUID সাপোর্ট করার জন্য ভ্যালিড UUID তৈরি
@@ -1867,24 +1914,43 @@ export const api = {
     };
 
     if (isSupabaseConfigured && supabase) {
-      // ১. order_messages টেবিলে রেজিলিয়েন্ট ৫-স্তরবিশিষ্ট ইনসার্ট (মেসেজ কলাম ও মেসেজ_কনটেন্ট উভয় সমর্থন)
+      let supabaseSaved = false;
+
+      // ১. ইউনিফাইড chat_messages টেবিলে ইনসার্ট (Primary Delivery System)
+      const chatPayload: Record<string, any> = {
+        order_id: String(orderId),
+        sender_id: String(senderId),
+        receiver_id: recipientId ? String(recipientId) : null,
+        sender_name: senderName,
+        sender_role: cleanRole,
+        message: messageText.trim(),
+        message_content: messageText.trim(),
+        attachment_name: attachment?.name || null,
+        attachment_url: attachment?.url || null,
+        is_read: false,
+        created_at: now,
+        ...(realUuid ? { id: realUuid } : {}),
+      };
+
+      try {
+        const { data: cData, error: cErr } = await supabase
+          .from('chat_messages')
+          .insert(chatPayload as any)
+          .select()
+          .maybeSingle();
+
+        if (!cErr && cData) {
+          supabaseSaved = true;
+          newMsg.id = String(cData.id);
+          newMsg.created_at = cData.created_at || now;
+        }
+      } catch (err) {
+        console.warn('chat_messages insert exception:', err);
+      }
+
+      // ২. order_messages টেবিলে রেজিলিয়েন্ট ইনসার্ট (Fallback Delivery System)
       const attempts: Record<string, any>[] = [
-        // Attempt 1: Full columns with message and message_content
-        {
-          order_id: String(orderId),
-          sender_id: String(senderId),
-          receiver_id: recipientId ? String(recipientId) : null,
-          sender_name: senderName,
-          sender_role: cleanRole,
-          message: messageText.trim(),
-          message_content: messageText.trim(),
-          attachment_name: attachment?.name || null,
-          attachment_url: attachment?.url || null,
-          is_read: false,
-          created_at: now,
-          ...(realUuid ? { id: realUuid } : {}),
-        },
-        // Attempt 2: Standard with 'message' column
+        chatPayload,
         {
           order_id: String(orderId),
           sender_id: String(senderId),
@@ -1894,7 +1960,6 @@ export const api = {
           created_at: now,
           ...(realUuid ? { id: realUuid } : {}),
         },
-        // Attempt 3: Standard with 'message_content' column
         {
           order_id: String(orderId),
           sender_id: String(senderId),
@@ -1904,13 +1969,11 @@ export const api = {
           created_at: now,
           ...(realUuid ? { id: realUuid } : {}),
         },
-        // Attempt 4: Minimal with 'message' column
         {
           order_id: String(orderId),
           sender_id: String(senderId),
           message: messageText.trim(),
         },
-        // Attempt 5: Minimal with 'message_content' column
         {
           order_id: String(orderId),
           sender_id: String(senderId),
@@ -1922,16 +1985,19 @@ export const api = {
         try {
           const res = await supabase.from('order_messages').insert(payload as any).select().maybeSingle();
           if (!res.error && res.data) {
-            newMsg.id = String(res.data.id || newMsg.id);
-            newMsg.created_at = res.data.created_at || now;
+            if (!supabaseSaved) {
+              newMsg.id = String(res.data.id || newMsg.id);
+              newMsg.created_at = res.data.created_at || now;
+              supabaseSaved = true;
+            }
             break;
           }
         } catch {
-          // continue to next attempt
+          // continue
         }
       }
 
-      // ২. সুপাবেসের বিশ্বস্ত order_events টেবিলে চ্যাট ইভেন্ট সিঙ্ক (RLS বাইপাস ও দ্বিমুখী নিশ্চিত ডেলিভারি)
+      // ৩. সুপাবেসের বিশ্বস্ত order_events টেবিলে চ্যাট ইভেন্ট সিঙ্ক
       try {
         await supabase.from('order_events').insert({
           order_id: String(orderId),
@@ -2065,20 +2131,65 @@ export const api = {
     return true;
   },
 
-  async refundOrder(orderId: string, adminId: string, refundReason: string): Promise<{ success: boolean; newBalance: number }> {
-    if (!refundReason.trim()) {
+  async refundOrder(orderId: string, arg2: string, arg3?: string): Promise<{ success: boolean; newBalance: number }> {
+    const adminId = arg3 ? arg2 : 'worker';
+    const refundReason = (arg3 || arg2 || 'গ্রাহকের অনুরোধে অর্ডার বাতিল ও রিফান্ড').trim();
+    if (!refundReason) {
       throw new Error('রিফান্ড করার জন্য সুনির্দিষ্ট কারণ উল্লেখ করা আবশ্যক।');
     }
 
     let refundBalance = 0;
 
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase.rpc('refund_order', {
-        p_order_id: orderId,
-        p_refund_reason: refundReason.trim(),
-      });
-      if (error) throw new Error(error.message);
-      refundBalance = data.new_balance;
+      let rpcSucceeded = false;
+      try {
+        const { data, error } = await supabase.rpc('refund_order', {
+          p_order_id: orderId,
+          p_refund_reason: refundReason.trim(),
+        });
+        if (!error && data) {
+          refundBalance = data.new_balance;
+          rpcSucceeded = true;
+        }
+      } catch (e) {
+        console.warn('RPC refund_order warning, trying direct queries:', e);
+      }
+
+      if (!rpcSucceeded) {
+        const { data: ord } = await supabase.from('orders').select('*').eq('id', orderId).single();
+        if (ord) {
+          const now = new Date().toISOString();
+          await supabase.from('orders').update({
+            status: 'refunded',
+            cancellation_reason: refundReason.trim(),
+            refund_amount: ord.amount,
+            updated_at: now,
+          }).eq('id', orderId);
+
+          const { data: w } = await supabase.from('wallets').select('*').eq('user_id', ord.user_id).single();
+          if (w) {
+            const newBal = (w.balance || 0) + ord.amount;
+            await supabase.from('wallets').update({
+              balance: newBal,
+              total_spent: Math.max(0, (w.total_spent || 0) - ord.amount),
+              updated_at: now,
+            }).eq('id', w.id);
+
+            await supabase.from('wallet_transactions').insert({
+              wallet_id: w.id,
+              user_id: ord.user_id,
+              type: 'refund',
+              amount: ord.amount,
+              balance_after: newBal,
+              status: 'completed',
+              reference_id: orderId,
+              reference_type: 'order',
+              description: `অর্ডার রিফান্ড: #${ord.order_number} (কারণ: ${refundReason.trim()})`,
+            });
+            refundBalance = newBal;
+          }
+        }
+      }
     } else {
       // Local fallback
       const orders = getLS<Order[]>('orders', []);
@@ -2206,6 +2317,10 @@ export const api = {
           throw new Error('অর্ডার পাওয়া যায়নি অথবা আপনার এই অর্ডারে অনুমতি নেই।');
         }
 
+        if (orderData.assigned_admin) {
+          throw new Error('এই কাজটির দায়িত্ব ইতিমধ্যে একজন স্পেশালিস্ট অ্যাডমিন/ওয়ার্কার গ্রহণ করেছেন। অর্ডারটি এখন সরাসরি বাতিল করা সম্ভব নয়। দয়া করে সরাসরি চ্যাটে দায়িত্বে থাকা কর্মকর্তার সাথে যোগাযোগ করে বাতিলের অনুরোধ করুন।');
+        }
+
         if (['delivered', 'completed', 'refunded'].includes(orderData.status)) {
           throw new Error('ডেলিভারি সম্পন্ন বা রিফান্ড হওয়া অর্ডার সরাসরি বাতিলযোগ্য নয়।');
         }
@@ -2263,6 +2378,9 @@ export const api = {
       const orders = getLS<Order[]>('orders', []);
       const order = orders.find((o) => o.id === orderId && o.user_id === userId);
       if (!order) throw new Error('অর্ডার পাওয়া যায়নি');
+      if (order.assigned_admin) {
+        throw new Error('এই কাজটির দায়িত্ব ইতিমধ্যে একজন স্পেশালিস্ট অ্যাডমিন/ওয়ার্কার গ্রহণ করেছেন। অর্ডারটি এখন সরাসরি বাতিল করা সম্ভব নয়। দয়া করে সরাসরি চ্যাটে দায়িত্বে থাকা কর্মকর্তার সাথে যোগাযোগ করে বাতিলের অনুরোধ করুন।');
+      }
       if (['delivered', 'completed', 'refunded'].includes(order.status)) {
         throw new Error('ডেলিভারি সম্পন্ন বা রিফান্ড হওয়া অর্ডার সরাসরি বাতিলযোগ্য নয়।');
       }
