@@ -40,7 +40,7 @@ export function useMessages(orderId: string | null | undefined) {
     const sb = supabase;
 
     if (isSupabaseConfigured && sb) {
-      const channelId = `order-messages-${orderId}-${Math.random().toString(36).substring(2, 7)}`;
+      const channelId = `order-chat-${orderId}`;
       channel = sb
         .channel(channelId)
         .on(
@@ -81,6 +81,15 @@ export function useMessages(orderId: string | null | undefined) {
           (payload) => {
             const raw = (payload.new || payload.old) as any;
             if (raw && isMounted && String(raw.order_id) === String(orderId)) {
+              fetchMessages();
+            }
+          }
+        )
+        .on(
+          'broadcast',
+          { event: 'new_message' },
+          (payload) => {
+            if (isMounted) {
               fetchMessages();
             }
           }

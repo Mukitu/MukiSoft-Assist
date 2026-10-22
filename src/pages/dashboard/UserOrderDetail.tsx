@@ -757,7 +757,7 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
               </div>
             ) : (
               messages.map((msg) => {
-                const isMe = Boolean(user?.id && (msg.sender_id === user.id || msg.sender_id === user.email));
+                const isMe = (msg.sender_role as string) === 'customer' || Boolean(user?.id && (msg.sender_id === user.id || msg.sender_id === user.email));
                 return (
                   <div
                     key={msg.id}

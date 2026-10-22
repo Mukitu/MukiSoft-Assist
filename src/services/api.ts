@@ -1790,7 +1790,14 @@ export const api = {
 
         if (oeData && Array.isArray(oeData)) {
           oeData.forEach((evt: any) => {
-            const meta = evt.metadata || {};
+            let meta: any = {};
+            if (evt.metadata) {
+              if (typeof evt.metadata === 'string') {
+                try { meta = JSON.parse(evt.metadata); } catch { meta = {}; }
+              } else if (typeof evt.metadata === 'object') {
+                meta = evt.metadata;
+              }
+            }
             let derivedRole: 'customer' | 'admin' | 'worker' = 'customer';
             if (meta.sender_role === 'admin' || meta.sender_role === 'worker') {
               derivedRole = 'admin';
@@ -2025,6 +2032,16 @@ export const api = {
         await supabase.from('orders').update({ updated_at: now }).eq('id', orderId);
       } catch (err) {
         // ignore
+      }
+
+      try {
+        await supabase.channel(`order-chat-${orderId}`).send({
+          type: 'broadcast',
+          event: 'new_message',
+          payload: newMsg,
+        });
+      } catch {
+        // ignore broadcast fail
       }
     }
 
