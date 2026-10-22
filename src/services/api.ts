@@ -753,10 +753,26 @@ export const api = {
 
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data, error } = await supabase.from('payment_method_configs').select('*').order('created_at', { ascending: true });
-        if (!error && data && data.length > 0) return data as PaymentMethodConfig[];
-      } catch {
-        // fallback
+        const { data, error } = await supabase
+          .from('payment_method_configs')
+          .select('*')
+          .order('created_at', { ascending: true });
+
+        if (!error && data && data.length > 0) {
+          return data as PaymentMethodConfig[];
+        }
+
+        if (!error && data && data.length === 0) {
+          // Auto-seed default payment methods to Supabase table
+          try {
+            await supabase.from('payment_method_configs').upsert(DEFAULT_PAYMENT_METHODS);
+          } catch (seedErr) {
+            console.warn('Auto-seeding default payment methods failed:', seedErr);
+          }
+          return DEFAULT_PAYMENT_METHODS;
+        }
+      } catch (err) {
+        console.error('getPaymentMethodConfigs exception:', err);
       }
     }
 
@@ -770,13 +786,23 @@ export const api = {
 
     if (isSupabaseConfigured && supabase) {
       try {
-        await supabase.from('payment_method_configs').upsert(configs);
-      } catch (err) {
-        console.warn('Supabase payment method configs save error:', err);
+        const { error } = await supabase.from('payment_method_configs').upsert(configs, { onConflict: 'id' });
+        if (error) {
+          console.error('Supabase payment method configs save error:', error);
+          throw new Error(error.message);
+        }
+      } catch (err: any) {
+        console.error('Failed to update payment_method_configs in Supabase:', err);
+        throw err;
       }
     }
 
     setLS('payment_method_configs', configs);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('payment_configs_updated'));
+    }
+
     return true;
   },
 

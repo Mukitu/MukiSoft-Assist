@@ -55,6 +55,29 @@ export const UserWallet: React.FC = () => {
       }
     }
     load();
+
+    // 🔄 রিয়েল-টাইম সিঙ্ক: সুপার অ্যাডমিন মেথড বা নম্বর চেঞ্জ করলে ইউজার প্যানেলে সাথে সাথে সিঙ্ক হবে
+    const refreshConfigs = async () => {
+      try {
+        const configs = await api.getPaymentMethodConfigs();
+        setPaymentConfigs(configs);
+        const activeList = configs.filter((c) => c.is_active);
+        setSelectedMethodId((prev) => {
+          if (prev && activeList.some((c) => c.id === prev)) return prev;
+          return activeList.length > 0 ? activeList[0].id : '';
+        });
+      } catch (err) {
+        console.warn('Failed to refresh payment configs:', err);
+      }
+    };
+
+    window.addEventListener('payment_configs_updated', refreshConfigs);
+    const interval = setInterval(refreshConfigs, 3000);
+
+    return () => {
+      window.removeEventListener('payment_configs_updated', refreshConfigs);
+      clearInterval(interval);
+    };
   }, [user]);
 
   const activeConfigs = paymentConfigs.filter((c) => c.is_active);
