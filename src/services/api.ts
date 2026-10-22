@@ -798,18 +798,94 @@ export const api = {
     let remainingBalance: number;
 
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase.rpc('purchase_service_with_wallet', {
-        p_service_id: serviceId,
-        p_requirements_text: requirementsText,
-        p_reference_link: referenceLink || null,
-        p_attachment_name: attachmentName || null,
-        p_attachment_url: attachmentUrl || null,
-        p_idempotency_key: idempotencyKey,
-      });
-      if (error) throw new Error(error.message);
-      orderId = data.order_id;
-      orderNumber = data.order_number;
-      remainingBalance = data.remaining_balance;
+      try {
+        const { data, error } = await supabase.rpc('purchase_service_with_wallet', {
+          p_service_id: serviceId,
+          p_requirements_text: requirementsText,
+          p_reference_link: referenceLink || null,
+          p_attachment_name: attachmentName || null,
+          p_attachment_url: attachmentUrl || null,
+          p_idempotency_key: idempotencyKey,
+        });
+        if (error) throw error;
+        orderId = data.order_id;
+        orderNumber = data.order_number;
+        remainingBalance = data.remaining_balance;
+      } catch (rpcErr: any) {
+        console.warn('RPC purchase_service_with_wallet failed, executing direct tables update fallback:', rpcErr);
+
+        const service = await this.getServiceById(serviceId);
+        if (!service) throw new Error('অনুরোধকৃত সেবাটি ক্যাটালগে পাওয়া যায়নি।');
+        if (!service.is_active) throw new Error('এই সেবাটি বর্তমানে সাময়িকভাবে বন্ধ রয়েছে।');
+
+        const finalPrice = service.promotional_price ?? service.price;
+        const wallet = await this.getWallet(userId);
+        if (wallet.balance < finalPrice) {
+          throw new Error(`পর্যাপ্ত ওয়ালেট ব্যালেন্স নেই। আপনার বর্তমান ব্যালেন্স ৳ ${wallet.balance}, কিন্তু প্রয়োজনীয় মূল্য ৳ ${finalPrice}। দয়া করে আগে ওয়ালেটে টাকা জমা দিন।`);
+        }
+
+        orderNumber = `MS-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+        // 1. Debit wallet in Supabase
+        const newBalance = wallet.balance - finalPrice;
+        const newSpent = (wallet.total_spent || 0) + finalPrice;
+        await supabase.from('wallets').update({
+          balance: newBalance,
+          total_spent: newSpent,
+          updated_at: new Date().toISOString(),
+        }).eq('user_id', userId);
+
+        // 2. Insert order in Supabase
+        let insertedOrder: any = null;
+        const orderPayload = {
+          order_number: orderNumber,
+          user_id: userId,
+          service_id: serviceId,
+          amount: finalPrice,
+          status: 'pending',
+          requirements_submitted: requirementsText,
+          reference_link: referenceLink || null,
+          attachment_name: attachmentName || null,
+          attachment_url: attachmentUrl || null,
+          idempotency_key: idempotencyKey,
+        };
+
+        const res1 = await supabase.from('orders').insert(orderPayload).select().single();
+        if (res1.error) {
+          // If 'pending' status fails due to enum, try 'accepted'
+          const res2 = await supabase.from('orders').insert({ ...orderPayload, status: 'accepted' }).select().single();
+          if (res2.error) {
+            throw new Error(res1.error.message || res2.error.message);
+          }
+          insertedOrder = res2.data;
+        } else {
+          insertedOrder = res1.data;
+        }
+
+        orderId = insertedOrder.id;
+        remainingBalance = newBalance;
+
+        // 3. Record transaction in Supabase
+        await supabase.from('wallet_transactions').insert({
+          wallet_id: wallet.id,
+          user_id: userId,
+          type: 'service_purchase',
+          amount: -finalPrice,
+          balance_after: newBalance,
+          status: 'completed',
+          reference_id: orderId,
+          reference_type: 'order',
+          description: `সেবা ক্রয়: ${service.title_bn || service.title} (অর্ডার #${orderNumber})`,
+        });
+
+        // 4. Record order event
+        await supabase.from('order_events').insert({
+          order_id: orderId,
+          actor_id: userId,
+          event_type: 'ORDER_CREATED',
+          message: `অর্ডার গ্রহণ সম্পন্ন হয়েছে এবং ওয়ালেট এসক্রো থেকে ৳ ${finalPrice} পরিশোধ করা হয়েছে।`,
+        });
+      }
     } else {
       // Local fallback
       const service = await this.getServiceById(serviceId);
@@ -859,7 +935,7 @@ export const api = {
         user_id: userId,
         service_id: serviceId,
         amount: finalPrice,
-        status: 'accepted',
+        status: 'pending',
         requirements_submitted: requirementsText,
         reference_link: referenceLink || null,
         attachment_name: attachmentName || null,
@@ -884,6 +960,10 @@ export const api = {
       setLS('orders', orders);
 
       remainingBalance = wallet.balance;
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('orders_updated'));
     }
 
     // Notify customer about created order

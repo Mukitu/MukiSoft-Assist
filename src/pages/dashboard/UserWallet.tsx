@@ -27,10 +27,11 @@ export const UserWallet: React.FC = () => {
   const [selectedMethodId, setSelectedMethodId] = useState<string>('');
 
   // ফর্ম স্টেট
-  const [amount, setAmount] = useState<number>(1000);
+  const [amount, setAmount] = useState<number | ''>('');
   const [senderAccount, setSenderAccount] = useState('');
   const [transactionRef, setTransactionRef] = useState('');
-  const [slipUrl, setSlipUrl] = useState('');
+  const [slipFile, setSlipFile] = useState<File | null>(null);
+  const [slipPreview, setSlipPreview] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -65,6 +66,21 @@ export const UserWallet: React.FC = () => {
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
+  const handleSlipFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      showToast({ type: 'error', title: 'ফাইলটি অনেক বড়', message: 'সর্বোচ্চ ১০ মেগাবাইটের ছবি আপলোড করুন।' });
+      return;
+    }
+    setSlipFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setSlipPreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleDepositSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
@@ -72,7 +88,8 @@ export const UserWallet: React.FC = () => {
       showToast({ type: 'error', title: 'পেমেন্ট মাধ্যম অনুপলব্ধ', message: 'বর্তমানে কোনো পেমেন্ট মেথড সক্রিয় নেই।' });
       return;
     }
-    if (amount < 100) {
+    const numAmount = Number(amount);
+    if (!numAmount || isNaN(numAmount) || numAmount < 100) {
       showToast({ type: 'error', title: 'ন্যূনতম জমার পরিমাণ', message: 'ন্যূনতম জমার পরিমাণ ১০০ টাকা।' });
       return;
     }
@@ -85,11 +102,11 @@ export const UserWallet: React.FC = () => {
     try {
       const newReq = await api.submitDepositRequest({
         userId: user.id,
-        amount,
+        amount: numAmount,
         paymentMethod: selectedConfig.name,
         senderAccount: senderAccount.trim(),
         transactionReference: transactionRef.trim(),
-        slipUrl,
+        slipUrl: slipPreview || undefined,
       });
 
       showToast({
@@ -101,7 +118,9 @@ export const UserWallet: React.FC = () => {
       setDepositRequests((prev) => [newReq, ...prev]);
       setTransactionRef('');
       setSenderAccount('');
-      setSlipUrl('');
+      setAmount('');
+      setSlipFile(null);
+      setSlipPreview('');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'জমার অনুরোধ ব্যর্থ হয়েছে';
       showToast({ type: 'error', title: 'ত্রুটি', message: msg });
@@ -252,8 +271,9 @@ export const UserWallet: React.FC = () => {
                     type="number"
                     min={100}
                     required
+                    placeholder="যেমন: ৫০০"
                     value={amount}
-                    onChange={(e) => setAmount(Number(e.target.value))}
+                    onChange={(e) => setAmount(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full p-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500 focus:bg-white font-mono font-bold"
                   />
                   <span className="text-[10px] text-slate-400 mt-1 block">
@@ -292,15 +312,30 @@ export const UserWallet: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  পেমেন্ট স্লিপ / স্ক্রিনশট লিংক (ঐচ্ছিক)
+                  পেমেন্ট স্লিপ / স্ক্রিনশট ছবি আপলোড (ঐচ্ছিক)
                 </label>
-                <input
-                  type="url"
-                  value={slipUrl}
-                  onChange={(e) => setSlipUrl(e.target.value)}
-                  placeholder="https://drive.google.com/... অথবা ইমেজ ড্রাইভ লিংক"
-                  className="w-full p-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500 focus:bg-white font-mono"
-                />
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={handleSlipFileChange}
+                    className="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer border border-slate-200 rounded-xl bg-slate-50 p-1"
+                  />
+                  {slipPreview && (
+                    <button
+                      type="button"
+                      onClick={() => { setSlipFile(null); setSlipPreview(''); }}
+                      className="text-xs text-rose-600 hover:underline shrink-0"
+                    >
+                      ছবি মুছে ফেলুন
+                    </button>
+                  )}
+                </div>
+                {slipPreview && (
+                  <div className="mt-2.5 relative rounded-xl overflow-hidden border border-slate-200 max-w-[200px] h-28 bg-slate-100 shadow-2xs">
+                    <img src={slipPreview} alt="Slip preview" className="w-full h-full object-cover" />
+                  </div>
+                )}
               </div>
 
               <button
