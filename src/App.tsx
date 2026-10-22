@@ -50,10 +50,12 @@ import { AdminLiveChat } from './pages/admin/AdminLiveChat';
 import { AdminCommissionWithdrawals } from './pages/admin/AdminCommissionWithdrawals';
 import { AdminWithdrawQueue } from './pages/admin/AdminWithdrawQueue';
 import { AdminFlaggedChats } from './pages/admin/AdminFlaggedChats';
+import { useAuth } from './context/AuthContext';
 import { ResetPassword } from './pages/public/ResetPassword';
 import { LiveChatWidget } from './components/chat/LiveChatWidget';
 
 function AppRouter() {
+  const { role } = useAuth();
   const [currentUrl, setCurrentUrl] = useState<string>(() => {
     return (window.location.pathname || '/') + (window.location.search || '');
   });
@@ -186,8 +188,8 @@ function AppRouter() {
               <AdminSettings />
             </AdminDashboardLayout>
           ) : (
-            <AdminDashboardLayout currentPath={pathname} onNavigate={navigate}>
-              <AdminOverview onNavigate={navigate} />
+            <AdminDashboardLayout currentPath={role === 'worker' ? '/admin/claim-tasks' : pathname} onNavigate={navigate}>
+              {role === 'worker' ? <AdminClaimTasks onNavigate={navigate} /> : <AdminOverview onNavigate={navigate} />}
             </AdminDashboardLayout>
           )}
         </ProtectedRoute>

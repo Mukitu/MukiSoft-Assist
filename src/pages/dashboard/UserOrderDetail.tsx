@@ -348,54 +348,61 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
       </div>
 
       {/* স্পেশালিস্ট অ্যাডমিন অ্যাসাইনমেন্ট স্ট্যাটাস ব্যানার */}
-      <div className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-        order.assigned_admin_name
-          ? 'bg-gradient-to-r from-emerald-50 via-teal-50 to-white border-emerald-200'
-          : 'bg-amber-50/70 border-amber-200'
-      }`}>
-        <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-            order.assigned_admin_name ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
-          }`}>
-            <UserCheck className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                দায়িত্বপ্রাপ্ত স্পেশালিস্ট অ্যাডমিন
-              </span>
-              {order.assigned_admin_name ? (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800">
-                  <Check className="w-3 h-3" /> নির্ধারিত
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 animate-pulse">
-                  ক্লেইমের অপেক্ষায়
-                </span>
-              )}
-            </div>
-            <p className="text-xs font-semibold text-slate-900 mt-0.5">
-              {order.assigned_admin_name ? (
-                <>
-                  <span className="font-bold text-emerald-900">{order.assigned_admin_name}</span> আপনার এই কাজটি পরিচালনা করছেন।
-                </>
-              ) : (
-                'অর্ডারটি অ্যাডমিন পুলে উন্মুক্ত আছে। উপযুক্ত স্পেশালিস্ট কর্মকর্তা দ্রুত কাজটি গ্রহণ করবেন।'
-              )}
-            </p>
-          </div>
-        </div>
+      {(() => {
+        const hasAssigned = Boolean(order.assigned_admin || order.assigned_admin_name);
+        const assignedName = order.assigned_admin_name || (order.assigned_admin ? 'দায়িত্বপ্রাপ্ত স্পেশালিস্ট কর্মকর্তা' : null);
 
-        {order.assigned_admin_name && (
-          <button
-            onClick={() => setActiveTab('chat')}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-white hover:bg-emerald-50 border border-emerald-200 rounded-lg shadow-2xs transition-colors shrink-0"
-          >
-            <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
-            <span>অ্যাডমিনের সাথে সরাসরি কথা বলুন</span>
-          </button>
-        )}
-      </div>
+        return (
+          <div className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+            hasAssigned
+              ? 'bg-gradient-to-r from-emerald-50 via-teal-50 to-white border-emerald-200'
+              : 'bg-amber-50/70 border-amber-200'
+          }`}>
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                hasAssigned ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
+              }`}>
+                <UserCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                    দায়িত্বপ্রাপ্ত স্পেশালিস্ট অ্যাডমিন/ওয়ার্কার
+                  </span>
+                  {hasAssigned ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800">
+                      <Check className="w-3 h-3" /> কাজ এক্সেপ্ট করা হয়েছে
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 animate-pulse">
+                      ক্লেইমের অপেক্ষায়
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs font-semibold text-slate-900 mt-0.5">
+                  {hasAssigned ? (
+                    <>
+                      <span className="font-bold text-emerald-900">{assignedName}</span> আপনার এই কাজটি গ্রহণ করেছেন এবং পরিচালনা করছেন।
+                    </>
+                  ) : (
+                    'অর্ডারটি অ্যাডমিন পুলে উন্মুক্ত আছে। উপযুক্ত স্পেশালিস্ট কর্মকর্তা দ্রুত কাজটি গ্রহণ করবেন।'
+                  )}
+                </p>
+              </div>
+            </div>
+
+            {hasAssigned && (
+              <button
+                onClick={() => setActiveTab('chat')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-white hover:bg-emerald-50 border border-emerald-200 rounded-lg shadow-2xs transition-colors shrink-0"
+              >
+                <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+                <span>স্পেশালিস্টের সাথে সরাসরি চ্যাট করুন</span>
+              </button>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ডেলিভারি অনুমোদন ও সম্পন্ন করার বড় হাইলাইট ব্যানার (যদি status === 'delivered' হয়) */}
       {order.status === 'delivered' && (

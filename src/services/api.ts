@@ -8,6 +8,7 @@ import {
   DepositRequest,
   Order,
   OrderDeliverable,
+  OrderEvent,
   SupportTicket,
   TicketMessage,
   TicketPriority,
@@ -1129,7 +1130,24 @@ export const api = {
     const localOrders = getLS<Order[]>('orders', []);
     const map = new Map<string, Order>();
     remoteOrders.forEach((o) => map.set(o.id, o));
-    localOrders.forEach((o) => { if (!map.has(o.id)) map.set(o.id, o); });
+    localOrders.forEach((o) => {
+      if (!map.has(o.id)) {
+        map.set(o.id, o);
+      } else {
+        const remote = map.get(o.id)!;
+        // Preserve local claim attributes if local has assigned_admin and remote hasn't reflected it yet
+        if (o.assigned_admin && !remote.assigned_admin) {
+          map.set(o.id, {
+            ...remote,
+            assigned_admin: o.assigned_admin,
+            assigned_admin_name: o.assigned_admin_name,
+            assigned_admin_email: o.assigned_admin_email,
+            claimed_at: o.claimed_at,
+            status: o.status === 'pending' ? 'in_progress' : o.status,
+          });
+        }
+      }
+    });
 
     return Array.from(map.values()).sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
@@ -1328,6 +1346,8 @@ export const api = {
         status: newStatus,
         updated_at: now,
       };
+      orders.unshift(updatedOrder);
+      setLS('orders', orders);
     }
 
     // গ্রাহককে নোটিফিকেশন পাঠানো যে স্পেশালিস্ট অ্যাডমিন তার কাজ শুরু করেছেন
