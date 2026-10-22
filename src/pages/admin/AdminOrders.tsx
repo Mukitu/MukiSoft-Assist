@@ -30,7 +30,7 @@ import { useNotification } from '../../context/NotificationContext';
 import { api } from '../../services/api';
 import { Order, OrderStatus, OrderWorkMessage } from '../../types/database';
 import { StatusBadge } from '../../components/common/StatusBadge';
-import { supabase, isSupabaseConfigured } from '../../lib/supabase';
+import { useMessages } from '../../hooks/useMessages';
 
 export const AdminOrders: React.FC = () => {
   const { user, profile, isSuperAdmin } = useAuth();
@@ -44,10 +44,9 @@ export const AdminOrders: React.FC = () => {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [modalTab, setModalTab] = useState<'brief' | 'chat' | 'deliverables' | 'reviews'>('brief');
 
-  // অর্ডার চ্যাট স্টেট
-  const [orderMessages, setOrderMessages] = useState<OrderWorkMessage[]>([]);
+  // অর্ডার চ্যাট হুক
+  const { messages: orderMessages, sending: sendingOrderMessage, sendMessage: sendOrderMsgViaHook } = useMessages(selectedOrder?.id);
   const [orderMessageInput, setOrderMessageInput] = useState('');
-  const [sendingOrderMessage, setSendingOrderMessage] = useState(false);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
   // অ্যাডমিন রিভিউ স্টেট
@@ -94,7 +93,7 @@ export const AdminOrders: React.FC = () => {
     window.addEventListener('order_claimed', handleUpdate);
     window.addEventListener('order_released', handleUpdate);
 
-    const interval = setInterval(loadOrders, 3000);
+    const interval = setInterval(loadOrders, 4000);
 
     return () => {
       window.removeEventListener('orders_updated', handleUpdate);
@@ -103,71 +102,6 @@ export const AdminOrders: React.FC = () => {
       clearInterval(interval);
     };
   }, []);
-
-  // সিলেক্টেড অর্ডারের চ্যাট মেসেজ লোড ও লাইভ লিসেনার
-  useEffect(() => {
-    if (!selectedOrder) {
-      setOrderMessages([]);
-      return;
-    }
-    api.getOrderMessages(selectedOrder.id).then(setOrderMessages);
-
-    // Supabase Realtime সাবস্ক্রিপশন
-    let channel: ReturnType<NonNullable<typeof supabase>['channel']> | null = null;
-    const sb = supabase;
-    if (isSupabaseConfigured && sb) {
-      channel = sb
-        .channel(`admin-order-modal-${selectedOrder.id}`)
-        .on(
-          'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'order_messages', filter: `order_id=eq.${selectedOrder.id}` },
-          (payload) => {
-            const raw = payload.new as any;
-            if (raw) {
-              const formatted: OrderWorkMessage = {
-                id: raw.id,
-                order_id: raw.order_id,
-                sender_id: raw.sender_id,
-                sender_name: raw.sender_name || (raw.sender_role === 'customer' ? 'গ্রাহক' : 'অ্যাডমিন'),
-                sender_role: raw.sender_role || 'admin',
-                message: raw.message_content || raw.message || '',
-                attachment_name: raw.attachment_name || null,
-                attachment_url: raw.attachment_url || null,
-                created_at: raw.created_at || new Date().toISOString(),
-              };
-              setOrderMessages((prev) => (prev.some((m) => m.id === formatted.id) ? prev : [...prev, formatted]));
-            }
-          }
-        )
-        .on(
-          'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'order_work_messages', filter: `order_id=eq.${selectedOrder.id}` },
-          (payload) => {
-            const raw = payload.new as OrderWorkMessage;
-            if (raw) {
-              setOrderMessages((prev) => (prev.some((m) => m.id === raw.id) ? prev : [...prev, raw]));
-            }
-          }
-        )
-        .subscribe();
-    }
-
-    const handleChatEvt = (e: Event) => {
-      const customEvt = e as CustomEvent<{ orderId: string; message: OrderWorkMessage }>;
-      if (customEvt.detail && customEvt.detail.orderId === selectedOrder.id) {
-        setOrderMessages((prev) => {
-          if (prev.some((m) => m.id === customEvt.detail.message.id)) return prev;
-          return [...prev, customEvt.detail.message];
-        });
-      }
-    };
-
-    window.addEventListener('order_message_sent', handleChatEvt);
-    return () => {
-      if (sb && channel) sb.removeChannel(channel);
-      window.removeEventListener('order_message_sent', handleChatEvt);
-    };
-  }, [selectedOrder]);
 
   const prevOrderMsgCountRef = useRef(0);
   useEffect(() => {
@@ -229,11 +163,9 @@ export const AdminOrders: React.FC = () => {
     const adminName = profile?.full_name || 'দায়িত্বপ্রাপ্ত অ্যাডমিন';
     const text = orderMessageInput.trim();
     setOrderMessageInput('');
-    setSendingOrderMessage(true);
 
     try {
-      const newMsg = await api.sendOrderMessage(selectedOrder.id, user.id, adminName, 'admin', text);
-      setOrderMessages((prev) => [...prev, newMsg]);
+      await sendOrderMsgViaHook(user.id, adminName, 'admin', text);
       showToast({
         type: 'success',
         title: 'বার্তা প্রেরিত হয়েছে',
@@ -241,8 +173,6 @@ export const AdminOrders: React.FC = () => {
       });
     } catch {
       showToast({ type: 'error', title: 'ত্রুটি', message: 'বার্তা পাঠানো যায়নি' });
-    } finally {
-      setSendingOrderMessage(false);
     }
   };
 

@@ -29,8 +29,7 @@ import { useNotification } from '../../context/NotificationContext';
 import { api } from '../../services/api';
 import { Order, OrderStatus, OrderWorkMessage } from '../../types/database';
 import { StatusBadge } from '../../components/common/StatusBadge';
-
-import { supabase, isSupabaseConfigured } from '../../lib/supabase';
+import { useMessages } from '../../hooks/useMessages';
 
 interface AdminClaimTasksProps {
   onNavigate?: (path: string) => void;
@@ -45,10 +44,9 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
   const [activeTab, setActiveTab] = useState<'pending_queue' | 'my_claimed' | 'super_audit'>('pending_queue');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
 
-  // লাইভ চ্যাট স্টেট
-  const [chatMessages, setChatMessages] = useState<OrderWorkMessage[]>([]);
+  // লাইভ চ্যাট হুক
+  const { messages: chatMessages, sending: sendingChat, sendMessage: sendClaimMessageViaHook } = useMessages(selectedOrderId);
   const [chatInput, setChatInput] = useState('');
-  const [sendingChat, setSendingChat] = useState(false);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
   // ফাইল ডেলিভারি মডাল
@@ -95,88 +93,6 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
       clearInterval(interval);
     };
   }, []);
-
-  // নির্বাচিত অর্ডারের চ্যাট মেসেজ লোড ও রিয়েল-টাইম লিসেনার
-  const loadChat = async (orderId: string) => {
-    try {
-      const msgs = await api.getOrderMessages(orderId);
-      setChatMessages(msgs);
-    } catch (err) {
-      console.warn('Failed to load chat messages:', err);
-    }
-  };
-
-  useEffect(() => {
-    if (!selectedOrderId) {
-      setChatMessages([]);
-      return;
-    }
-
-    loadChat(selectedOrderId);
-
-    // Supabase Realtime চ্যানেল সাবস্ক্রিপশন
-    let channel: ReturnType<NonNullable<typeof supabase>['channel']> | null = null;
-    const sb = supabase;
-    if (isSupabaseConfigured && sb) {
-      channel = sb
-        .channel(`admin-claim-chat-${selectedOrderId}`)
-        .on(
-          'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'order_messages', filter: `order_id=eq.${selectedOrderId}` },
-          (payload) => {
-            const raw = payload.new as any;
-            if (raw) {
-              const formatted: OrderWorkMessage = {
-                id: raw.id,
-                order_id: raw.order_id,
-                sender_id: raw.sender_id,
-                sender_name: raw.sender_name || (raw.sender_role === 'customer' ? 'গ্রাহক' : 'অ্যাডমিন'),
-                sender_role: raw.sender_role || 'admin',
-                message: raw.message_content || raw.message || '',
-                attachment_name: raw.attachment_name || null,
-                attachment_url: raw.attachment_url || null,
-                created_at: raw.created_at || new Date().toISOString(),
-              };
-              setChatMessages((prev) => (prev.some((m) => m.id === formatted.id) ? prev : [...prev, formatted]));
-            }
-          }
-        )
-        .on(
-          'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'order_work_messages', filter: `order_id=eq.${selectedOrderId}` },
-          (payload) => {
-            const raw = payload.new as OrderWorkMessage;
-            if (raw) {
-              setChatMessages((prev) => (prev.some((m) => m.id === raw.id) ? prev : [...prev, raw]));
-            }
-          }
-        )
-        .subscribe();
-    }
-
-    // লাইভ চ্যাট কাস্টম ইভেন্ট লিসেনার
-    const handleNewMessage = (e: Event) => {
-      const customEvt = e as CustomEvent<{ orderId: string; message: OrderWorkMessage }>;
-      if (customEvt.detail && customEvt.detail.orderId === selectedOrderId) {
-        setChatMessages((prev) => {
-          if (prev.some((m) => m.id === customEvt.detail.message.id)) return prev;
-          return [...prev, customEvt.detail.message];
-        });
-      }
-    };
-
-    window.addEventListener('order_message_sent', handleNewMessage);
-
-    const chatInterval = setInterval(() => {
-      loadChat(selectedOrderId);
-    }, 3000);
-
-    return () => {
-      if (sb && channel) sb.removeChannel(channel);
-      window.removeEventListener('order_message_sent', handleNewMessage);
-      clearInterval(chatInterval);
-    };
-  }, [selectedOrderId]);
 
   const prevClaimMsgCountRef = useRef(0);
   useEffect(() => {
@@ -279,18 +195,14 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
     const textToSend = (customText || chatInput).trim();
     if (!user || !selectedOrder || !textToSend || sendingChat) return;
 
-    setSendingChat(true);
     const adminName = profile?.full_name || user.email?.split('@')[0] || 'দায়িত্বপ্রাপ্ত অ্যাডমিন';
 
     try {
-      const newMsg = await api.sendOrderMessage(selectedOrder.id, user.id, adminName, 'admin', textToSend);
-      setChatMessages((prev) => [...prev, newMsg]);
+      await sendClaimMessageViaHook(user.id, adminName, 'admin', textToSend);
       setChatInput('');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'বার্তা পাঠানো যায়নি';
       showToast({ type: 'error', title: 'ত্রুটি', message: msg });
-    } finally {
-      setSendingChat(false);
     }
   };
 
@@ -327,9 +239,7 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
       setDeliverableModalOpen(false);
       setDeliverableTitle('');
       setDeliverableUrl('');
-      setDeliverableNotes('');
       await loadOrders();
-      if (selectedOrderId) await loadChat(selectedOrderId);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'ডেলিভারি ব্যর্থ হয়েছে';
       showToast({ type: 'error', title: 'ত্রুটি', message: msg });
