@@ -40,82 +40,66 @@ export function useMessages(orderId: string | null | undefined) {
     const sb = supabase;
 
     if (isSupabaseConfigured && sb) {
+      const channelId = `order-messages-${orderId}-${Math.random().toString(36).substring(2, 7)}`;
       channel = sb
-        .channel(`order-messages-channel-${orderId}`)
+        .channel(channelId)
         .on(
           'postgres_changes',
           {
-            event: 'INSERT',
+            event: '*',
             schema: 'public',
             table: 'order_messages',
-            filter: `order_id=eq.${orderId}`,
           },
           (payload) => {
-            const raw = payload.new as any;
-            if (raw && isMounted) {
-              const formatted: OrderWorkMessage = {
-                id: raw.id,
-                order_id: raw.order_id,
-                sender_id: raw.sender_id,
-                receiver_id: raw.receiver_id || null,
-                sender_name:
-                  raw.sender_name ||
-                  (raw.sender_role === 'customer'
-                    ? 'গ্রাহক'
-                    : raw.sender_role === 'worker'
-                    ? 'ওয়ার্কার'
-                    : 'অ্যাডমিন'),
-                sender_role: raw.sender_role || 'customer',
-                message: raw.message_content || raw.message || '',
-                message_content: raw.message_content || raw.message || '',
-                is_read: raw.is_read ?? false,
-                attachment_name: raw.attachment_name || null,
-                attachment_url: raw.attachment_url || null,
-                created_at: raw.created_at || new Date().toISOString(),
-              };
-              setMessages((prev) =>
-                prev.some((m) => m.id === formatted.id) ? prev : [...prev, formatted]
-              );
+            const raw = (payload.new || payload.old) as any;
+            if (raw && isMounted && String(raw.order_id) === String(orderId)) {
+              fetchMessages();
             }
           }
         )
         .on(
           'postgres_changes',
           {
-            event: 'INSERT',
+            event: '*',
             schema: 'public',
             table: 'order_work_messages',
-            filter: `order_id=eq.${orderId}`,
           },
           (payload) => {
-            const raw = payload.new as OrderWorkMessage;
-            if (raw && isMounted) {
-              setMessages((prev) => (prev.some((m) => m.id === raw.id) ? prev : [...prev, raw]));
+            const raw = (payload.new || payload.old) as any;
+            if (raw && isMounted && String(raw.order_id) === String(orderId)) {
+              fetchMessages();
             }
           }
         )
-        .subscribe();
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED' && isMounted) {
+            fetchMessages();
+          }
+        });
     }
 
-    // Local custom event listener for immediate updates
+    // Local custom event listener for immediate same-window or cross-tab updates
     const handleLocalMsg = (e: Event) => {
       const customEvt = e as CustomEvent<{ orderId: string; message: OrderWorkMessage }>;
-      if (customEvt.detail && customEvt.detail.orderId === orderId && isMounted) {
-        setMessages((prev) => {
-          if (prev.some((m) => m.id === customEvt.detail.message.id)) return prev;
-          return [...prev, customEvt.detail.message];
-        });
+      if (customEvt.detail && String(customEvt.detail.orderId) === String(orderId) && isMounted) {
+        if (customEvt.detail.message) {
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === customEvt.detail.message.id)) return prev;
+            return [...prev, customEvt.detail.message];
+          });
+        }
+        fetchMessages();
       }
     };
 
     window.addEventListener('order_message_sent', handleLocalMsg);
 
-    // Periodic refetch
+    // Fast background sync so messages arrive without delay
     const interval = setInterval(() => {
       if (isMounted) {
         fetchMessages();
       }
-    }, 3500);
+    }, 2500);
 
     return () => {
       isMounted = false;

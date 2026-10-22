@@ -26,6 +26,11 @@ interface LiveChatWidgetProps {
 const SESSION_STORAGE_KEY = 'mukisoft_active_chat_session_id';
 
 export const LiveChatWidget: React.FC<LiveChatWidgetProps> = ({ onNavigate }) => {
+  const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
+  if (currentPath.startsWith('/admin') || currentPath.startsWith('/dashboard/orders/')) {
+    return null;
+  }
+
   const { user, profile } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [session, setSession] = useState<LiveChatSession | null>(null);

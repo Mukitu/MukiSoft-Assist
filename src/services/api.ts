@@ -1674,24 +1674,51 @@ export const api = {
   async getOrderMessages(orderId: string): Promise<OrderWorkMessage[]> {
     const messageMap = new Map<string, OrderWorkMessage>();
 
+    // অর্ডারের তথ্য নিয়ে প্রেরকের রোল স্বয়ংক্রিয়ভাবে শনাক্ত করার জন্য
+    let orderContext: Order | null = null;
+    try {
+      orderContext = await this.getOrderById(orderId, undefined, true);
+    } catch {
+      // ignore
+    }
+
     if (isSupabaseConfigured && supabase) {
       // ১. order_messages টেবিল থেকে ডাটা নেওয়া
       try {
         const { data: omData, error: omErr } = await supabase
           .from('order_messages')
           .select('*')
-          .eq('order_id', orderId)
+          .eq('order_id', String(orderId))
           .order('created_at', { ascending: true });
 
         if (!omErr && omData && Array.isArray(omData)) {
           omData.forEach((row: any) => {
-            messageMap.set(row.id, {
-              id: row.id,
-              order_id: row.order_id,
-              sender_id: row.sender_id,
-              receiver_id: row.receiver_id || null,
-              sender_name: row.sender_name || (row.sender_role === 'customer' ? 'গ্রাহক' : 'অ্যাডমিন'),
-              sender_role: row.sender_role || 'customer',
+            // যদি sender_role কলাম না থাকে, তবে sender_id ও orderContext দিয়ে স্বয়ংক্রিয়ভাবে রোল শনাক্ত করা
+            let derivedRole: 'customer' | 'admin' | 'worker' = 'customer';
+            if (row.sender_role) {
+              derivedRole = row.sender_role;
+            } else if (orderContext && row.sender_id === orderContext.user_id) {
+              derivedRole = 'customer';
+            } else if (orderContext && (row.sender_id === orderContext.assigned_admin || row.receiver_id === orderContext.user_id)) {
+              derivedRole = 'admin';
+            }
+
+            let sName = row.sender_name;
+            if (!sName) {
+              if (derivedRole === 'customer') {
+                sName = orderContext?.customer_name || 'গ্রাহক';
+              } else {
+                sName = orderContext?.assigned_admin_name || 'দায়িত্বপ্রাপ্ত অ্যাডমিন';
+              }
+            }
+
+            messageMap.set(String(row.id), {
+              id: String(row.id),
+              order_id: String(row.order_id),
+              sender_id: String(row.sender_id),
+              receiver_id: row.receiver_id ? String(row.receiver_id) : null,
+              sender_name: sName,
+              sender_role: derivedRole,
               message: row.message_content || row.message || '',
               message_content: row.message_content || row.message || '',
               is_read: Boolean(row.is_read),
@@ -1700,29 +1727,34 @@ export const api = {
               created_at: row.created_at || new Date().toISOString(),
             });
           });
+        } else if (omErr) {
+          console.warn('order_messages fetch warning:', omErr);
         }
       } catch (err) {
         console.warn('order_messages fetch exception:', err);
       }
 
-      // ২. order_work_messages টেবিল থেকে ডাটা নেওয়া
+      // ২. order_work_messages টেবিল থেকে ডাটা নেওয়া (যদি ব্যাকওয়ার্ড সামঞ্জস্যের জন্য বিদ্যমান থাকে)
       try {
         const { data: owmData, error: owmErr } = await supabase
           .from('order_work_messages')
           .select('*')
-          .eq('order_id', orderId)
+          .eq('order_id', String(orderId))
           .order('created_at', { ascending: true });
 
         if (!owmErr && owmData && Array.isArray(owmData)) {
           owmData.forEach((row: any) => {
-            if (!messageMap.has(row.id)) {
-              messageMap.set(row.id, {
-                id: row.id,
-                order_id: row.order_id,
-                sender_id: row.sender_id,
-                sender_name: row.sender_name || 'ইউজার',
+            if (!messageMap.has(String(row.id))) {
+              messageMap.set(String(row.id), {
+                id: String(row.id),
+                order_id: String(row.order_id),
+                sender_id: String(row.sender_id),
+                receiver_id: row.receiver_id ? String(row.receiver_id) : null,
+                sender_name: row.sender_name || (row.sender_role === 'customer' ? 'গ্রাহক' : 'অ্যাডমিন'),
                 sender_role: row.sender_role || 'customer',
                 message: row.message || row.message_content || '',
+                message_content: row.message || row.message_content || '',
+                is_read: Boolean(row.is_read),
                 attachment_name: row.attachment_name || null,
                 attachment_url: row.attachment_url || null,
                 created_at: row.created_at || new Date().toISOString(),
@@ -1738,8 +1770,8 @@ export const api = {
     // ৩. লোকাল স্টোরেজ থেকে ডাটা মার্জ করা
     const localMsgs = getLS<OrderWorkMessage[]>(`order_messages_${orderId}`, []);
     localMsgs.forEach((m) => {
-      if (!messageMap.has(m.id)) {
-        messageMap.set(m.id, m);
+      if (!messageMap.has(String(m.id))) {
+        messageMap.set(String(m.id), m);
       }
     });
 
@@ -1766,7 +1798,7 @@ export const api = {
     const order = await this.getOrderById(orderId, undefined, true);
     if (!order) throw new Error('অর্ডার পাওয়া যায়নি।');
 
-    // ডেলিভারিকৃত বা সম্পন্ন অর্ডারের ক্ষেত্রে চ্যাট অটোমেটিক ক্লোজ
+    // ডেলিভারিকৃত বা সম্পন্ন অর্ডারের ক্ষেত্রে চ্যাট বন্ধ
     if (['delivered', 'completed', 'cancelled', 'refunded'].includes(order.status)) {
       throw new Error('এই অর্ডারের কাজ ডেলিভারি/সম্পন্ন বা বাতিল হওয়ায় চ্যাট সার্ভিস স্বয়ংক্রিয়ভাবে বন্ধ রয়েছে।');
     }
@@ -1775,44 +1807,108 @@ export const api = {
     const cleanRole = senderRole === 'worker' ? 'admin' : senderRole;
     const recipientId = senderRole === 'customer' ? order.assigned_admin || null : order.user_id;
 
+    // PostgreSQL UUID সাপোর্ট করার জন্য ভ্যালিড UUID তৈরি
+    const realUuid = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : null;
+    const generatedId = realUuid || `msg_${Date.now()}`;
+
     const newMsg: OrderWorkMessage = {
-      id: `omsg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      order_id: orderId,
-      sender_id: senderId,
+      id: generatedId,
+      order_id: String(orderId),
+      sender_id: String(senderId),
+      receiver_id: recipientId ? String(recipientId) : null,
       sender_name: senderName,
       sender_role: cleanRole,
       message: messageText.trim(),
+      message_content: messageText.trim(),
+      is_read: false,
       attachment_name: attachment?.name || null,
       attachment_url: attachment?.url || null,
       created_at: now,
     };
 
     if (isSupabaseConfigured && supabase) {
-      // ১. order_messages টেবিলে ইনসার্ট (সকল কলাম সমর্থন সহ)
+      // ১. order_messages টেবিলে ইনসার্ট (রেজিলিয়েন্ট ৩-স্তরবিশিষ্ট ইনসার্ট)
+      let supabaseSaved = false;
+
+      // স্তর ১: সম্পূর্ণ কলামসহ ইনসার্ট
       try {
-        await supabase.from('order_messages').insert({
-          id: newMsg.id,
-          order_id: orderId,
-          sender_id: senderId,
-          receiver_id: recipientId,
+        const fullPayload: Record<string, any> = {
+          order_id: String(orderId),
+          sender_id: String(senderId),
           message_content: messageText.trim(),
           is_read: false,
-          sender_name: senderName,
-          sender_role: cleanRole,
-          attachment_name: attachment?.name || null,
-          attachment_url: attachment?.url || null,
           created_at: now,
-        });
+        };
+        if (realUuid) fullPayload.id = realUuid;
+        if (recipientId) fullPayload.receiver_id = String(recipientId);
+        if (senderName) fullPayload.sender_name = senderName;
+        if (cleanRole) fullPayload.sender_role = cleanRole;
+        if (attachment?.name) fullPayload.attachment_name = attachment.name;
+        if (attachment?.url) fullPayload.attachment_url = attachment.url;
+
+        const res1 = await supabase.from('order_messages').insert(fullPayload).select().single();
+        if (!res1.error && res1.data) {
+          supabaseSaved = true;
+          newMsg.id = String(res1.data.id);
+          newMsg.created_at = res1.data.created_at || now;
+        } else {
+          console.warn('order_messages full insert warning, retrying with standard schema:', res1.error?.message);
+        }
       } catch (err) {
-        console.warn('order_messages insert warn:', err);
+        console.warn('order_messages full insert exception:', err);
       }
 
-      // ২. order_work_messages টেবিলেও ইনসার্ট (যদি টেবিল উপস্থিত থাকে)
+      // স্তর ২: স্ট্যান্ডার্ড কলাম (id, order_id, sender_id, receiver_id, message_content, is_read, created_at)
+      if (!supabaseSaved) {
+        try {
+          const standardPayload: Record<string, any> = {
+            order_id: String(orderId),
+            sender_id: String(senderId),
+            message_content: messageText.trim(),
+            is_read: false,
+          };
+          if (realUuid) standardPayload.id = realUuid;
+          if (recipientId) standardPayload.receiver_id = String(recipientId);
+
+          const res2 = await supabase.from('order_messages').insert(standardPayload).select().single();
+          if (!res2.error && res2.data) {
+            supabaseSaved = true;
+            newMsg.id = String(res2.data.id);
+            newMsg.created_at = res2.data.created_at || now;
+          } else {
+            console.warn('order_messages standard insert warning, retrying with minimal schema:', res2.error?.message);
+          }
+        } catch (err) {
+          console.warn('order_messages standard insert exception:', err);
+        }
+      }
+
+      // স্তর ৩: মিনিমাল কলাম (order_id, sender_id, message_content)
+      if (!supabaseSaved) {
+        try {
+          const minimalPayload = {
+            order_id: String(orderId),
+            sender_id: String(senderId),
+            message_content: messageText.trim(),
+          };
+          const res3 = await supabase.from('order_messages').insert(minimalPayload).select().single();
+          if (!res3.error && res3.data) {
+            supabaseSaved = true;
+            newMsg.id = String(res3.data.id);
+            newMsg.created_at = res3.data.created_at || now;
+          } else {
+            console.error('All order_messages insert attempts failed in Supabase:', res3.error);
+          }
+        } catch (err) {
+          console.error('order_messages minimal insert exception:', err);
+        }
+      }
+
+      // ২. order_work_messages টেবিলেও ইনসার্ট
       try {
         await supabase.from('order_work_messages').insert({
-          id: newMsg.id,
-          order_id: orderId,
-          sender_id: senderId,
+          order_id: String(orderId),
+          sender_id: String(senderId),
           sender_name: senderName,
           sender_role: cleanRole,
           message: messageText.trim(),
@@ -1821,13 +1917,13 @@ export const api = {
           created_at: now,
         });
       } catch (err) {
-        console.warn('order_work_messages insert warn:', err);
+        // optional table
       }
 
       try {
         await supabase.from('orders').update({ updated_at: now }).eq('id', orderId);
       } catch (err) {
-        console.warn('orders update timestamp error:', err);
+        // ignore
       }
     }
 

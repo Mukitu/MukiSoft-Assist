@@ -261,7 +261,9 @@ function AppRouter() {
   return (
     <div className="min-h-screen flex flex-col font-sans">
       {renderContent()}
-      <LiveChatWidget onNavigate={navigate} />
+      {!pathname.startsWith('/admin') && !pathname.startsWith('/dashboard/orders/') && (
+        <LiveChatWidget onNavigate={navigate} />
+      )}
     </div>
   );
 }

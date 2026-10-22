@@ -752,21 +752,23 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
               </div>
             ) : (
               messages.map((msg) => {
-                const isMe = msg.sender_role === 'customer';
+                const isMe = msg.sender_id === user?.id || msg.sender_role === 'customer';
                 return (
                   <div
                     key={msg.id}
                     className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
                   >
                     <div className="flex items-center gap-1.5 mb-1 text-[10px] text-slate-400">
-                      <span className="font-bold text-slate-700">{isMe ? 'আপনি (গ্রাহক)' : `${msg.sender_name} (অ্যাডমিন)`}</span>
+                      <span className="font-bold text-slate-700">
+                        {isMe ? 'আপনি (গ্রাহক)' : `${msg.sender_name || 'দায়িত্বপ্রাপ্ত স্পেশালিস্ট'} (স্পেশালিস্ট)`}
+                      </span>
                       <span>•</span>
                       <span>{toBengaliDate(msg.created_at)}</span>
                     </div>
                     <div
                       className={`max-w-[85%] sm:max-w-lg p-3 rounded-2xl text-xs leading-relaxed ${
                         isMe
-                          ? 'bg-indigo-600 text-white rounded-br-none'
+                          ? 'bg-indigo-600 text-white rounded-br-none shadow-xs'
                           : 'bg-white border border-slate-200 text-slate-800 rounded-bl-none shadow-2xs'
                       }`}
                     >
@@ -792,20 +794,20 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
           </div>
 
           {/* চ্যাট সেন্ড ইনপুট */}
-          <form onSubmit={handleSendChatMessage} className="p-3.5 bg-white border-t border-slate-200 flex items-center gap-2 pb-10 sm:pb-3.5">
+          <form onSubmit={handleSendChatMessage} className="p-3.5 bg-white border-t border-slate-200 flex items-center gap-2 relative z-10">
             <input
               type="text"
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
-              placeholder="অ্যাডমিনের জন্য বার্তা লিখুন..."
-              className="flex-1 px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500 focus:bg-white transition-all min-w-0"
+              placeholder="দায়িত্বপ্রাপ্ত স্পেশালিস্টের জন্য বার্তা লিখুন..."
+              className="flex-1 px-4 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500 focus:bg-white transition-all min-w-0 shadow-inner"
             />
             <button
               type="submit"
               disabled={sendingChat || !chatInput.trim()}
-              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50 shrink-0 shadow-xs"
+              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all disabled:opacity-50 shrink-0 shadow-md cursor-pointer"
             >
-              <Send className="w-3.5 h-3.5" />
+              <Send className="w-4 h-4" />
               <span>{sendingChat ? 'পাঠানো...' : 'পাঠান'}</span>
             </button>
           </form>

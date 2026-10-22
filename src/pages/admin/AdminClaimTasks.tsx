@@ -610,7 +610,7 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                         </div>
                       ) : (
                         chatMessages.map((msg) => {
-                          const isMe = msg.sender_role === 'admin';
+                          const isMe = msg.sender_id === user?.id || msg.sender_role === 'admin' || msg.sender_role === 'worker';
                           return (
                             <div
                               key={msg.id}
@@ -618,7 +618,7 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                             >
                               <div className="flex items-center gap-1.5 mb-1 text-[10px] text-slate-400">
                                 <span className="font-bold text-slate-700">
-                                  {isMe ? 'আপনি (দায়িত্বপ্রাপ্ত অ্যাডমিন)' : `${msg.sender_name} (গ্রাহক)`}
+                                  {isMe ? 'আপনি (দায়িত্বপ্রাপ্ত কর্মকর্তা)' : `${msg.sender_name || 'গ্রাহক'} (গ্রাহক)`}
                                 </span>
                                 <span>•</span>
                                 <span>{toBengaliDate(msg.created_at)}</span>
@@ -626,7 +626,7 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                               <div
                                 className={`max-w-[85%] sm:max-w-md p-3 rounded-2xl text-xs leading-relaxed ${
                                   isMe
-                                    ? 'bg-indigo-600 text-white rounded-br-none shadow-2xs'
+                                    ? 'bg-indigo-600 text-white rounded-br-none shadow-xs'
                                     : 'bg-white border border-slate-200 text-slate-800 rounded-bl-none shadow-2xs'
                                 }`}
                               >
@@ -656,19 +656,19 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                       <span className="text-[10px] font-bold text-slate-400 shrink-0">দ্রুত বার্তা:</span>
                       <button
                         onClick={() => handleSendChat(undefined, '👋 সালাম, আমি আপনার অর্ডারের দায়িত্ব নিয়েছি এবং কাজ শুরু করেছি।')}
-                        className="px-2.5 py-1 bg-white hover:bg-slate-200 border border-slate-200 rounded-full text-slate-700 whitespace-nowrap transition-colors"
+                        className="px-2.5 py-1 bg-white hover:bg-slate-200 border border-slate-200 rounded-full text-slate-700 whitespace-nowrap transition-colors cursor-pointer"
                       >
                         কাজ শুরু করেছি
                       </button>
                       <button
                         onClick={() => handleSendChat(undefined, '🔍 আপনার কাজটি সম্পন্ন করতে কিছু অতিরিক্ত তথ্য বা রেফারেন্স ফাইল প্রয়োজন। অনুগ্রহ করে এখানে জানান।')}
-                        className="px-2.5 py-1 bg-white hover:bg-slate-200 border border-slate-200 rounded-full text-slate-700 whitespace-nowrap transition-colors"
+                        className="px-2.5 py-1 bg-white hover:bg-slate-200 border border-slate-200 rounded-full text-slate-700 whitespace-nowrap transition-colors cursor-pointer"
                       >
                         তথ্য প্রয়োজন
                       </button>
                       <button
                         onClick={() => handleSendChat(undefined, '🎉 আপনার কাজের ফাইনাল ফাইল প্রস্তুত হচ্ছে, অল্প কিছুক্ষণের মধ্যে ডেলিভারি দিচ্ছি।')}
-                        className="px-2.5 py-1 bg-white hover:bg-slate-200 border border-slate-200 rounded-full text-slate-700 whitespace-nowrap transition-colors"
+                        className="px-2.5 py-1 bg-white hover:bg-slate-200 border border-slate-200 rounded-full text-slate-700 whitespace-nowrap transition-colors cursor-pointer"
                       >
                         ফাইল প্রস্তুত হচ্ছে
                       </button>
@@ -677,22 +677,22 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                     {/* চ্যাট ইনপুট বার */}
                     <form
                       onSubmit={(e) => handleSendChat(e)}
-                      className="p-3.5 bg-white border-t border-slate-200 flex items-center gap-2 pb-8 sm:pb-3.5"
+                      className="p-3.5 bg-white border-t border-slate-200 flex items-center gap-2 relative z-10"
                     >
                       <input
                         type="text"
                         value={chatInput}
                         onChange={(e) => setChatInput(e.target.value)}
                         placeholder="গ্রাহকের নিকট সরাসরি লাইভ বার্তা লিখুন (Enter চাপুন)..."
-                        className="flex-1 px-4 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500 focus:bg-white transition-all"
+                        className="flex-1 px-4 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500 focus:bg-white transition-all shadow-inner"
                       />
                       <button
                         type="submit"
                         disabled={sendingChat || !chatInput.trim()}
-                        className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors shrink-0"
+                        className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shrink-0 shadow-md cursor-pointer"
                       >
-                        <Send className="w-3.5 h-3.5" />
-                        <span>{sendingChat ? 'পাঠানো হচ্ছে...' : 'পাঠান'}</span>
+                        <Send className="w-4 h-4" />
+                        <span>{sendingChat ? 'পাঠানো...' : 'পাঠান'}</span>
                       </button>
                     </form>
                   </>
