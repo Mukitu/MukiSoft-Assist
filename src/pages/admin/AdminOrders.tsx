@@ -59,6 +59,34 @@ export const AdminOrders: React.FC = () => {
   const [deliverableTitle, setDeliverableTitle] = useState('');
   const [deliverableUrl, setDeliverableUrl] = useState('');
   const [deliverableNotes, setDeliverableNotes] = useState('');
+  const [selectedFile, setSelectedFile] = useState<{ name: string; size: number; type: string; dataUrl: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 25 * 1024 * 1024) {
+      showToast({ type: 'error', title: 'ফাইলটি বড়', message: 'সর্বোচ্চ ২৫ মেগাবাইট পর্যন্ত ফাইল সরাসরি আপলোড করা যাবে।' });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setSelectedFile({
+        name: file.name,
+        size: file.size,
+        type: file.type || 'application/octet-stream',
+        dataUrl,
+      });
+      if (!deliverableTitle.trim()) {
+        setDeliverableTitle(file.name.replace(/\.[^/.]+$/, ''));
+      }
+      if (!deliverableUrl.trim()) {
+        setDeliverableUrl(dataUrl);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   // রিফান্ড মডাল স্টেট
   const [refundOrderTarget, setRefundOrderTarget] = useState<Order | null>(null);
@@ -248,10 +276,12 @@ export const AdminOrders: React.FC = () => {
     }
 
     try {
-      const fileUrl = deliverableUrl.trim() || 'https://mukisoft.com/deliverables/sample_output.pdf';
+      const fileUrl = deliverableUrl.trim() || selectedFile?.dataUrl || 'https://mukisoft.com/deliverables/sample_output.pdf';
       await api.addOrderDeliverable(activeOrderForDeliverable.id, user.id, {
         title: deliverableTitle,
         fileUrl,
+        fileSize: selectedFile?.size,
+        fileType: selectedFile?.type,
         notes: deliverableNotes,
       });
 
@@ -272,6 +302,7 @@ export const AdminOrders: React.FC = () => {
       setActiveOrderForDeliverable(null);
       setDeliverableTitle('');
       setDeliverableUrl('');
+      setSelectedFile(null);
       setDeliverableNotes('');
     } catch {
       showToast({ type: 'error', title: 'ত্রুটি', message: 'ফাইল ডেলিভারি ব্যর্থ হয়েছে' });
@@ -1093,17 +1124,82 @@ export const AdminOrders: React.FC = () => {
                 />
               </div>
 
+              {/* সরাসরি ফাইল আপলোড সেকশন */}
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">
-                  ফাইল ডাউনলোড লিংক / Storage URL
+                  সরাসরি ফাইল বা স্ক্রিনশট আপলোড করুন
+                </label>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+                {!selectedFile ? (
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="border-2 border-dashed border-slate-200 hover:border-indigo-500 rounded-xl p-4 text-center cursor-pointer bg-slate-50 hover:bg-indigo-50/40 transition-colors"
+                  >
+                    <Upload className="w-6 h-6 text-indigo-600 mx-auto mb-1.5" />
+                    <span className="text-xs font-bold text-slate-700 block">
+                      ডিভাইস থেকে ফাইল বা স্ক্রিনশট সিলেক্ট করতে এখানে ক্লিক করুন
+                    </span>
+                    <span className="text-[11px] text-slate-400 block mt-0.5">
+                      ZIP, RAR, PDF, PNG, JPG, DOCX ইত্যাদি (সর্বোচ্চ ২৫MB)
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                        <CheckCircle2 className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-xs font-bold text-emerald-950 truncate block">
+                          {selectedFile.name}
+                        </span>
+                        <span className="text-[10px] text-emerald-700">
+                          {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • আপলোডের জন্য প্রস্তুত
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 px-2 py-1"
+                      >
+                        পরিবর্তন
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedFile(null);
+                          if (fileInputRef.current) fileInputRef.current.value = '';
+                        }}
+                        className="text-[11px] font-semibold text-rose-600 hover:text-rose-800 px-2 py-1"
+                      >
+                        মুছুন
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  অথবা ফাইল ডাউনলোড লিংক / Storage URL (Google Drive / Dropbox)
                 </label>
                 <input
                   type="text"
                   value={deliverableUrl}
                   onChange={(e) => setDeliverableUrl(e.target.value)}
                   placeholder="https://drive.google.com/... অথবা স্টোরেজ লিংক"
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg font-mono focus:outline-hidden"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg font-mono text-xs focus:outline-hidden"
                 />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  সরাসরি ফাইল আপলোড করলে ইউআরএল দিতে হবে না, অথবা গুগল ড্রাইভ/ড্রপবক্স লিংকও প্রদান করতে পারেন।
+                </span>
               </div>
 
               <div>

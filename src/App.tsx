@@ -33,6 +33,7 @@ import { UserOrderDetail } from './pages/dashboard/UserOrderDetail';
 import { UserSupport } from './pages/dashboard/UserSupport';
 import { UserProfile } from './pages/dashboard/UserProfile';
 import { UserPreferences } from './pages/dashboard/UserPreferences';
+import { UserMessagesHub } from './pages/dashboard/UserMessagesHub';
 import { WorkerWithdraw } from './pages/dashboard/WorkerWithdraw';
 
 // Admin Pages
@@ -96,6 +97,10 @@ function AppRouter() {
                 </UserDashboardLayout>
               );
             })()
+          ) : pathname === '/dashboard/messages' ? (
+            <UserDashboardLayout currentPath={pathname} onNavigate={navigate}>
+              <UserMessagesHub onNavigate={navigate} />
+            </UserDashboardLayout>
           ) : pathname === '/dashboard/wallet' ? (
             <UserDashboardLayout currentPath={pathname} onNavigate={navigate}>
               <UserWallet />

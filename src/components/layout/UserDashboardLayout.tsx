@@ -12,6 +12,7 @@ import {
   X,
   CreditCard,
   Bell,
+  MessageSquare,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { toBengaliCurrency } from '../../lib/i18n';
@@ -41,15 +42,17 @@ export const UserDashboardLayout: React.FC<UserDashboardLayoutProps> = ({
 
   const navItems = [
     { label: 'ড্যাশবোর্ড ওভারভিউ', path: '/dashboard', icon: LayoutDashboard },
+    { label: 'বার্তা ও লাইভ চ্যাট', path: '/dashboard/messages', icon: MessageSquare, badge: 'লাইভ' },
     { label: 'ওয়ালেট ও টাকা জমা', path: '/dashboard/wallet', icon: WalletIcon },
+    { label: 'আমার অর্ডার ও ডেলিভারি', path: '/dashboard/orders', icon: ShoppingBag },
     { label: 'সহায়তা টিকিট ডেস্ক', path: '/dashboard/support', icon: HelpCircle },
-    { label: 'আমার অর্ডার ও বার্তা চ্যাট', path: '/dashboard/orders', icon: ShoppingBag },
     { label: 'বিজ্ঞপ্তি পছন্দসমূহ', path: '/dashboard/preferences', icon: Bell },
     { label: 'প্রোফাইল সেটিংস', path: '/dashboard/profile', icon: UserIcon },
   ];
 
   const getBreadcrumbs = () => {
     if (currentPath === '/dashboard') return ['ড্যাশবোর্ড', 'সারসংক্ষেপ'];
+    if (currentPath === '/dashboard/messages') return ['ড্যাশবোর্ড', 'বার্তা ও লাইভ চ্যাট'];
     if (currentPath === '/dashboard/wallet') return ['ড্যাশবোর্ড', 'ওয়ালেট ও টাকা জমা'];
     if (currentPath.startsWith('/dashboard/orders/')) return ['ড্যাশবোর্ড', 'আমার অর্ডার', 'অর্ডারের বিবরণ'];
     if (currentPath === '/dashboard/orders') return ['ড্যাশবোর্ড', 'আমার অর্ডারসমূহ'];
@@ -141,7 +144,13 @@ export const UserDashboardLayout: React.FC<UserDashboardLayoutProps> = ({
                       }`}
                     >
                       <Icon className="w-4 h-4 shrink-0 text-indigo-600" />
-                      <span>{item.label}</span>
+                      <span className="flex-1 text-left">{item.label}</span>
+                      {item.badge && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-600 text-white">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                          {item.badge}
+                        </span>
+                      )}
                     </button>
                   );
                 })}
@@ -221,7 +230,13 @@ export const UserDashboardLayout: React.FC<UserDashboardLayoutProps> = ({
                   }`}
                 >
                   <Icon className="w-4 h-4 shrink-0" />
-                  <span>{item.label}</span>
+                  <span className="flex-1 text-left">{item.label}</span>
+                  {item.badge && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-600 text-white">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                      {item.badge}
+                    </span>
+                  )}
                 </button>
               );
             })}
