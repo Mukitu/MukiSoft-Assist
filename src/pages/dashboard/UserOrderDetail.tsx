@@ -159,10 +159,14 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
     };
   }, [orderId, user]);
 
+  const prevMsgCountRef = useRef(0);
   useEffect(() => {
     if (activeTab === 'chat' && chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+      if (messages.length > prevMsgCountRef.current || prevMsgCountRef.current === 0) {
+        chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+      }
     }
+    prevMsgCountRef.current = messages.length;
   }, [messages, activeTab]);
 
   if (loading) {
@@ -701,19 +705,30 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
 
               {/* সংযুক্ত ফাইল যদি থাকে */}
               {order.attachment_name && (
-                <div className="text-xs space-y-1">
+                <div className="text-xs space-y-2 border-t border-slate-100 pt-3">
                   <span className="font-semibold text-slate-700 block">সংযুক্ত প্রজেক্ট ফাইল / পিডিএফ:</span>
                   {order.attachment_url ? (
-                    <a
-                      href={order.attachment_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      download={order.attachment_name}
-                      className="inline-flex items-center gap-2 px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg border border-indigo-200 transition-colors"
-                    >
-                      <Download className="w-4 h-4 text-indigo-600" />
-                      <span>{order.attachment_name} (ডাউনলোড / দেখুন)</span>
-                    </a>
+                    <div className="space-y-2">
+                      <a
+                        href={order.attachment_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        download={order.attachment_name}
+                        className="inline-flex items-center gap-2 px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg border border-indigo-200 transition-colors"
+                      >
+                        <Download className="w-4 h-4 text-indigo-600" />
+                        <span>{order.attachment_name} (ডাউনলোড / দেখুন)</span>
+                      </a>
+                      {order.attachment_url.toLowerCase().includes('.pdf') || order.attachment_url.startsWith('data:application/pdf') ? (
+                        <div className="rounded-xl overflow-hidden border border-slate-200 bg-slate-100 max-h-80">
+                          <iframe src={order.attachment_url} title={order.attachment_name} className="w-full h-72 border-none" />
+                        </div>
+                      ) : order.attachment_url.startsWith('data:image/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(order.attachment_name) ? (
+                        <div className="rounded-xl overflow-hidden border border-slate-200 max-h-80 bg-slate-100 p-2 text-center">
+                          <img src={order.attachment_url} alt={order.attachment_name} className="max-h-64 mx-auto rounded object-contain" />
+                        </div>
+                      ) : null}
+                    </div>
                   ) : (
                     <span className="font-mono bg-slate-100 px-2.5 py-1 rounded text-slate-800">
                       {order.attachment_name}

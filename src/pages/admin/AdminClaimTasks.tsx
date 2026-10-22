@@ -178,10 +178,14 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
     };
   }, [selectedOrderId]);
 
+  const prevClaimMsgCountRef = useRef(0);
   useEffect(() => {
     if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+      if (chatMessages.length > prevClaimMsgCountRef.current || prevClaimMsgCountRef.current === 0) {
+        chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+      }
     }
+    prevClaimMsgCountRef.current = chatMessages.length;
   }, [chatMessages]);
 
   // ফিল্টারিং ও দৃষ্টিসীমা নির্ধারণ (Privacy & Sight Rule)

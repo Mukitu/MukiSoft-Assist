@@ -169,10 +169,14 @@ export const AdminOrders: React.FC = () => {
     };
   }, [selectedOrder]);
 
+  const prevOrderMsgCountRef = useRef(0);
   useEffect(() => {
     if (modalTab === 'chat' && chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+      if (orderMessages.length > prevOrderMsgCountRef.current || prevOrderMsgCountRef.current === 0) {
+        chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+      }
     }
+    prevOrderMsgCountRef.current = orderMessages.length;
   }, [orderMessages, modalTab]);
 
   // ১. কাজ নিজের দায়িত্বে ক্লেইম করা (Claim Order)

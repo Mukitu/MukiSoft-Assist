@@ -44,8 +44,14 @@ export const AdminLiveChat: React.FC = () => {
     }
   };
 
+  const prevAdminLiveMsgCountRef = useRef(0);
   useEffect(() => {
-    scrollToBottom();
+    if (messagesContainerRef.current) {
+      if (messages.length > prevAdminLiveMsgCountRef.current || prevAdminLiveMsgCountRef.current === 0) {
+        messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+      }
+    }
+    prevAdminLiveMsgCountRef.current = messages.length;
   }, [messages]);
 
   // সেশন লোড (অ্যাডমিন শুধুমাত্র লাইভ রিকোয়েস্ট ও সক্রিয় চ্যাট দেখবেন, AI মোড গোপন থাকবে)

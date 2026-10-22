@@ -51,8 +51,14 @@ export const LiveChatWidget: React.FC<LiveChatWidgetProps> = ({ onNavigate }) =>
     }
   };
 
+  const prevLiveMsgCountRef = useRef(0);
   useEffect(() => {
-    scrollToBottom();
+    if (isOpen && messagesContainerRef.current) {
+      if (messages.length > prevLiveMsgCountRef.current || prevLiveMsgCountRef.current === 0) {
+        messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+      }
+    }
+    prevLiveMsgCountRef.current = messages.length;
   }, [messages, isOpen]);
 
   // প্রাক-পূরণ যদি ইউজার ইতিমধ্যে লগইন করা থাকে

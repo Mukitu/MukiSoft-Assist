@@ -1668,49 +1668,84 @@ export const api = {
    * অর্ডারের মেসেজ তালিকা সংগ্রহ (Order Workroom Messages)
    */
   /**
-   * অর্ডারের মেসেজ তালিকা সংগ্রহ (Order Messages)
-   * order_messages এবং order_work_messages উভয় টেবিলই স্বয়ংক্রিয়ভাবে সমর্থন করে।
+   * অর্ডারের সম্পূর্ণ মেসেজ তালিকা সংগ্রহ (Order Messages)
+   * order_messages, order_work_messages এবং স্থানীয় স্টোরেজ থেকে সকল বার্তা সংগ্রহ ও একত্র করে (Merge & Deduplicate)।
    */
   async getOrderMessages(orderId: string): Promise<OrderWorkMessage[]> {
+    const messageMap = new Map<string, OrderWorkMessage>();
+
     if (isSupabaseConfigured && supabase) {
+      // ১. order_messages টেবিল থেকে ডাটা নেওয়া
       try {
-        // ১. order_messages টেবিল থেকে ডাটা নেওয়া
         const { data: omData, error: omErr } = await supabase
           .from('order_messages')
           .select('*')
           .eq('order_id', orderId)
           .order('created_at', { ascending: true });
 
-        if (!omErr && omData && Array.isArray(omData) && omData.length > 0) {
-          return omData.map((row: any) => ({
-            id: row.id,
-            order_id: row.order_id,
-            sender_id: row.sender_id,
-            sender_name: row.sender_name || (row.sender_role === 'customer' ? 'গ্রাহক' : 'অ্যাডমিন'),
-            sender_role: row.sender_role || 'customer',
-            message: row.message_content || row.message || '',
-            attachment_name: row.attachment_name || null,
-            attachment_url: row.attachment_url || null,
-            created_at: row.created_at || new Date().toISOString(),
-          }));
+        if (!omErr && omData && Array.isArray(omData)) {
+          omData.forEach((row: any) => {
+            messageMap.set(row.id, {
+              id: row.id,
+              order_id: row.order_id,
+              sender_id: row.sender_id,
+              receiver_id: row.receiver_id || null,
+              sender_name: row.sender_name || (row.sender_role === 'customer' ? 'গ্রাহক' : 'অ্যাডমিন'),
+              sender_role: row.sender_role || 'customer',
+              message: row.message_content || row.message || '',
+              message_content: row.message_content || row.message || '',
+              is_read: Boolean(row.is_read),
+              attachment_name: row.attachment_name || null,
+              attachment_url: row.attachment_url || null,
+              created_at: row.created_at || new Date().toISOString(),
+            });
+          });
         }
+      } catch (err) {
+        console.warn('order_messages fetch exception:', err);
+      }
 
-        // ২. order_work_messages টেবিল ফলব্যাক
+      // ২. order_work_messages টেবিল থেকে ডাটা নেওয়া
+      try {
         const { data: owmData, error: owmErr } = await supabase
           .from('order_work_messages')
           .select('*')
           .eq('order_id', orderId)
           .order('created_at', { ascending: true });
 
-        if (!owmErr && owmData && Array.isArray(owmData) && owmData.length > 0) {
-          return owmData as OrderWorkMessage[];
+        if (!owmErr && owmData && Array.isArray(owmData)) {
+          owmData.forEach((row: any) => {
+            if (!messageMap.has(row.id)) {
+              messageMap.set(row.id, {
+                id: row.id,
+                order_id: row.order_id,
+                sender_id: row.sender_id,
+                sender_name: row.sender_name || 'ইউজার',
+                sender_role: row.sender_role || 'customer',
+                message: row.message || row.message_content || '',
+                attachment_name: row.attachment_name || null,
+                attachment_url: row.attachment_url || null,
+                created_at: row.created_at || new Date().toISOString(),
+              });
+            }
+          });
         }
       } catch (err) {
-        console.warn('getOrderMessages Supabase query exception:', err);
+        console.warn('order_work_messages fetch exception:', err);
       }
     }
 
-    return getLS<OrderWorkMessage[]>(`order_messages_${orderId}`, []);
+    // ৩. লোকাল স্টোরেজ থেকে ডাটা মার্জ করা
+    const localMsgs = getLS<OrderWorkMessage[]>(`order_messages_${orderId}`, []);
+    localMsgs.forEach((m) => {
+      if (!messageMap.has(m.id)) {
+        messageMap.set(m.id, m);
+      }
+    });
+
+    return Array.from(messageMap.values()).sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
   },
 
   /**
