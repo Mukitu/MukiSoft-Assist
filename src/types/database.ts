@@ -128,9 +128,12 @@ export interface OrderWorkMessage {
   id: string;
   order_id: string;
   sender_id: string;
+  receiver_id?: string | null;
   sender_name: string;
-  sender_role: 'customer' | 'admin' | 'system';
+  sender_role: 'customer' | 'admin' | 'worker' | 'system';
   message: string;
+  message_content?: string | null;
+  is_read?: boolean;
   attachment_name?: string | null;
   attachment_url?: string | null;
   created_at: string;
