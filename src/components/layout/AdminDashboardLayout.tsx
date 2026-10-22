@@ -104,28 +104,61 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
     );
   }
 
-  const navItems = [
-    { label: 'প্রশাসনিক ড্যাশবোর্ড', path: '/admin', icon: LayoutDashboard },
-    {
-      label: 'ক্লেইম টাস্ক (Pending Queue)',
-      path: '/admin/claim-tasks',
-      icon: UserCheck,
-      badge: pendingClaimCount,
-      highlight: pendingClaimCount > 0,
-    },
-    { label: 'লাইভ সাপোর্ট চ্যাট', path: '/admin/live-chat', icon: MessageCircle },
-    { label: 'সেবা সমূহ', path: '/admin/services', icon: Layers },
-    { label: 'সার্ভিস ক্যাটাগরি', path: '/admin/categories', icon: Tag },
-    { label: 'টাকা জমার অনুরোধ যাচাই', path: '/admin/deposits', icon: CheckSquare },
-    { label: 'অর্ডার ও ফাইল ডেলিভারি', path: '/admin/orders', icon: ShoppingBag },
-    { label: 'সহায়তা ডেস্ক ও টিকিট', path: '/admin/tickets', icon: HelpCircle },
-    { label: 'ব্যবহারকারী ও ভূমিকা', path: '/admin/users', icon: Users },
-    { label: 'ওয়ার্কার ও ইনকাম প্যানেল', path: '/admin/commission', icon: DollarSign, superAdminOnly: true },
-    { label: 'উইথড্র রিকোয়েস্ট ও পে-আউট', path: '/admin/withdraw', icon: Wallet, superAdminOnly: true },
-    { label: 'আমার উপার্জন ও উত্তোলন', path: '/admin/my-withdraw', icon: DollarSign },
-    { label: 'নিরাপত্তা অডিট লগ', path: '/admin/audit-logs', icon: ShieldAlert, superAdminOnly: true },
-    { label: 'প্ল্যাটফর্ম সেটিংস', path: '/admin/settings', icon: Sliders, superAdminOnly: true },
-  ];
+  let navItems = [];
+
+  if (role === 'worker') {
+    navItems = [
+      {
+        label: 'ক্লেইম টাস্ক (Pending Queue)',
+        path: '/admin/claim-tasks',
+        icon: UserCheck,
+        badge: pendingClaimCount,
+        highlight: pendingClaimCount > 0,
+      },
+      { label: 'আমার অর্ডারের কাজ ও ডেলিভারি', path: '/admin/orders', icon: ShoppingBag },
+      { label: 'আমার উপার্জন ও উত্তোলন', path: '/admin/my-withdraw', icon: DollarSign },
+    ];
+  } else if (role === 'admin') {
+    navItems = [
+      { label: 'প্রশাসনিক ড্যাশবোর্ড', path: '/admin', icon: LayoutDashboard },
+      {
+        label: 'ক্লেইম টাস্ক (Pending Queue)',
+        path: '/admin/claim-tasks',
+        icon: UserCheck,
+        badge: pendingClaimCount,
+        highlight: pendingClaimCount > 0,
+      },
+      { label: 'অর্ডার ও ফাইল ডেলিভারি', path: '/admin/orders', icon: ShoppingBag },
+      { label: 'সহায়তা ডেস্ক ও টিকিট', path: '/admin/tickets', icon: HelpCircle },
+      { label: 'সেবা সমূহ', path: '/admin/services', icon: Layers },
+      { label: 'সার্ভিস ক্যাটাগরি', path: '/admin/categories', icon: Tag },
+      { label: 'আমার উপার্জন ও উত্তোলন', path: '/admin/my-withdraw', icon: DollarSign },
+    ];
+  } else {
+    // super_admin
+    navItems = [
+      { label: 'প্রশাসনিক ড্যাশবোর্ড', path: '/admin', icon: LayoutDashboard },
+      {
+        label: 'ক্লেইম টাস্ক (Pending Queue)',
+        path: '/admin/claim-tasks',
+        icon: UserCheck,
+        badge: pendingClaimCount,
+        highlight: pendingClaimCount > 0,
+      },
+      { label: 'লাইভ সাপোর্ট চ্যাট', path: '/admin/live-chat', icon: MessageCircle },
+      { label: 'সেবা সমূহ', path: '/admin/services', icon: Layers },
+      { label: 'সার্ভিস ক্যাটাগরি', path: '/admin/categories', icon: Tag },
+      { label: 'টাকা জমার অনুরোধ যাচাই (Super Admin)', path: '/admin/deposits', icon: CheckSquare },
+      { label: 'অর্ডার ও ফাইল ডেলিভারি', path: '/admin/orders', icon: ShoppingBag },
+      { label: 'সহায়তা ডেস্ক ও টিকিট', path: '/admin/tickets', icon: HelpCircle },
+      { label: 'ব্যবহারকারী ও ভূমিকা', path: '/admin/users', icon: Users },
+      { label: 'ওয়ার্কার ও ইনকাম প্যানেল', path: '/admin/commission', icon: DollarSign },
+      { label: 'উইথড্র রিকোয়েস্ট ও পে-আউট', path: '/admin/withdraw', icon: Wallet },
+      { label: 'সন্দেহজনক ফ্ল্যাগড চ্যাট রিপোর্ট', path: '/admin/flagged-chats', icon: ShieldAlert },
+      { label: 'নিরাপত্তা অডিট লগ', path: '/admin/audit-logs', icon: ShieldAlert },
+      { label: 'প্ল্যাটফর্ম সেটিংস', path: '/admin/settings', icon: Sliders },
+    ];
+  }
 
   const getBreadcrumbs = () => {
     if (currentPath === '/admin') return ['প্রশাসনিক কনসোল', 'সারসংক্ষেপ'];
@@ -213,23 +246,6 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = currentPath === item.path;
-              const isRestricted = item.superAdminOnly && !isSuperAdmin;
-
-              if (isRestricted) {
-                return (
-                  <div
-                    key={item.path}
-                    className="w-full flex items-center justify-between px-3 py-2.5 text-xs font-medium rounded-lg text-slate-600 cursor-not-allowed select-none"
-                    title="শুধুমাত্র সুপার অ্যাডমিনের জন্য অনুমোদিত"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Icon className="w-4 h-4 shrink-0" />
-                      <span>{item.label}</span>
-                    </div>
-                    <Lock className="w-3 h-3 text-slate-600" />
-                  </div>
-                );
-              }
 
               return (
                 <button
@@ -253,9 +269,6 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
                       <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold font-mono bg-amber-500 text-white animate-pulse">
                         {toBengaliDigits(item.badge)}
                       </span>
-                    )}
-                    {item.superAdminOnly && (
-                      <span className="text-[10px] text-indigo-300 uppercase tracking-wider font-mono">সুপার</span>
                     )}
                   </div>
                 </button>

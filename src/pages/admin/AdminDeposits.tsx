@@ -77,6 +77,15 @@ export const AdminDeposits: React.FC = () => {
     e.preventDefault();
     if (!user || !approveModalDeposit) return;
 
+    if (!isSuperAdmin) {
+      showToast({
+        type: 'error',
+        title: 'অনুমতি নেই',
+        message: 'টাকা জমার অনুরোধ শুধুমাত্র সুপার অ্যাডমিন অনুমোদন করতে পারবেন।',
+      });
+      return;
+    }
+
     const finalAmount = parseFloat(approvedAmountInput);
     if (isNaN(finalAmount) || finalAmount <= 0) {
       showToast({ type: 'error', title: 'অকার্যকর পরিমাণ', message: 'অনুগ্রহ করে সঠিক টাকার পরিমাণ দিন।' });
@@ -117,6 +126,16 @@ export const AdminDeposits: React.FC = () => {
   const confirmReject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !rejectModalDeposit) return;
+
+    if (!isSuperAdmin) {
+      showToast({
+        type: 'error',
+        title: 'অনুমতি নেই',
+        message: 'টাকা জমার অনুরোধ শুধুমাত্র সুপার অ্যাডমিন বাতিল করতে পারবেন।',
+      });
+      return;
+    }
+
     if (!rejectReason.trim()) {
       showToast({ type: 'error', title: 'কারণ আবশ্যক', message: 'অনুগ্রহ করে বাতিলের কারণ লিখুন।' });
       return;
@@ -290,11 +309,26 @@ export const AdminDeposits: React.FC = () => {
                         {toBengaliDate(req.created_at)}
                       </td>
                       <td className="py-3 px-4 font-medium text-slate-900 font-mono text-[11px]">
-                        {req.profile?.email || req.user_id}
+                        <div className="font-semibold text-slate-900 font-sans">{req.profile?.full_name || (req as any).user_name || 'গ্রাহক'}</div>
+                        <div className="text-slate-500 font-mono text-[10px]">{req.profile?.email || (req as any).user_email || req.user_id}</div>
                       </td>
                       <td className="py-3 px-4 font-semibold text-slate-800">{req.payment_method}</td>
                       <td className="py-3 px-4 font-mono">{req.sender_account}</td>
-                      <td className="py-3 px-4 font-mono font-bold text-slate-900">{req.transaction_reference}</td>
+                      <td className="py-3 px-4 font-mono font-bold text-slate-900">
+                        <div>{req.transaction_reference}</div>
+                        {req.slip_url ? (
+                          <a
+                            href={req.slip_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-block mt-0.5 text-[10px] font-sans text-indigo-600 hover:underline font-normal"
+                          >
+                            📄 স্লিপ দেখুন
+                          </a>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 font-sans font-normal block mt-0.5">স্লিপ ছাড়া</span>
+                        )}
+                      </td>
                       <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">
                         {toBengaliCurrency(req.amount)}
                       </td>
@@ -303,33 +337,40 @@ export const AdminDeposits: React.FC = () => {
                       </td>
                       <td className="py-3 px-4 text-right">
                         {req.status === 'pending' ? (
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={() => {
-                                setApproveModalDeposit(req);
-                                setApprovedAmountInput(req.amount.toString());
-                                setApproveNoteInput('');
-                              }}
-                              disabled={processingId === req.id}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded text-xs transition-colors"
-                              title="অনুমোদন করুন ও জমার পরিমাণ প্রয়োজনে সংশোধন করুন"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                              <span>অনুমোদন</span>
-                            </button>
-                            <button
-                              onClick={() => {
-                                setRejectModalDeposit(req);
-                                setRejectReason('');
-                              }}
-                              disabled={processingId === req.id}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-medium rounded text-xs transition-colors border border-rose-200"
-                              title="অনুরোধ বাতিল করুন"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                              <span>বাতিল</span>
-                            </button>
-                          </div>
+                          isSuperAdmin ? (
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => {
+                                  setApproveModalDeposit(req);
+                                  setApprovedAmountInput(req.amount.toString());
+                                  setApproveNoteInput('');
+                                }}
+                                disabled={processingId === req.id}
+                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded text-xs transition-colors"
+                                title="অনুমোদন করুন ও জমার পরিমাণ প্রয়োজনে সংশোধন করুন"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>অনুমোদন</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setRejectModalDeposit(req);
+                                  setRejectReason('');
+                                }}
+                                disabled={processingId === req.id}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-medium rounded text-xs transition-colors border border-rose-200"
+                                title="অনুরোধ বাতিল করুন"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                <span>বাতিল</span>
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded border border-slate-200">
+                              <Lock className="w-3 h-3 text-slate-400" />
+                              <span>সুপার অ্যাডমিন দরকার</span>
+                            </span>
+                          )
                         ) : (
                           <span className="text-slate-400 text-[11px] block max-w-[140px] truncate">
                             {req.admin_notes || 'যাচাইকৃত'}

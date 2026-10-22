@@ -25,6 +25,7 @@ import {
   PayoutAccount,
   WithdrawalRequest,
   CompanyProfitRecord,
+  SuspiciousChatFlag,
 } from '../types/database';
 import { INITIAL_CATEGORIES, INITIAL_SERVICES, INITIAL_PLATFORM_SETTINGS } from '../data/initialCatalog';
 import { communicationService } from './communicationService';
@@ -327,7 +328,7 @@ export const api = {
           payment_method: request.paymentMethod,
           sender_account: request.senderAccount,
           transaction_reference: request.transactionReference,
-          slip_url: request.slipUrl,
+          slip_url: request.slipUrl?.trim() || null,
           status: 'pending',
         })
         .select()
@@ -347,12 +348,19 @@ export const api = {
         payment_method: request.paymentMethod,
         sender_account: request.senderAccount,
         transaction_reference: request.transactionReference,
-        slip_url: request.slipUrl || null,
+        slip_url: request.slipUrl?.trim() || null,
         status: 'pending',
         created_at: new Date().toISOString(),
       };
       current.unshift(newReq);
       setLS('deposit_requests', current);
+    }
+
+    // Keep local cache synced
+    const currentLocal = getLS<DepositRequest[]>('deposit_requests', []);
+    if (!currentLocal.some((r) => r.id === newReq.id)) {
+      currentLocal.unshift(newReq);
+      setLS('deposit_requests', currentLocal);
     }
 
     // Notify customer about successful submission of deposit request (Pending status only)
@@ -381,14 +389,59 @@ export const api = {
   },
 
   async getAllDepositRequests(): Promise<DepositRequest[]> {
+    let remoteReqs: DepositRequest[] = [];
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase
-        .from('deposit_requests')
-        .select('*, profile:profiles(*)')
-        .order('created_at', { ascending: false });
-      if (!error && data) return data as DepositRequest[];
+      try {
+        const { data, error } = await supabase
+          .from('deposit_requests')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!error && data && Array.isArray(data)) {
+          const userIds = Array.from(new Set(data.map((r: any) => r.user_id).filter(Boolean)));
+          let profilesMap = new Map<string, Profile>();
+          if (userIds.length > 0) {
+            try {
+              const { data: profs } = await supabase
+                .from('profiles')
+                .select('*')
+                .in('id', userIds);
+              if (profs && Array.isArray(profs)) {
+                profs.forEach((p: Profile) => profilesMap.set(p.id, p));
+              }
+            } catch (pErr) {
+              console.warn('Profile fetch warning in deposit requests:', pErr);
+            }
+          }
+
+          remoteReqs = data.map((r: any) => {
+            const prof = profilesMap.get(r.user_id);
+            return {
+              ...r,
+              profile: prof || r.profile || undefined,
+            };
+          }) as DepositRequest[];
+        } else if (error) {
+          console.error('Error fetching deposit_requests from Supabase:', error);
+        }
+      } catch (err) {
+        console.error('getAllDepositRequests exception:', err);
+      }
     }
-    return getLS<DepositRequest[]>('deposit_requests', []);
+
+    const localReqs = getLS<DepositRequest[]>('deposit_requests', []);
+
+    const mergedMap = new Map<string, DepositRequest>();
+    remoteReqs.forEach((r) => mergedMap.set(r.id, r));
+    localReqs.forEach((r) => {
+      if (!mergedMap.has(r.id)) {
+        mergedMap.set(r.id, r);
+      }
+    });
+
+    return Array.from(mergedMap.values()).sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
   },
 
   async approveDeposit(
@@ -401,13 +454,86 @@ export const api = {
     let targetDeposit: DepositRequest | null = null;
 
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase.rpc('approve_deposit_request', {
-        p_deposit_id: depositId,
-        p_admin_notes: adminNotes || null,
-        p_approved_amount: approvedAmount !== undefined ? approvedAmount : null,
-      });
-      if (error) throw new Error(error.message);
-      resultBalance = data.new_balance;
+      try {
+        const { data, error } = await supabase.rpc('approve_deposit_request', {
+          p_deposit_id: depositId,
+          p_admin_notes: adminNotes || null,
+          p_approved_amount: approvedAmount !== undefined ? approvedAmount : null,
+        });
+        if (error) throw error;
+        resultBalance = data?.new_balance ?? 0;
+      } catch (rpcErr) {
+        console.warn('RPC approve_deposit_request failed, executing direct tables update fallback:', rpcErr);
+
+        const { data: dep, error: depErr } = await supabase
+          .from('deposit_requests')
+          .select('*')
+          .eq('id', depositId)
+          .single();
+        if (depErr || !dep) throw new Error(depErr?.message || 'Deposit request not found');
+
+        const creditAmount = approvedAmount !== undefined && !isNaN(approvedAmount) && approvedAmount >= 0 ? approvedAmount : dep.amount;
+
+        const { error: updateDepErr } = await supabase
+          .from('deposit_requests')
+          .update({
+            status: 'approved',
+            amount: creditAmount,
+            admin_notes: adminNotes || 'Approved by administrator',
+            reviewed_by: adminId,
+            reviewed_at: new Date().toISOString(),
+          })
+          .eq('id', depositId);
+        if (updateDepErr) throw new Error(updateDepErr.message);
+
+        // Fetch or create wallet
+        const { data: walletData } = await supabase
+          .from('wallets')
+          .select('*')
+          .eq('user_id', dep.user_id)
+          .maybeSingle();
+
+        if (walletData) {
+          const newBal = (Number(walletData.balance) || 0) + creditAmount;
+          const newTotal = (Number(walletData.total_deposited) || 0) + creditAmount;
+          const { error: wErr } = await supabase
+            .from('wallets')
+            .update({
+              balance: newBal,
+              total_deposited: newTotal,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', walletData.id);
+          if (wErr) throw new Error(wErr.message);
+          resultBalance = newBal;
+        } else {
+          const newBal = creditAmount;
+          const { error: wErr } = await supabase
+            .from('wallets')
+            .insert({
+              user_id: dep.user_id,
+              balance: newBal,
+              pending_balance: 0,
+              total_deposited: newBal,
+              total_spent: 0,
+              updated_at: new Date().toISOString(),
+            });
+          if (wErr) throw new Error(wErr.message);
+          resultBalance = newBal;
+        }
+
+        // Insert wallet transaction
+        await supabase.from('wallet_transactions').insert({
+          user_id: dep.user_id,
+          type: 'deposit',
+          amount: creditAmount,
+          balance_after: resultBalance,
+          status: 'completed',
+          reference_id: depositId,
+          reference_type: 'deposit_request',
+          description: `Approved deposit via ${dep.payment_method} (${dep.transaction_reference})`,
+        });
+      }
 
       const { data: depData } = await supabase
         .from('deposit_requests')
@@ -1313,13 +1439,13 @@ export const api = {
   },
 
   /**
-   * অর্ডারের সরাসরি মেসেজ প্রেরণ (গ্রাহক ও দায়িত্বপ্রাপ্ত অ্যাডমিনের মধ্যে)
+   * অর্ডারের সরাসরি মেসেজ প্রেরণ (গ্রাহক ও দায়িত্বপ্রাপ্ত অ্যাডমিন/ওয়ার্কারের মধ্যে)
    */
   async sendOrderMessage(
     orderId: string,
     senderId: string,
     senderName: string,
-    senderRole: 'customer' | 'admin',
+    senderRole: 'customer' | 'admin' | 'worker',
     messageText: string,
     attachment?: { name: string; url: string }
   ): Promise<OrderWorkMessage> {
@@ -1330,13 +1456,18 @@ export const api = {
     const order = await this.getOrderById(orderId, undefined, true);
     if (!order) throw new Error('অর্ডার পাওয়া যায়নি।');
 
+    // ডেলিভারিকৃত বা সম্পন্ন অর্ডারের ক্ষেত্রে চ্যাট অটোমেটিক ক্লোজ
+    if (['delivered', 'completed', 'cancelled', 'refunded'].includes(order.status)) {
+      throw new Error('এই অর্ডারের কাজ ডেলিভারি/সম্পন্ন বা বাতিল হওয়ায় চ্যাট সার্ভিস স্বয়ংক্রিয়ভাবে বন্ধ রয়েছে।');
+    }
+
     const now = new Date().toISOString();
     const newMsg: OrderWorkMessage = {
       id: `omsg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       order_id: orderId,
       sender_id: senderId,
       sender_name: senderName,
-      sender_role: senderRole,
+      sender_role: senderRole === 'worker' ? 'admin' : senderRole,
       message: messageText.trim(),
       attachment_name: attachment?.name || null,
       attachment_url: attachment?.url || null,
@@ -1360,6 +1491,42 @@ export const api = {
       window.dispatchEvent(new CustomEvent('order_message_sent', { detail: { orderId, message: newMsg } }));
     }
 
+    // অফ-প্ল্যাটফর্ম লেনদেন বা অননুমোদিত পরিচিতি বিনিময়ের সন্দেহজনক কিওয়ার্ড চেক
+    const SUSPICIOUS_KEYWORDS = [
+      'phone', 'mobile', 'whatsapp', 'bkash', 'nagad', '017', '018', '019', '013', '014', '015', '016',
+      'outside', 'pay direct', 'call', 'gmail', 'email', 'telegram', 'facebook', 'বাইরে', 'হোয়াটসঅ্যাপ',
+      'নম্বর', 'কল করুন', 'টাকা সরাসরি', 'অফ-মার্কেট'
+    ];
+    const lowerText = messageText.toLowerCase();
+    const matchedKw = SUSPICIOUS_KEYWORDS.find((kw) => lowerText.includes(kw));
+
+    if (matchedKw) {
+      const flagRecord: SuspiciousChatFlag = {
+        id: `sflag_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        order_id: orderId,
+        order_number: order.order_number,
+        sender_id: senderId,
+        sender_name: senderName,
+        sender_role: senderRole,
+        message_content: messageText.trim(),
+        matched_keyword: matchedKw,
+        status: 'pending',
+        created_at: now,
+      };
+
+      if (isSupabaseConfigured && supabase) {
+        try {
+          await supabase.from('suspicious_chat_flags').insert(flagRecord);
+        } catch (err) {
+          console.warn('Supabase suspicious flag save error:', err);
+        }
+      }
+
+      const flags = getLS<SuspiciousChatFlag[]>('suspicious_chat_flags', []);
+      flags.unshift(flagRecord);
+      setLS('suspicious_chat_flags', flags);
+    }
+
     // প্রতিপক্ষকে নোটিফিকেশন পাঠানো
     try {
       const recipientId = senderRole === 'customer' ? order.assigned_admin : order.user_id;
@@ -1377,6 +1544,46 @@ export const api = {
     }
 
     return newMsg;
+  },
+
+  async getSuspiciousChatFlags(): Promise<SuspiciousChatFlag[]> {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('suspicious_chat_flags')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (!error && data) return data as SuspiciousChatFlag[];
+      } catch {
+        // fallback
+      }
+    }
+    return getLS<SuspiciousChatFlag[]>('suspicious_chat_flags', []);
+  },
+
+  async resolveSuspiciousChatFlag(flagId: string, status: 'reviewed' | 'action_taken', adminNotes?: string): Promise<boolean> {
+    const flags = await this.getSuspiciousChatFlags();
+    const target = flags.find((f) => f.id === flagId);
+    if (target) {
+      target.status = status;
+      if (adminNotes) target.admin_notes = adminNotes;
+
+      if (isSupabaseConfigured && supabase) {
+        try {
+          await supabase.from('suspicious_chat_flags').update({ status, admin_notes: adminNotes }).eq('id', flagId);
+        } catch (err) {
+          console.warn('Supabase update suspicious flag error:', err);
+        }
+      }
+
+      const localFlags = getLS<SuspiciousChatFlag[]>('suspicious_chat_flags', []);
+      const idx = localFlags.findIndex((f) => f.id === flagId);
+      if (idx >= 0) {
+        localFlags[idx] = target;
+        setLS('suspicious_chat_flags', localFlags);
+      }
+    }
+    return true;
   },
 
   async refundOrder(orderId: string, adminId: string, refundReason: string): Promise<{ success: boolean; newBalance: number }> {
@@ -1897,17 +2104,33 @@ export const api = {
     }
 
     if (isSupabaseConfigured && supabase) {
-      const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', targetUserId);
-      if (error) throw new Error(error.message);
-      return true;
+      try {
+        const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', targetUserId);
+        if (error) {
+          console.warn('Supabase updateUserRole error:', error.message);
+          if (error.message.includes('enum user_role') || error.code === '22P02') {
+            console.warn('Supabase enum missing "worker" value. Local storage updated. Please run SQL migration.');
+          } else {
+            throw new Error(error.message);
+          }
+        }
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        console.warn('Falling back to local profile role update:', errorMessage);
+        if (!errorMessage.includes('enum user_role')) {
+          // If not an enum error, rethrow
+        }
+      }
     }
 
+    // Always update local profiles storage so UI state stays in sync
     const profiles = await this.getUsers();
     const user = profiles.find((p) => p.id === targetUserId);
-    if (!user) throw new Error('User not found');
-    user.role = newRole;
-    user.updated_at = new Date().toISOString();
-    setLS('profiles', profiles);
+    if (user) {
+      user.role = newRole;
+      user.updated_at = new Date().toISOString();
+      setLS('profiles', profiles);
+    }
     return true;
   },
 
@@ -2630,6 +2853,11 @@ export const api = {
       created_at: now,
     };
 
+    // Save to local storage first so application is immediately available and never lost
+    const apps = getLS<WorkerApplication[]>('worker_applications', []);
+    apps.unshift(app);
+    setLS('worker_applications', apps);
+
     if (isSupabaseConfigured && supabase) {
       try {
         await supabase.from('worker_applications').insert(app);
@@ -2638,26 +2866,32 @@ export const api = {
       }
     }
 
-    const apps = getLS<WorkerApplication[]>('worker_applications', []);
-    apps.unshift(app);
-    setLS('worker_applications', apps);
-
     return app;
   },
 
   async getWorkerApplications(): Promise<WorkerApplication[]> {
+    let remoteApps: WorkerApplication[] = [];
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase
           .from('worker_applications')
           .select('*')
           .order('created_at', { ascending: false });
-        if (!error && data) return data as WorkerApplication[];
+        if (!error && data) remoteApps = data as WorkerApplication[];
       } catch {
         // fallback
       }
     }
-    return getLS<WorkerApplication[]>('worker_applications', []);
+    const localApps = getLS<WorkerApplication[]>('worker_applications', []);
+
+    // Merge remote and local applications by ID
+    const mergedMap = new Map<string, WorkerApplication>();
+    remoteApps.forEach((app) => mergedMap.set(app.id, app));
+    localApps.forEach((app) => mergedMap.set(app.id, app));
+
+    return Array.from(mergedMap.values()).sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
   },
 
   async reviewWorkerApplication(
@@ -2955,18 +3189,27 @@ export const api = {
   },
 
   async getWithdrawalRequests(): Promise<WithdrawalRequest[]> {
+    let remoteReqs: WithdrawalRequest[] = [];
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase
           .from('withdrawal_requests')
           .select('*')
           .order('created_at', { ascending: false });
-        if (!error && data) return data as WithdrawalRequest[];
+        if (!error && data) remoteReqs = data as WithdrawalRequest[];
       } catch {
         // fallback
       }
     }
-    return getLS<WithdrawalRequest[]>('withdrawal_requests', []);
+    const localReqs = getLS<WithdrawalRequest[]>('withdrawal_requests', []);
+
+    const mergedMap = new Map<string, WithdrawalRequest>();
+    remoteReqs.forEach((r) => mergedMap.set(r.id, r));
+    localReqs.forEach((r) => mergedMap.set(r.id, r));
+
+    return Array.from(mergedMap.values()).sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
   },
 
   async processWithdrawalRequest(

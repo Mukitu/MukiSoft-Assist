@@ -453,3 +453,17 @@ export interface CompanyProfitRecord {
   created_at: string;
 }
 
+export interface SuspiciousChatFlag {
+  id: string;
+  order_id: string;
+  order_number: string;
+  sender_id: string;
+  sender_name: string;
+  sender_role: 'customer' | 'admin' | 'worker';
+  message_content: string;
+  matched_keyword: string;
+  status: 'pending' | 'reviewed' | 'action_taken';
+  admin_notes?: string;
+  created_at: string;
+}
+

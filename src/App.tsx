@@ -49,6 +49,7 @@ import { AdminSettings } from './pages/admin/AdminSettings';
 import { AdminLiveChat } from './pages/admin/AdminLiveChat';
 import { AdminCommissionWithdrawals } from './pages/admin/AdminCommissionWithdrawals';
 import { AdminWithdrawQueue } from './pages/admin/AdminWithdrawQueue';
+import { AdminFlaggedChats } from './pages/admin/AdminFlaggedChats';
 import { ResetPassword } from './pages/public/ResetPassword';
 import { LiveChatWidget } from './components/chat/LiveChatWidget';
 
@@ -167,6 +168,10 @@ function AppRouter() {
           ) : pathname === '/admin/my-withdraw' ? (
             <AdminDashboardLayout currentPath={pathname} onNavigate={navigate}>
               <WorkerWithdraw />
+            </AdminDashboardLayout>
+          ) : pathname === '/admin/flagged-chats' ? (
+            <AdminDashboardLayout currentPath={pathname} onNavigate={navigate}>
+              <AdminFlaggedChats />
             </AdminDashboardLayout>
           ) : pathname === '/admin/audit-logs' ? (
             <AdminDashboardLayout currentPath={pathname} onNavigate={navigate}>
