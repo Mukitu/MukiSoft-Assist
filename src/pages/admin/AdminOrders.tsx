@@ -85,15 +85,42 @@ export const AdminOrders: React.FC = () => {
 
   useEffect(() => {
     loadOrders();
+
+    const handleUpdate = () => loadOrders();
+    window.addEventListener('orders_updated', handleUpdate);
+    window.addEventListener('order_claimed', handleUpdate);
+    window.addEventListener('order_released', handleUpdate);
+
+    const interval = setInterval(loadOrders, 3000);
+
+    return () => {
+      window.removeEventListener('orders_updated', handleUpdate);
+      window.removeEventListener('order_claimed', handleUpdate);
+      window.removeEventListener('order_released', handleUpdate);
+      clearInterval(interval);
+    };
   }, []);
 
-  // সিলেক্টেড অর্ডারের চ্যাট মেসেজ লোড
+  // সিলেক্টেড অর্ডারের চ্যাট মেসেজ লোড ও লাইভ লিসেনার
   useEffect(() => {
     if (!selectedOrder) {
       setOrderMessages([]);
       return;
     }
     api.getOrderMessages(selectedOrder.id).then(setOrderMessages);
+
+    const handleChatEvt = (e: Event) => {
+      const customEvt = e as CustomEvent<{ orderId: string; message: OrderWorkMessage }>;
+      if (customEvt.detail && customEvt.detail.orderId === selectedOrder.id) {
+        setOrderMessages((prev) => {
+          if (prev.some((m) => m.id === customEvt.detail.message.id)) return prev;
+          return [...prev, customEvt.detail.message];
+        });
+      }
+    };
+
+    window.addEventListener('order_message_sent', handleChatEvt);
+    return () => window.removeEventListener('order_message_sent', handleChatEvt);
   }, [selectedOrder]);
 
   // ১. কাজ নিজের দায়িত্বে ক্লেইম করা (Claim Order)
@@ -354,10 +381,18 @@ export const AdminOrders: React.FC = () => {
 
     if (!matchesSearch) return false;
 
-    if (statusFilter === 'all') return true;
+    // গোপনীয়তা ও দৃষ্টিসীমা নীতি: দায়িত্ব নেওয়ার পর কাজটি অন্যদের দৃষ্টিসীমার বাইরে চলে যাবে
+    if (statusFilter === 'all') {
+      if (isSuperAdmin) return true;
+      // সাধারণ অ্যাডমিনদের জন্য শুধুমাত্র উন্মুক্ত কাজ এবং নিজের কাজ দৃশ্যমান থাকবে
+      return !o.assigned_admin || o.assigned_admin === user?.id;
+    }
     if (statusFilter === 'unassigned') return !o.assigned_admin && !['cancelled', 'refunded', 'completed'].includes(o.status);
     if (statusFilter === 'my_orders') return o.assigned_admin === user?.id;
-    if (statusFilter === 'other_orders') return Boolean(o.assigned_admin && o.assigned_admin !== user?.id);
+    if (statusFilter === 'other_orders') {
+      if (!isSuperAdmin) return false;
+      return Boolean(o.assigned_admin && o.assigned_admin !== user?.id);
+    }
     if (statusFilter === 'delivered') return o.status === 'delivered';
     if (statusFilter === 'completed') return o.status === 'completed';
     if (statusFilter === 'refunded') return ['cancelled', 'refunded'].includes(o.status);

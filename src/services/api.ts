@@ -19,6 +19,12 @@ import {
   OrderStatus,
   OrderReview,
   OrderWorkMessage,
+  PaymentMethodConfig,
+  WorkerApplication,
+  CommissionSettings,
+  PayoutAccount,
+  WithdrawalRequest,
+  CompanyProfitRecord,
 } from '../types/database';
 import { INITIAL_CATEGORIES, INITIAL_SERVICES, INITIAL_PLATFORM_SETTINGS } from '../data/initialCatalog';
 import { communicationService } from './communicationService';
@@ -385,7 +391,12 @@ export const api = {
     return getLS<DepositRequest[]>('deposit_requests', []);
   },
 
-  async approveDeposit(depositId: string, adminId: string, adminNotes?: string): Promise<{ success: boolean; newBalance: number }> {
+  async approveDeposit(
+    depositId: string,
+    adminId: string,
+    adminNotes?: string,
+    approvedAmount?: number
+  ): Promise<{ success: boolean; newBalance: number }> {
     let resultBalance = 0;
     let targetDeposit: DepositRequest | null = null;
 
@@ -393,6 +404,7 @@ export const api = {
       const { data, error } = await supabase.rpc('approve_deposit_request', {
         p_deposit_id: depositId,
         p_admin_notes: adminNotes || null,
+        p_approved_amount: approvedAmount !== undefined ? approvedAmount : null,
       });
       if (error) throw new Error(error.message);
       resultBalance = data.new_balance;
@@ -410,10 +422,17 @@ export const api = {
       if (!target) throw new Error('Deposit request not found');
       if (target.status !== 'pending') throw new Error(`Deposit already ${target.status}`);
 
+      const creditAmount = approvedAmount !== undefined && !isNaN(approvedAmount) && approvedAmount >= 0 ? approvedAmount : target.amount;
+      const isAdjusted = creditAmount !== target.amount;
+
       target.status = 'approved';
       target.reviewed_by = adminId;
       target.reviewed_at = new Date().toISOString();
-      target.admin_notes = adminNotes || 'Approved by administrator';
+      const defaultNote = isAdjusted
+        ? `অনুমোদিত পরিমাণ সমন্বিত: ৳${creditAmount} (দাবি ছিল: ৳${target.amount})`
+        : 'Approved by administrator';
+      target.admin_notes = adminNotes || defaultNote;
+      target.amount = creditAmount;
       setLS('deposit_requests', requests);
 
       // Credit wallet
@@ -428,8 +447,8 @@ export const api = {
         updated_at: new Date().toISOString(),
       };
 
-      wallet.balance += target.amount;
-      wallet.total_deposited += target.amount;
+      wallet.balance += creditAmount;
+      wallet.total_deposited += creditAmount;
       wallet.updated_at = new Date().toISOString();
       wallets[target.user_id] = wallet;
       setLS('wallets', wallets);
@@ -560,6 +579,78 @@ export const api = {
       }
     }
 
+    return true;
+  },
+
+  // -------------------------------------------------------------
+  // PAYMENT METHOD CONFIGURATIONS (SUPER ADMIN ONLY)
+  // -------------------------------------------------------------
+  async getPaymentMethodConfigs(): Promise<PaymentMethodConfig[]> {
+    const DEFAULT_PAYMENT_METHODS: PaymentMethodConfig[] = [
+      {
+        id: 'bkash',
+        name: 'বিকাশ (bKash)',
+        type: 'mobile_banking',
+        number_or_account: '01700-000000',
+        account_type_label: 'মার্চেন্ট নম্বর (Make Payment)',
+        instructions: '১. bKash App অথবা *247# ডায়াল করে "Make Payment" অপশনে যান।\n২. মার্চেন্ট নম্বর 01700-000000 লিখুন।\n৩. আপনার জমার পরিমাণ দিন।\n৪. রেফারেন্সে আপনার ইমেইল বা ফোন নম্বর দিন।\n৫. পিন চেপে পেমেন্ট সম্পন্ন করে TrxID সংরক্ষণ করুন।',
+        is_active: true,
+      },
+      {
+        id: 'nagad',
+        name: 'নগদ (Nagad)',
+        type: 'mobile_banking',
+        number_or_account: '01800-000000',
+        account_type_label: 'মার্চেন্ট নম্বর (Merchant Pay)',
+        instructions: '১. Nagad App অথবা *167# ডায়াল করে "Merchant Pay" নির্বাচন করুন।\n২. মার্চেন্ট নম্বর 01800-000000 দিন।\n৩. আপনার জমার পরিমাণ ও রেফারেন্স টাইপ করুন।\n৪. পিন কোড দিয়ে সাবমিট করে TrxID সংরক্ষণ করুন।',
+        is_active: true,
+      },
+      {
+        id: 'rocket',
+        name: 'রকেট (Rocket)',
+        type: 'mobile_banking',
+        number_or_account: '01900-000000',
+        account_type_label: 'পার্সোনাল নম্বর (Send Money)',
+        instructions: '১. Rocket App অথবা *322# ডায়াল করে "Send Money" নির্বাচন করুন।\n২. রকেট নম্বর 01900-000000 দিন।\n৩. সফল পেমেন্টের পর TrxID সংগ্রহ করে ইনপুট দিন।',
+        is_active: true,
+      },
+      {
+        id: 'bank',
+        name: 'ব্যাংক ট্রান্সফার (Bank Transfer)',
+        type: 'bank_transfer',
+        number_or_account: '11002233445566',
+        account_type_label: 'The City Bank PLC (MukiSoft Technology Ltd.)',
+        instructions: 'ব্যাংকের নাম: The City Bank PLC\nঅ্যাকাউন্টের নাম: MukiSoft Technology Ltd.\nঅ্যাকাউন্ট নম্বর: 11002233445566\nরাউটিং নম্বর: 085272183\nশাখা: গুলশান এভিনিউ, ঢাকা।\nNPSB / BEFTN বা ডিপোজিট স্লিপের ছবি ও তথ্য জমা দিন।',
+        is_active: true,
+      },
+    ];
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase.from('payment_method_configs').select('*').order('created_at', { ascending: true });
+        if (!error && data && data.length > 0) return data as PaymentMethodConfig[];
+      } catch {
+        // fallback
+      }
+    }
+
+    return getLS<PaymentMethodConfig[]>('payment_method_configs', DEFAULT_PAYMENT_METHODS);
+  },
+
+  async updatePaymentMethodConfigs(configs: PaymentMethodConfig[], requesterRole: UserRole): Promise<boolean> {
+    if (requesterRole !== 'super_admin') {
+      throw new Error('অনুমতি নেই: শুধুমাত্র সুপার অ্যাডমিন পেমেন্ট মেথড কনফিগারেশন পরিবর্তন করতে পারবেন।');
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('payment_method_configs').upsert(configs);
+      } catch (err) {
+        console.warn('Supabase payment method configs save error:', err);
+      }
+    }
+
+    setLS('payment_method_configs', configs);
     return true;
   },
 
@@ -835,7 +926,21 @@ export const api = {
     if (!existing) throw new Error('অর্ডারটি পাওয়া যায়নি।');
 
     if (existing.assigned_admin && existing.assigned_admin !== adminId) {
-      throw new Error(`এই কাজটি ইতিমধ্যে অন্য একজন অ্যাডমিন (${existing.assigned_admin_name || 'অন্য কর্মকর্তা'}) গ্রহণ করেছেন। ডুপ্লিকেট কাজ এড়াতে এটি লক করা হয়েছে।`);
+      throw new Error(`এই কাজটি ইতিমধ্যে অন্য একজন কর্মকর্তা/ওয়ার্কার (${existing.assigned_admin_name || 'অন্য কর্মকর্তা'}) গ্রহণ করেছেন। ডুপ্লিকেট কাজ এড়াতে এটি লক করা হয়েছে।`);
+    }
+
+    // ক্লেইম লিমিট নীতি চেক: একজন ওয়ার্কার/অ্যাডমিন একসাথে ১টির বেশি চলমান কাজ ক্লেইম রাখতে পারবে না
+    const allOrders = await this.getAllOrders();
+    const activeClaimedOrder = allOrders.find(
+      (o: Order) =>
+        o.assigned_admin === adminId &&
+        ['accepted', 'in_progress', 'review', 'in_review', 'revision_requested'].includes(o.status) &&
+        o.id !== orderId
+    );
+    if (activeClaimedOrder) {
+      throw new Error(
+        `আপনি ইতিমধ্যে অর্ডার #${activeClaimedOrder.order_number} ক্লেইম করে রেখেছেন। কাজের মান বজায় রাখতে এবং একচেটিয়া কাজ আটকানোতে এই কাজটি ডেলিভারি করার পরেই নতুন কাজ গ্রহণ করতে পারবেন।`
+      );
     }
 
     const now = new Date().toISOString();
@@ -927,6 +1032,11 @@ export const api = {
       console.warn('Claim notification failed:', err);
     }
 
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('order_claimed', { detail: { orderId, order: updatedOrder } }));
+      window.dispatchEvent(new CustomEvent('orders_updated'));
+    }
+
     return updatedOrder;
   },
 
@@ -1001,6 +1111,11 @@ export const api = {
       };
     }
 
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('order_released', { detail: { orderId, order: updatedOrder } }));
+      window.dispatchEvent(new CustomEvent('orders_updated'));
+    }
+
     return updatedOrder;
   },
 
@@ -1065,7 +1180,14 @@ export const api = {
       };
     }
 
-    // অ্যাডমিনকে নোটিফাই করা
+    // কাজের কমিশন ও কোম্পানির লাভ স্বয়ংক্রিয়ভাবে ক্রেডিট ও ডিস্ট্রিবিউট করা
+    try {
+      await this.distributeOrderCommission(updatedOrder);
+    } catch (err) {
+      console.warn('Commission distribution error:', err);
+    }
+
+    // অ্যাডমিন বা ওয়ার্কারকে নোটিফাই করা
     if (existing.assigned_admin) {
       try {
         await communicationService.notifyAndEmail({
@@ -1233,6 +1355,10 @@ export const api = {
     const list = getLS<OrderWorkMessage[]>(`order_messages_${orderId}`, []);
     list.push(newMsg);
     setLS(`order_messages_${orderId}`, list);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('order_message_sent', { detail: { orderId, message: newMsg } }));
+    }
 
     // প্রতিপক্ষকে নোটিফিকেশন পাঠানো
     try {
@@ -2476,5 +2602,466 @@ export const api = {
     setLS('audit_logs', auditLogs);
 
     return merged;
+  },
+
+  // -------------------------------------------------------------
+  // WORKER APPLICATIONS & VERIFICATION
+  // -------------------------------------------------------------
+  async submitWorkerApplication(data: {
+    user_id: string;
+    full_name: string;
+    phone: string;
+    whatsapp?: string;
+    skills: string;
+    experience?: string;
+    portfolio_url?: string;
+  }): Promise<WorkerApplication> {
+    const now = new Date().toISOString();
+    const app: WorkerApplication = {
+      id: `wapp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      user_id: data.user_id,
+      full_name: data.full_name,
+      phone: data.phone,
+      whatsapp: data.whatsapp || undefined,
+      skills: data.skills,
+      experience: data.experience || undefined,
+      portfolio_url: data.portfolio_url || undefined,
+      status: 'pending',
+      created_at: now,
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('worker_applications').insert(app);
+      } catch (err) {
+        console.warn('Supabase worker application insert error:', err);
+      }
+    }
+
+    const apps = getLS<WorkerApplication[]>('worker_applications', []);
+    apps.unshift(app);
+    setLS('worker_applications', apps);
+
+    return app;
+  },
+
+  async getWorkerApplications(): Promise<WorkerApplication[]> {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('worker_applications')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (!error && data) return data as WorkerApplication[];
+      } catch {
+        // fallback
+      }
+    }
+    return getLS<WorkerApplication[]>('worker_applications', []);
+  },
+
+  async reviewWorkerApplication(
+    appId: string,
+    status: 'approved' | 'rejected',
+    notes: string,
+    adminId: string
+  ): Promise<WorkerApplication> {
+    const apps = await this.getWorkerApplications();
+    const target = apps.find((a) => a.id === appId);
+    if (!target) throw new Error('ওয়ার্কার আবেদন পাওয়া যায়নি।');
+
+    const now = new Date().toISOString();
+    target.status = status;
+    target.admin_notes = notes;
+    target.reviewed_at = now;
+    target.reviewed_by = adminId;
+
+    if (status === 'approved') {
+      // ইউজারের রোলকে 'worker' এ রূপান্তর করা
+      await this.updateUserRole(target.user_id, 'worker', 'super_admin');
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase
+          .from('worker_applications')
+          .update({
+            status,
+            admin_notes: notes,
+            reviewed_at: now,
+            reviewed_by: adminId,
+          })
+          .eq('id', appId);
+      } catch (err) {
+        console.warn('Supabase review application error:', err);
+      }
+    }
+
+    const localApps = getLS<WorkerApplication[]>('worker_applications', []);
+    const idx = localApps.findIndex((a) => a.id === appId);
+    if (idx >= 0) {
+      localApps[idx] = target;
+      setLS('worker_applications', localApps);
+    }
+
+    // নোটিফিকেশন প্রেরণ
+    try {
+      await communicationService.notifyAndEmail({
+        userId: target.user_id,
+        title: status === 'approved' ? 'ওয়ার্কার আবেদন অনুমোদিত হয়েছে! 🎉' : 'ওয়ার্কার আবেদন পর্যালোচিত হয়েছে',
+        message:
+          status === 'approved'
+            ? 'অভিনন্দন! আপনার ওয়ার্কার আবেদনটি সফলভাবে অনুমোদিত হয়েছে। এখন থেকে আপনি সার্ভিস অর্ডার ক্লেইম করে কাজ করতে পারবেন।'
+            : `আপনার ওয়ার্কার আবেদনটি পর্যালোচনার পর বাতিল করা হয়েছে। নোট: ${notes || 'পর্যাপ্ত তথ্যের অভাব'}`,
+        link: status === 'approved' ? '/admin/claim-tasks' : '/dashboard',
+        category: 'system',
+      });
+    } catch {
+      // ignore
+    }
+
+    return target;
+  },
+
+  // -------------------------------------------------------------
+  // COMMISSION SETTINGS & COMPANY PROFIT ENGINE
+  // -------------------------------------------------------------
+  async getCommissionSettings(): Promise<CommissionSettings> {
+    const defaultSettings: CommissionSettings = {
+      id: 'comm_default',
+      worker_commission_percentage: 80, // 80% to worker, 20% to company
+      admin_commission_percentage: 70,  // 70% to admin, 30% to company
+      updated_at: new Date().toISOString(),
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase.from('commission_settings').select('*').limit(1).single();
+        if (!error && data) return data as CommissionSettings;
+      } catch {
+        // fallback
+      }
+    }
+
+    return getLS<CommissionSettings>('commission_settings', defaultSettings);
+  },
+
+  async updateCommissionSettings(
+    newSettings: { worker_commission_percentage: number; admin_commission_percentage: number },
+    adminId: string
+  ): Promise<CommissionSettings> {
+    const current = await this.getCommissionSettings();
+    const updated: CommissionSettings = {
+      ...current,
+      worker_commission_percentage: Math.max(0, Math.min(100, newSettings.worker_commission_percentage)),
+      admin_commission_percentage: Math.max(0, Math.min(100, newSettings.admin_commission_percentage)),
+      updated_at: new Date().toISOString(),
+      updated_by: adminId,
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('commission_settings').upsert(updated);
+      } catch (err) {
+        console.warn('Supabase commission settings update error:', err);
+      }
+    }
+
+    setLS('commission_settings', updated);
+    return updated;
+  },
+
+  /**
+   * অর্ডার সম্পূর্ণ হলে অটোমেটিক ওয়ার্কার/অ্যাডমিনের অ্যাকাউন্টে কমিশন ক্রেডিট ও কোম্পানি প্রফিট ক্যালকুলেশন
+   */
+  async distributeOrderCommission(order: Order): Promise<CompanyProfitRecord | null> {
+    if (!order.assigned_admin) return null;
+
+    // যদি এই অর্ডারের জন্য ইতিমধ্যে ডিস্ট্রিবিউশন করা হয়ে থাকে
+    const existingProfits = await this.getCompanyProfitRecords();
+    if (existingProfits.some((p) => p.order_id === order.id)) {
+      return existingProfits.find((p) => p.order_id === order.id) || null;
+    }
+
+    const assignedProf = await this.getUserProfile(order.assigned_admin);
+    const role = assignedProf?.role === 'worker' ? 'worker' : 'admin';
+    const commSettings = await this.getCommissionSettings();
+
+    const rate = role === 'worker' ? commSettings.worker_commission_percentage : commSettings.admin_commission_percentage;
+    const workerPayout = Math.round((order.amount * rate) / 100);
+    const companyProfit = order.amount - workerPayout;
+
+    const record: CompanyProfitRecord = {
+      id: `cprofit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      order_id: order.id,
+      service_title: order.service_title || 'সার্ভিস অর্ডার',
+      total_order_amount: order.amount,
+      assigned_id: order.assigned_admin,
+      assigned_name: order.assigned_admin_name || assignedProf?.full_name || 'কর্মকর্তা',
+      assigned_role: role,
+      worker_or_admin_payout: workerPayout,
+      company_profit_amount: companyProfit,
+      created_at: new Date().toISOString(),
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('company_profit_records').insert(record);
+      } catch (err) {
+        console.warn('Supabase profit record insert error:', err);
+      }
+    }
+
+    const localProfits = getLS<CompanyProfitRecord[]>('company_profit_records', []);
+    localProfits.unshift(record);
+    setLS('company_profit_records', localProfits);
+
+    // ওয়ার্কার/অ্যাডমিনের উইথড্রএবল ব্যালেন্স বৃদ্ধি করা
+    const balances = getLS<Record<string, number>>('worker_withdrawable_balances', {});
+    balances[order.assigned_admin] = (balances[order.assigned_admin] || 0) + workerPayout;
+    setLS('worker_withdrawable_balances', balances);
+
+    // নোটিফাই করা
+    try {
+      await communicationService.notifyAndEmail({
+        userId: order.assigned_admin,
+        title: 'কাজের কমিশন অ্যাকাউন্টে যোগ হয়েছে! 💵',
+        message: `অর্ডার #${order.order_number}-এর জন্য আপনার ৳${workerPayout.toLocaleString('bn-BD')} উপার্জিত ব্যালেন্সে ক্রেডিট হয়েছে। আপনি এখন উইথড্র রিকোয়েস্ট পাঠাতে পারবেন।`,
+        link: '/admin/withdraw',
+        category: 'wallet',
+      });
+    } catch {
+      // ignore
+    }
+
+    return record;
+  },
+
+  async getCompanyProfitRecords(): Promise<CompanyProfitRecord[]> {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('company_profit_records')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (!error && data) return data as CompanyProfitRecord[];
+      } catch {
+        // fallback
+      }
+    }
+    return getLS<CompanyProfitRecord[]>('company_profit_records', []);
+  },
+
+  async getCompanyProfitSummary(): Promise<{
+    totalRevenue: number;
+    totalWorkerPayouts: number;
+    totalCompanyProfit: number;
+    completedOrdersCount: number;
+  }> {
+    const records = await this.getCompanyProfitRecords();
+    const totalRevenue = records.reduce((sum, r) => sum + r.total_order_amount, 0);
+    const totalWorkerPayouts = records.reduce((sum, r) => sum + r.worker_or_admin_payout, 0);
+    const totalCompanyProfit = records.reduce((sum, r) => sum + r.company_profit_amount, 0);
+
+    return {
+      totalRevenue,
+      totalWorkerPayouts,
+      totalCompanyProfit,
+      completedOrdersCount: records.length,
+    };
+  },
+
+  // -------------------------------------------------------------
+  // PAYOUT ACCOUNTS & WITHDRAWAL REQUESTS
+  // -------------------------------------------------------------
+  async getPayoutAccount(userId: string): Promise<PayoutAccount | null> {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase.from('payout_accounts').select('*').eq('user_id', userId).maybeSingle();
+        if (!error && data) return data as PayoutAccount;
+      } catch {
+        // fallback
+      }
+    }
+
+    const accounts = getLS<Record<string, PayoutAccount>>('payout_accounts', {});
+    return accounts[userId] || null;
+  },
+
+  async savePayoutAccount(account: PayoutAccount): Promise<PayoutAccount> {
+    const now = new Date().toISOString();
+    const payload = { ...account, updated_at: now };
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('payout_accounts').upsert(payload);
+      } catch (err) {
+        console.warn('Supabase save payout account error:', err);
+      }
+    }
+
+    const accounts = getLS<Record<string, PayoutAccount>>('payout_accounts', {});
+    accounts[account.user_id] = payload;
+    setLS('payout_accounts', accounts);
+
+    return payload;
+  },
+
+  async getUserWithdrawableBalance(userId: string): Promise<number> {
+    const balances = getLS<Record<string, number>>('worker_withdrawable_balances', {});
+    return balances[userId] || 0;
+  },
+
+  async submitWithdrawalRequest(
+    userId: string,
+    userName: string,
+    userEmail: string,
+    role: 'worker' | 'admin',
+    amount: number,
+    account: PayoutAccount
+  ): Promise<WithdrawalRequest> {
+    const currentBalance = await this.getUserWithdrawableBalance(userId);
+    if (amount <= 0) throw new Error('উত্তোলনের পরিমাণ ০ টাকার বেশি হতে হবে।');
+    if (amount > currentBalance) {
+      throw new Error(`আপনার পর্যাপ্ত উপার্জিত ব্যালেন্স নেই। বর্তমান ব্যালেন্স: ৳ ${currentBalance.toLocaleString('bn-BD')}`);
+    }
+
+    const now = new Date().toISOString();
+    const req: WithdrawalRequest = {
+      id: `wreq_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      user_id: userId,
+      user_name: userName,
+      user_email: userEmail,
+      role,
+      amount,
+      payout_account: account,
+      status: 'pending',
+      created_at: now,
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('withdrawal_requests').insert(req);
+      } catch (err) {
+        console.warn('Supabase withdrawal request insert error:', err);
+      }
+    }
+
+    const requests = getLS<WithdrawalRequest[]>('withdrawal_requests', []);
+    requests.unshift(req);
+    setLS('withdrawal_requests', requests);
+
+    return req;
+  },
+
+  async getWithdrawalRequests(): Promise<WithdrawalRequest[]> {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('withdrawal_requests')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (!error && data) return data as WithdrawalRequest[];
+      } catch {
+        // fallback
+      }
+    }
+    return getLS<WithdrawalRequest[]>('withdrawal_requests', []);
+  },
+
+  async processWithdrawalRequest(
+    requestId: string,
+    status: 'approved' | 'rejected',
+    notes: string,
+    adminId: string
+  ): Promise<WithdrawalRequest> {
+    const requests = await this.getWithdrawalRequests();
+    const target = requests.find((r) => r.id === requestId);
+    if (!target) throw new Error('উইথড্র রিকোয়েস্ট পাওয়া যায়নি।');
+    if (target.status !== 'pending') throw new Error('এই রিকোয়েস্টটি ইতিমধ্যে প্রসেস করা হয়েছে।');
+
+    const now = new Date().toISOString();
+    target.status = status;
+    target.admin_notes = notes;
+    target.processed_at = now;
+    target.processed_by = adminId;
+
+    if (status === 'approved') {
+      // ইউজারের উইথড্রএবল ব্যালেন্স থেকে কর্তন করা
+      const balances = getLS<Record<string, number>>('worker_withdrawable_balances', {});
+      const current = balances[target.user_id] || 0;
+      balances[target.user_id] = Math.max(0, current - target.amount);
+      setLS('worker_withdrawable_balances', balances);
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase
+          .from('withdrawal_requests')
+          .update({
+            status,
+            admin_notes: notes,
+            processed_at: now,
+            processed_by: adminId,
+          })
+          .eq('id', requestId);
+      } catch (err) {
+        console.warn('Supabase process withdrawal request error:', err);
+      }
+    }
+
+    const localRequests = getLS<WithdrawalRequest[]>('withdrawal_requests', []);
+    const idx = localRequests.findIndex((r) => r.id === requestId);
+    if (idx >= 0) {
+      localRequests[idx] = target;
+      setLS('withdrawal_requests', localRequests);
+    }
+
+    // নোটিফিকেশন পাঠানো
+    try {
+      await communicationService.notifyAndEmail({
+        userId: target.user_id,
+        title: status === 'approved' ? 'টাকা উত্তোলন সফল হয়েছে! 💸' : 'টাকা উত্তোলনের অনুরোধ বাতিল',
+        message:
+          status === 'approved'
+            ? `আপনার ৳${target.amount.toLocaleString('bn-BD')} উত্তোলনের আবেদনটি অনুমোদিত হয়েছে এবং ${target.payout_account.method.toUpperCase()} (${target.payout_account.account_number})-এ প্রেরণ করা হয়েছে।`
+            : `আপনার ৳${target.amount.toLocaleString('bn-BD')} উত্তোলনের আবেদনটি বাতিল করা হয়েছে। কারণ: ${notes || 'পেমেন্ট তথ্য যাচাই করতে ব্যর্থ'}`,
+        link: '/admin/withdraw',
+        category: 'wallet',
+      });
+    } catch {
+      // ignore
+    }
+
+    return target;
+  },
+
+  async deleteWithdrawalRequest(requestId: string, adminId: string): Promise<boolean> {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('withdrawal_requests').delete().eq('id', requestId);
+      } catch (err) {
+        console.warn('Supabase delete withdrawal request error:', err);
+      }
+    }
+
+    const localRequests = getLS<WithdrawalRequest[]>('withdrawal_requests', []);
+    const filtered = localRequests.filter((r) => r.id !== requestId);
+    setLS('withdrawal_requests', filtered);
+
+    // Audit log
+    const auditLogs = getLS<AuditLog[]>('audit_logs', []);
+    auditLogs.unshift({
+      id: `audit_${Date.now()}`,
+      actor_id: adminId,
+      action: 'DELETE_WITHDRAWAL_REQUEST',
+      target_type: 'withdrawal_request',
+      target_id: requestId,
+      details: { timestamp: new Date().toISOString() },
+      created_at: new Date().toISOString(),
+    });
+    setLS('audit_logs', auditLogs);
+
+    return true;
   },
 };

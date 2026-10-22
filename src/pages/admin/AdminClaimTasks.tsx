@@ -1,0 +1,891 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  UserCheck,
+  MessageSquare,
+  Clock,
+  CheckCircle2,
+  AlertCircle,
+  FileText,
+  Upload,
+  Send,
+  Eye,
+  Lock,
+  ExternalLink,
+  Paperclip,
+  RotateCcw,
+  Sparkles,
+  ShieldCheck,
+  ChevronRight,
+  User,
+  Search,
+  Filter,
+  Check,
+  DollarSign,
+  Info,
+} from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { toBengaliCurrency, toBengaliDigits, toBengaliDate } from '../../lib/i18n';
+import { useNotification } from '../../context/NotificationContext';
+import { api } from '../../services/api';
+import { Order, OrderStatus, OrderWorkMessage } from '../../types/database';
+import { StatusBadge } from '../../components/common/StatusBadge';
+
+interface AdminClaimTasksProps {
+  onNavigate?: (path: string) => void;
+}
+
+export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) => {
+  const { user, profile, isSuperAdmin } = useAuth();
+  const { showToast } = useNotification();
+
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'pending_queue' | 'my_claimed' | 'super_audit'>('pending_queue');
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+
+  // লাইভ চ্যাট স্টেট
+  const [chatMessages, setChatMessages] = useState<OrderWorkMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [sendingChat, setSendingChat] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // ফাইল ডেলিভারি মডাল
+  const [deliverableModalOpen, setDeliverableModalOpen] = useState(false);
+  const [deliverableTitle, setDeliverableTitle] = useState('');
+  const [deliverableUrl, setDeliverableUrl] = useState('');
+  const [deliverableNotes, setDeliverableNotes] = useState('');
+  const [submittingDeliverable, setSubmittingDeliverable] = useState(false);
+
+  // সার্চ
+  const [search, setSearch] = useState('');
+
+  // সকল অর্ডার লোড
+  const loadOrders = async () => {
+    try {
+      const data = await api.getAllOrders();
+      setOrders(data);
+    } catch {
+      showToast({ type: 'error', title: 'ত্রুটি', message: 'অর্ডার কিউ লোড করা যায়নি' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadOrders();
+
+    // লাইভ ইভেন্ট লিসেনার
+    const handleOrdersUpdated = () => {
+      loadOrders();
+    };
+
+    window.addEventListener('orders_updated', handleOrdersUpdated);
+    window.addEventListener('order_claimed', handleOrdersUpdated);
+    window.addEventListener('order_released', handleOrdersUpdated);
+
+    // অটো পোলিং (৩ সেকেন্ড পরপর যাতে অন্যান্য অ্যাডমিনের ক্লেইম সাথে সাথে সিঙ্ক হয়)
+    const interval = setInterval(loadOrders, 3000);
+
+    return () => {
+      window.removeEventListener('orders_updated', handleOrdersUpdated);
+      window.removeEventListener('order_claimed', handleOrdersUpdated);
+      window.removeEventListener('order_released', handleOrdersUpdated);
+      clearInterval(interval);
+    };
+  }, []);
+
+  // নির্বাচিত অর্ডারের চ্যাট মেসেজ লোড ও রিয়েল-টাইম লিসেনার
+  const loadChat = async (orderId: string) => {
+    try {
+      const msgs = await api.getOrderMessages(orderId);
+      setChatMessages(msgs);
+    } catch (err) {
+      console.warn('Failed to load chat messages:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (!selectedOrderId) {
+      setChatMessages([]);
+      return;
+    }
+
+    loadChat(selectedOrderId);
+
+    // লাইভ চ্যাট ইভেন্ট লিসেনার
+    const handleNewMessage = (e: Event) => {
+      const customEvt = e as CustomEvent<{ orderId: string; message: OrderWorkMessage }>;
+      if (customEvt.detail && customEvt.detail.orderId === selectedOrderId) {
+        setChatMessages((prev) => {
+          if (prev.some((m) => m.id === customEvt.detail.message.id)) return prev;
+          return [...prev, customEvt.detail.message];
+        });
+      }
+    };
+
+    window.addEventListener('order_message_sent', handleNewMessage);
+
+    // চ্যাট ওপেন থাকা অবস্থায় ২.৫ সেকেন্ড পরপর লাইভ পোলিং
+    const chatInterval = setInterval(() => {
+      loadChat(selectedOrderId);
+    }, 2500);
+
+    return () => {
+      window.removeEventListener('order_message_sent', handleNewMessage);
+      clearInterval(chatInterval);
+    };
+  }, [selectedOrderId]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
+
+  // ফিল্টারিং ও দৃষ্টিসীমা নির্ধারণ (Privacy & Sight Rule)
+  // ১. পেন্ডিং কিউ: যে অর্ডারগুলোর কোনো assigned_admin নেই এবং যেগুলো সক্রিয় (বাতিল বা সম্পন্ন নয়)
+  const pendingOrders = orders.filter((o) => {
+    const isUnassigned = !o.assigned_admin && !['cancelled', 'refunded', 'completed'].includes(o.status);
+    if (!isUnassigned) return false;
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (
+      o.order_number.toLowerCase().includes(q) ||
+      (o.service?.title_bn && o.service.title_bn.includes(search)) ||
+      (o.service?.title && o.service.title.toLowerCase().includes(q)) ||
+      (o.customer?.email && o.customer.email.toLowerCase().includes(q))
+    );
+  });
+
+  // ২. আমার দায়িত্বপ্রাপ্ত কাজ: শুধুমাত্র বর্তমান লগইন করা অ্যাডমিনের ক্লেইম করা কাজ
+  const myClaimedOrders = orders.filter((o) => {
+    const isMine = o.assigned_admin === user?.id;
+    if (!isMine) return false;
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (
+      o.order_number.toLowerCase().includes(q) ||
+      (o.service?.title_bn && o.service.title_bn.includes(search)) ||
+      (o.service?.title && o.service.title.toLowerCase().includes(q)) ||
+      (o.customer?.email && o.customer.email.toLowerCase().includes(q))
+    );
+  });
+
+  // ৩. অন্যান্য অ্যাডমিনদের কাজ (শুধুমাত্র সুপার অ্যাডমিনের অডিটের জন্য)
+  const otherClaimedOrders = orders.filter((o) => {
+    return Boolean(o.assigned_admin && o.assigned_admin !== user?.id);
+  });
+
+  // সক্রিয় নির্বাচিত অর্ডার
+  const selectedOrder = orders.find((o) => o.id === selectedOrderId) || null;
+
+  // ১. কাজ ক্লেইম করা (Claim Task)
+  // কাজ নেওয়ার পর এটি পেন্ডিং কিউ এবং অন্যান্য অ্যাডমিনদের দৃষ্টিসীমার বাইরে চলে যাবে!
+  const handleClaim = async (targetOrder: Order) => {
+    if (!user) return;
+    const adminName = profile?.full_name || user.email?.split('@')[0] || 'স্পেশালিস্ট অ্যাডমিন';
+
+    try {
+      const updated = await api.claimOrder(targetOrder.id, user.id, adminName, user.email || '');
+      setOrders((prev) => prev.map((o) => (o.id === targetOrder.id ? updated : o)));
+      setSelectedOrderId(updated.id);
+      setActiveTab('my_claimed');
+
+      showToast({
+        type: 'success',
+        title: 'কাজটি সফলভাবে ক্লেইম করা হয়েছে! 🎯',
+        message: `অর্ডার #${targetOrder.order_number} এখন আপনার দায়িত্বে অ্যাসাইন হয়েছে। এটি অন্য অ্যাডমিনদের দৃষ্টিসীমার বাইরে চলে গেছে এবং গ্রাহকের সাথে সরাসরি লাইভ চ্যাট সক্রিয় হয়েছে।`,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'কাজটি গ্রহণ করা সম্ভব হয়নি';
+      showToast({ type: 'error', title: 'ক্লেইম ব্যর্থ', message: msg });
+    }
+  };
+
+  // ২. কাজ অবমুক্ত করা (Release Task back to Pending Queue)
+  const handleRelease = async (targetOrder: Order) => {
+    if (!user) return;
+    const confirmed = window.confirm(
+      'আপনি কি নিশ্চিতভাবে এই কাজটি পুনরায় উন্মুক্ত পেন্ডিং কিউ-তে পাঠাতে চান? অন্য যেকোনো যোগ্য অ্যাডমিন তখন কাজটি গ্রহণ করতে পারবেন।'
+    );
+    if (!confirmed) return;
+
+    try {
+      const updated = await api.releaseOrder(targetOrder.id, user.id, isSuperAdmin);
+      setOrders((prev) => prev.map((o) => (o.id === targetOrder.id ? updated : o)));
+      if (selectedOrderId === targetOrder.id) {
+        setSelectedOrderId(null);
+      }
+      showToast({
+        type: 'info',
+        title: 'কাজটি অবমুক্ত করা হয়েছে',
+        message: `অর্ডার #${targetOrder.order_number} পুনরায় পেন্ডিং কিউ-তে যুক্ত হয়েছে।`,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'অবমুক্ত করা সম্ভব হয়নি';
+      showToast({ type: 'error', title: 'ত্রুটি', message: msg });
+    }
+  };
+
+  // ৩. সরাসরি লাইভ চ্যাটে বার্তা পাঠানো
+  const handleSendChat = async (e?: React.FormEvent, customText?: string) => {
+    if (e) e.preventDefault();
+    const textToSend = (customText || chatInput).trim();
+    if (!user || !selectedOrder || !textToSend || sendingChat) return;
+
+    setSendingChat(true);
+    const adminName = profile?.full_name || user.email?.split('@')[0] || 'দায়িত্বপ্রাপ্ত অ্যাডমিন';
+
+    try {
+      const newMsg = await api.sendOrderMessage(selectedOrder.id, user.id, adminName, 'admin', textToSend);
+      setChatMessages((prev) => [...prev, newMsg]);
+      setChatInput('');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'বার্তা পাঠানো যায়নি';
+      showToast({ type: 'error', title: 'ত্রুটি', message: msg });
+    } finally {
+      setSendingChat(false);
+    }
+  };
+
+  // ৪. ফাইল ডেলিভারি সাবমিট
+  const handleSubmitDeliverable = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !selectedOrder || !deliverableTitle.trim()) return;
+
+    setSubmittingDeliverable(true);
+    try {
+      const fileUrl = deliverableUrl.trim() || 'https://mukisoft.com/deliverables/final_work.pdf';
+      await api.addOrderDeliverable(selectedOrder.id, user.id, {
+        title: deliverableTitle.trim(),
+        fileUrl,
+        notes: deliverableNotes.trim(),
+      });
+
+      // চ্যাটেও একটি অটোমেটেড ডেলিভারি নোটিস পাঠানো
+      await api.sendOrderMessage(
+        selectedOrder.id,
+        user.id,
+        profile?.full_name || 'দায়িত্বপ্রাপ্ত অ্যাডমিন',
+        'admin',
+        `📦 আপনার কাজের ডেলিভারি ফাইল যুক্ত করা হয়েছে: "${deliverableTitle.trim()}"। অনুগ্রহ করে ডাউনলোড করে দেখে নিন।`,
+        { name: deliverableTitle.trim(), url: fileUrl }
+      );
+
+      showToast({
+        type: 'success',
+        title: 'ফাইল ডেলিভারি সম্পন্ন! 🚀',
+        message: 'ডেলিভারি ফাইল যুক্ত হয়েছে এবং গ্রাহককে ডেলিভারি নোটিফিকেশন পাঠানো হয়েছে।',
+      });
+
+      setDeliverableModalOpen(false);
+      setDeliverableTitle('');
+      setDeliverableUrl('');
+      setDeliverableNotes('');
+      await loadOrders();
+      if (selectedOrderId) await loadChat(selectedOrderId);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'ডেলিভারি ব্যর্থ হয়েছে';
+      showToast({ type: 'error', title: 'ত্রুটি', message: msg });
+    } finally {
+      setSubmittingDeliverable(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* হেডার */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-2xs">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800">
+              <Sparkles className="w-3 h-3 text-amber-600" /> ক্লেইম টাস্ক কনসোল
+            </span>
+            <span className="text-xs text-slate-400 font-mono">Live Queue Engine</span>
+          </div>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">
+            পেন্ডিং অর্ডার কিউ ও সেলফ-অ্যাসাইনমেন্ট
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+            উন্মুক্ত কাজ নিজের দায়িত্বে নিন। ক্লেইম করার সাথে সাথে কাজটি অন্য অ্যাডমিনদের দৃষ্টিসীমার বাইরে চলে যাবে এবং আপনার ও ব্যবহারকারীর মধ্যে সরাসরি ১-অন-১ লাইভ চ্যাট সক্রিয় হবে।
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold">
+            <Clock className="w-4 h-4 text-amber-600 animate-pulse" />
+            <span>পেন্ডিং কিউ: {toBengaliDigits(pendingOrders.length)}টি কাজ</span>
+          </div>
+
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            <span>আমার দায়িত্বে: {toBengaliDigits(myClaimedOrders.length)}টি কাজ</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ট্যাব নেভিগেশন ও সার্চ */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-1.5 p-1 bg-slate-200/70 rounded-xl overflow-x-auto scrollbar-none">
+          <button
+            onClick={() => setActiveTab('pending_queue')}
+            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${
+              activeTab === 'pending_queue'
+                ? 'bg-amber-500 text-white shadow-sm'
+                : 'text-slate-700 hover:text-slate-900 hover:bg-white/50'
+            }`}
+          >
+            <Clock className="w-3.5 h-3.5" />
+            <span>পেন্ডিং কিউ (Pending Queue)</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+              activeTab === 'pending_queue' ? 'bg-amber-600 text-white' : 'bg-amber-100 text-amber-800'
+            }`}>
+              {toBengaliDigits(pendingOrders.length)}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('my_claimed')}
+            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${
+              activeTab === 'my_claimed'
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'text-slate-700 hover:text-slate-900 hover:bg-white/50'
+            }`}
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            <span>আমার দায়িত্বপ্রাপ্ত কাজ ও লাইভ চ্যাট</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+              activeTab === 'my_claimed' ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-800'
+            }`}>
+              {toBengaliDigits(myClaimedOrders.length)}
+            </span>
+          </button>
+
+          {isSuperAdmin && (
+            <button
+              onClick={() => setActiveTab('super_audit')}
+              className={`px-4 py-2 text-xs font-medium rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${
+                activeTab === 'super_audit'
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+              }`}
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span>অন্যান্যদের কাজ (সুপার অডিট)</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-slate-300 text-slate-800">
+                {toBengaliDigits(otherClaimedOrders.length)}
+              </span>
+            </button>
+          )}
+        </div>
+
+        <div className="relative max-w-xs w-full">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="অর্ডার নম্বর বা সেবা দিয়ে খুঁজুন..."
+            className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500"
+          />
+        </div>
+      </div>
+
+      {/* ১. পেন্ডিং কিউ (Pending Queue View) */}
+      {activeTab === 'pending_queue' && (
+        <div className="space-y-4">
+          <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-3.5 flex items-start gap-2.5 text-xs text-amber-900">
+            <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="leading-relaxed">
+              <span className="font-bold">দৃষ্টিসীমা ও অ্যাসাইনমেন্ট নিয়ম:</span> এই কিউ-তে থাকা যেকোনো কাজ আপনি নিজের দায়িত্বে নিতে পারবেন। কাজটির &quot;ক্লেইম করুন&quot; বাটনে চাপার সাথে সাথে এটি কিউ এবং অন্যান্য সকল অ্যাডমিনের দৃষ্টিসীমা থেকে পুরোপুরি অদৃশ্য হয়ে আপনার ব্যক্তিগত ওয়ার্কস্পেসে স্থানান্তরিত হবে।
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="py-12 text-center text-xs text-slate-400">পেন্ডিং কিউ লোড হচ্ছে...</div>
+          ) : pendingOrders.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-3">
+              <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto">
+                <Check className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-bold text-slate-900">পেন্ডিং কিউ সম্পূর্ণ ফাঁকা!</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                এই মুহূর্তে কোনো অপেক্ষমাণ অর্ডার নেই। সকল অর্ডার অ্যাডমিনদের দ্বারা ক্লেইম করা হয়েছে অথবা সম্পন্ন হয়ে গেছে। নতুন কোনো অর্ডার আসলে এখানে সাথে সাথে প্রদর্শিত হবে।
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {pendingOrders.map((ord) => (
+                <div
+                  key={ord.id}
+                  className="bg-white rounded-2xl border border-slate-200 p-5 hover:border-amber-400 hover:shadow-md transition-all flex flex-col justify-between space-y-4 relative overflow-hidden group"
+                >
+                  <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-amber-400 to-orange-500" />
+
+                  <div className="space-y-3">
+                    {/* টপ মেটা */}
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono font-bold text-xs text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md">
+                        {ord.order_number}
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 animate-pulse">
+                        <Clock className="w-3 h-3" /> ক্লেইম করুন
+                      </span>
+                    </div>
+
+                    {/* সার্ভিস নাম */}
+                    <div>
+                      <h3 className="font-bold text-sm text-slate-900 group-hover:text-indigo-600 transition-colors">
+                        {ord.service?.title_bn || ord.service?.title}
+                      </h3>
+                      <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-1">
+                        <User className="w-3.5 h-3.5 text-slate-400" />
+                        <span className="font-mono text-[11px] truncate max-w-[180px]">
+                          {ord.customer?.email || ord.customer?.full_name || ord.user_id}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* রিকোয়ারমেন্টস প্রিভিউ */}
+                    {ord.requirements_submitted && (
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] text-slate-600 line-clamp-3 leading-relaxed">
+                        {ord.requirements_submitted}
+                      </div>
+                    )}
+
+                    {/* রেফারেন্স লিংক বা ফাইল */}
+                    <div className="flex flex-wrap items-center gap-2 text-[10px]">
+                      {ord.reference_link && (
+                        <a
+                          href={ord.reference_link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-indigo-600 hover:underline bg-indigo-50 px-2 py-0.5 rounded"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          <span>রেফারেন্স লিংক</span>
+                        </a>
+                      )}
+                      {ord.attachment_name && (
+                        <span className="inline-flex items-center gap-1 text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
+                          <Paperclip className="w-3 h-3" />
+                          <span className="truncate max-w-[120px]">{ord.attachment_name}</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* নিচের বার ও ক্লেইম বাটন */}
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">এসক্রো বাজেট</span>
+                      <span className="text-base font-bold font-mono text-slate-900">
+                        {toBengaliCurrency(ord.amount)}
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={() => handleClaim(ord)}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 active:scale-95 text-white font-bold rounded-xl text-xs shadow-md transition-transform"
+                    >
+                      <UserCheck className="w-4 h-4" />
+                      <span>আমি দায়িত্ব নিচ্ছি (Claim)</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ২. আমার দায়িত্বপ্রাপ্ত কাজ ও লাইভ চ্যাট (My Claimed Tasks & Direct Live Chat) */}
+      {activeTab === 'my_claimed' && (
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+          {myClaimedOrders.length === 0 ? (
+            <div className="p-12 text-center space-y-3">
+              <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+                <MessageSquare className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-bold text-slate-800">আপনার দায়িত্বে বর্তমানে কোনো সক্রিয় কাজ নেই</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                পেন্ডিং কিউ থেকে যেকোনো কাজ নিজের দায়িত্বে নিন। ক্লেইম করার সাথে সাথে এখানে গ্রাহকের সাথে সরাসরি লাইভ চ্যাট চালু হবে।
+              </p>
+              <button
+                onClick={() => setActiveTab('pending_queue')}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-xl transition-colors"
+              >
+                <Clock className="w-4 h-4" />
+                <span>পেন্ডিং কিউ দেখুন ({toBengaliDigits(pendingOrders.length)})</span>
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[580px]">
+              {/* বাম কলাম: আমার ক্লেইমকৃত কাজের তালিকা (৪ কলাম) */}
+              <div className="lg:col-span-4 border-r border-slate-200 bg-slate-50/50 flex flex-col">
+                <div className="p-3.5 border-b border-slate-200 bg-white flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <UserCheck className="w-4 h-4 text-emerald-600" />
+                    <span className="font-bold text-xs text-slate-800">
+                      আমার চলমান কাজ ({toBengaliDigits(myClaimedOrders.length)})
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-400">অন্যান্যদের কাছে লুকায়িত</span>
+                </div>
+
+                <div className="divide-y divide-slate-100 overflow-y-auto max-h-[560px]">
+                  {myClaimedOrders.map((ord) => {
+                    const isSelected = selectedOrderId === ord.id;
+                    return (
+                      <div
+                        key={ord.id}
+                        onClick={() => setSelectedOrderId(ord.id)}
+                        className={`p-4 cursor-pointer transition-all ${
+                          isSelected
+                            ? 'bg-white border-l-4 border-emerald-600 shadow-2xs'
+                            : 'hover:bg-white/80'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono font-bold text-[11px] text-slate-700">
+                            {ord.order_number}
+                          </span>
+                          <StatusBadge status={ord.status} />
+                        </div>
+
+                        <h4 className="font-semibold text-xs text-slate-900 mt-1 line-clamp-1">
+                          {ord.service?.title_bn || ord.service?.title}
+                        </h4>
+
+                        <div className="flex items-center justify-between text-[11px] text-slate-500 mt-2">
+                          <span className="font-mono text-slate-700">
+                            {toBengaliCurrency(ord.amount)}
+                          </span>
+                          <span className="truncate max-w-[120px]">
+                            {ord.customer?.email?.split('@')[0] || 'ক্লায়েন্ট'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* ডান কলাম: লাইভ চ্যাট রুম ও ওয়ার্কস্পেস (৮ কলাম) */}
+              <div className="lg:col-span-8 flex flex-col justify-between bg-white">
+                {selectedOrder ? (
+                  <>
+                    {/* চ্যাট হেডার */}
+                    <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                            <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
+                            সরাসরি লাইভ চ্যাট সংযুক্ত
+                          </span>
+                          <span className="font-mono font-bold text-xs text-slate-600">
+                            #{selectedOrder.order_number}
+                          </span>
+                        </div>
+                        <h3 className="font-bold text-sm text-slate-900 mt-0.5">
+                          {selectedOrder.service?.title_bn || selectedOrder.service?.title}
+                        </h3>
+                        <p className="text-[11px] text-slate-500">
+                          গ্রাহক: <code className="font-mono">{selectedOrder.customer?.email || selectedOrder.user_id}</code> | মূল্য: {toBengaliCurrency(selectedOrder.amount)}
+                        </p>
+                      </div>
+
+                      {/* অ্যাকশন বাটনসমূহ */}
+                      <div className="flex items-center gap-2 self-start sm:self-auto">
+                        <button
+                          onClick={() => {
+                            setDeliverableTitle(`ডেলিভারি ফাইল — ${selectedOrder.service?.title_bn || selectedOrder.service?.title}`);
+                            setDeliverableModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold shadow-2xs transition-colors"
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>ফাইল ডেলিভারি</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleRelease(selectedOrder)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 rounded-lg text-xs font-medium transition-colors"
+                          title="কাজটি করতে না পারলে কিউ-তে ফিরিয়ে দিন"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>অবমুক্ত</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* প্রজেক্ট রিকোয়ারমেন্টস ড্রপডাউন/স্ট্রিপ */}
+                    {selectedOrder.requirements_submitted && (
+                      <div className="px-4 py-2 bg-amber-50/50 border-b border-amber-100 text-[11px] text-slate-700 flex items-start gap-2">
+                        <FileText className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                        <div className="line-clamp-2 leading-relaxed">
+                          <span className="font-bold text-amber-900">রিকোয়ারমেন্টস:</span> {selectedOrder.requirements_submitted}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* লাইভ চ্যাট মেসেজ ফিড */}
+                    <div className="flex-1 p-4 space-y-3 overflow-y-auto max-h-[380px] min-h-[300px] bg-slate-50/30">
+                      {chatMessages.length === 0 ? (
+                        <div className="text-center py-12 text-xs text-slate-400 space-y-2">
+                          <MessageSquare className="w-8 h-8 text-slate-300 mx-auto" />
+                          <p className="font-semibold text-slate-600">১-অন-১ লাইভ চ্যাট রুম প্রস্তুত</p>
+                          <p className="text-[11px]">
+                            গ্রাহকের সাথে সরাসরি কথা বলুন, কাজের আপডেট দিন বা প্রশ্ন থাকলে জানুন।
+                          </p>
+                        </div>
+                      ) : (
+                        chatMessages.map((msg) => {
+                          const isMe = msg.sender_role === 'admin';
+                          return (
+                            <div
+                              key={msg.id}
+                              className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
+                            >
+                              <div className="flex items-center gap-1.5 mb-1 text-[10px] text-slate-400">
+                                <span className="font-bold text-slate-700">
+                                  {isMe ? 'আপনি (দায়িত্বপ্রাপ্ত অ্যাডমিন)' : `${msg.sender_name} (গ্রাহক)`}
+                                </span>
+                                <span>•</span>
+                                <span>{toBengaliDate(msg.created_at)}</span>
+                              </div>
+                              <div
+                                className={`max-w-[85%] sm:max-w-md p-3 rounded-2xl text-xs leading-relaxed ${
+                                  isMe
+                                    ? 'bg-indigo-600 text-white rounded-br-none shadow-2xs'
+                                    : 'bg-white border border-slate-200 text-slate-800 rounded-bl-none shadow-2xs'
+                                }`}
+                              >
+                                <p className="whitespace-pre-line">{msg.message}</p>
+                                {msg.attachment_url && (
+                                  <a
+                                    href={msg.attachment_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className={`mt-2 inline-flex items-center gap-1 text-[11px] underline font-mono ${
+                                      isMe ? 'text-indigo-100 hover:text-white' : 'text-indigo-600 hover:text-indigo-800'
+                                    }`}
+                                  >
+                                    <Paperclip className="w-3 h-3" />
+                                    <span>{msg.attachment_name || 'সংযুক্ত ফাইল'}</span>
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                      <div ref={chatEndRef} />
+                    </div>
+
+                    {/* কুইক রেসপন্স চিপস */}
+                    <div className="px-4 py-2 bg-slate-100/70 border-t border-slate-200 flex items-center gap-1.5 overflow-x-auto scrollbar-none text-[11px]">
+                      <span className="text-[10px] font-bold text-slate-400 shrink-0">দ্রুত বার্তা:</span>
+                      <button
+                        onClick={() => handleSendChat(undefined, '👋 সালাম, আমি আপনার অর্ডারের দায়িত্ব নিয়েছি এবং কাজ শুরু করেছি।')}
+                        className="px-2.5 py-1 bg-white hover:bg-slate-200 border border-slate-200 rounded-full text-slate-700 whitespace-nowrap transition-colors"
+                      >
+                        কাজ শুরু করেছি
+                      </button>
+                      <button
+                        onClick={() => handleSendChat(undefined, '🔍 আপনার কাজটি সম্পন্ন করতে কিছু অতিরিক্ত তথ্য বা রেফারেন্স ফাইল প্রয়োজন। অনুগ্রহ করে এখানে জানান।')}
+                        className="px-2.5 py-1 bg-white hover:bg-slate-200 border border-slate-200 rounded-full text-slate-700 whitespace-nowrap transition-colors"
+                      >
+                        তথ্য প্রয়োজন
+                      </button>
+                      <button
+                        onClick={() => handleSendChat(undefined, '🎉 আপনার কাজের ফাইনাল ফাইল প্রস্তুত হচ্ছে, অল্প কিছুক্ষণের মধ্যে ডেলিভারি দিচ্ছি।')}
+                        className="px-2.5 py-1 bg-white hover:bg-slate-200 border border-slate-200 rounded-full text-slate-700 whitespace-nowrap transition-colors"
+                      >
+                        ফাইল প্রস্তুত হচ্ছে
+                      </button>
+                    </div>
+
+                    {/* চ্যাট ইনপুট বার */}
+                    <form
+                      onSubmit={(e) => handleSendChat(e)}
+                      className="p-3 bg-white border-t border-slate-200 flex items-center gap-2"
+                    >
+                      <input
+                        type="text"
+                        value={chatInput}
+                        onChange={(e) => setChatInput(e.target.value)}
+                        placeholder="গ্রাহকের নিকট সরাসরি লাইভ বার্তা লিখুন (Enter চাপুন)..."
+                        className="flex-1 px-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500 focus:bg-white transition-all"
+                      />
+                      <button
+                        type="submit"
+                        disabled={sendingChat || !chatInput.trim()}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>{sendingChat ? 'পাঠানো হচ্ছে...' : 'পাঠান'}</span>
+                      </button>
+                    </form>
+                  </>
+                ) : (
+                  <div className="p-12 text-center text-xs text-slate-400 space-y-2 m-auto">
+                    <MessageSquare className="w-8 h-8 text-slate-300 mx-auto" />
+                    <p className="font-semibold text-slate-700">বাম পাশের তালিকা থেকে একটি কাজ নির্বাচন করুন</p>
+                    <p>নির্বাচিত অর্ডারের লাইভ চ্যাট রুম ও প্রজেক্ট কনসোল এখানে খুলবে।</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ৩. সুপার অ্যাডমিন অডিট ভিউ (শুধুমাত্র সুপার অ্যাডমিনের জন্য) */}
+      {activeTab === 'super_audit' && isSuperAdmin && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
+          <div className="flex items-center gap-2">
+            <Lock className="w-4 h-4 text-slate-700" />
+            <h3 className="font-bold text-sm text-slate-900">অন্যান্য অ্যাডমিনদের দায়িত্বপ্রাপ্ত কাজের তালিকা</h3>
+          </div>
+          <p className="text-xs text-slate-500">
+            সাধারণ অ্যাডমিনদের ক্ষেত্রে এই কাজগুলো পুরোপুরি লুকায়িত থাকে যাতে কোনো বিভ্রান্তি বা ডুপ্লিকেট কাজের সুযোগ না থাকে। সুপার অ্যাডমিন হিসেবে আপনি সম্পূর্ণ প্ল্যাটফর্মের অগ্রগতি নিরীক্ষণ করতে পারেন।
+          </p>
+
+          {otherClaimedOrders.length === 0 ? (
+            <div className="p-8 text-center text-xs text-slate-400">
+              অন্য কোনো অ্যাডমিনের চলমান কাজ নেই।
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                  <tr>
+                    <th className="py-2.5 px-3 font-medium">অর্ডার নম্বর</th>
+                    <th className="py-2.5 px-3 font-medium">দায়িত্বপ্রাপ্ত অ্যাডমিন</th>
+                    <th className="py-2.5 px-3 font-medium">সেবা</th>
+                    <th className="py-2.5 px-3 font-medium">গ্রাহক</th>
+                    <th className="py-2.5 px-3 font-medium text-right">মূল্য</th>
+                    <th className="py-2.5 px-3 font-medium">স্ট্যাটাস</th>
+                    <th className="py-2.5 px-3 font-medium text-right">পদক্ষেপ</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {otherClaimedOrders.map((ord) => (
+                    <tr key={ord.id} className="hover:bg-slate-50">
+                      <td className="py-2.5 px-3 font-mono font-bold text-slate-800">{ord.order_number}</td>
+                      <td className="py-2.5 px-3 font-bold text-slate-900">
+                        {ord.assigned_admin_name || 'অন্য কর্মকর্তা'}
+                      </td>
+                      <td className="py-2.5 px-3 font-medium text-slate-700">
+                        {ord.service?.title_bn || ord.service?.title}
+                      </td>
+                      <td className="py-2.5 px-3 font-mono text-[11px] text-slate-500">
+                        {ord.customer?.email || ord.user_id}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-bold">
+                        {toBengaliCurrency(ord.amount)}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <StatusBadge status={ord.status} />
+                      </td>
+                      <td className="py-2.5 px-3 text-right">
+                        <button
+                          onClick={() => handleRelease(ord)}
+                          className="px-2 py-1 text-[11px] bg-rose-50 text-rose-700 hover:bg-rose-100 rounded border border-rose-200"
+                        >
+                          ফোর্স রিলিজ
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ফাইল ডেলিভারি মডাল */}
+      {deliverableModalOpen && selectedOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full p-6 space-y-4">
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 block">
+                কাজের ডেলিভারি হ্যান্ডওভার
+              </span>
+              <h3 className="text-base font-bold text-slate-900 mt-0.5">
+                ফাইল আপলোড ও ডেলিভারি সম্পন্ন করুন
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                অর্ডার: <code className="font-mono text-slate-800">#{selectedOrder.order_number}</code> ({selectedOrder.service?.title_bn || selectedOrder.service?.title})
+              </p>
+            </div>
+
+            <form onSubmit={handleSubmitDeliverable} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  ডেলিভারি ফাইলের শিরোনাম <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={deliverableTitle}
+                  onChange={(e) => setDeliverableTitle(e.target.value)}
+                  placeholder="যেমন: ফাইনাল লোগো ভেক্টর ফাইল (AI + PNG + PDF)"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  ডাউনলোড বা ড্রাইভ লিংক (URL)
+                </label>
+                <input
+                  type="url"
+                  value={deliverableUrl}
+                  onChange={(e) => setDeliverableUrl(e.target.value)}
+                  placeholder="https://drive.google.com/... অথবা সরাসরি ড্রপবক্স/সার্ভার লিংক"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500 font-mono"
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  খালি রাখলে সিস্টেমের সুরক্ষিত ডিফল্ট ডেলিভারি স্টোরেজ পাথ ব্যবহার করা হবে।
+                </span>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  গ্রাহকের উদ্দেশ্যে বিশেষ নোট বা নির্দেশনা
+                </label>
+                <textarea
+                  rows={3}
+                  value={deliverableNotes}
+                  onChange={(e) => setDeliverableNotes(e.target.value)}
+                  placeholder="যেমন: ফাইলটি আনজিপ করুন, ফন্টগুলো ইন্সটল করে নিন..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setDeliverableModalOpen(false)}
+                  className="px-4 py-2 font-medium text-slate-600 hover:text-slate-800"
+                  disabled={submittingDeliverable}
+                >
+                  বাতিল
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingDeliverable}
+                  className="px-5 py-2 font-bold text-white bg-slate-900 rounded-xl hover:bg-slate-800 transition-colors flex items-center gap-1.5"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{submittingDeliverable ? 'ডেলিভারি হচ্ছে...' : 'ডেলিভারি কনফার্ম করুন'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

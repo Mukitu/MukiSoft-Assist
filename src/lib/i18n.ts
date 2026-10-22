@@ -61,6 +61,7 @@ export const statusLabels: Record<string, string> = {
   // ভূমিকা
   super_admin: 'সুপার অ্যাডমিন',
   admin: 'অ্যাডমিন',
+  worker: 'স্পেশালিস্ট ওয়ার্কার',
   user: 'সাধারণ ব্যবহারকারী',
 
   // টিকিট স্ট্যাটাস

@@ -5,12 +5,15 @@ import {
   CheckCircle2,
   Copy,
   Check,
+  Info,
+  Smartphone,
+  Building,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { toBengaliCurrency, toBengaliDigits, toBengaliDate } from '../../lib/i18n';
 import { useNotification } from '../../context/NotificationContext';
 import { api } from '../../services/api';
-import { Wallet, WalletTransaction, DepositRequest, PlatformSettings } from '../../types/database';
+import { Wallet, WalletTransaction, DepositRequest, PaymentMethodConfig } from '../../types/database';
 import { StatusBadge } from '../../components/common/StatusBadge';
 
 export const UserWallet: React.FC = () => {
@@ -20,11 +23,11 @@ export const UserWallet: React.FC = () => {
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [depositRequests, setDepositRequests] = useState<DepositRequest[]>([]);
-  const [settings, setSettings] = useState<PlatformSettings | null>(null);
+  const [paymentConfigs, setPaymentConfigs] = useState<PaymentMethodConfig[]>([]);
+  const [selectedMethodId, setSelectedMethodId] = useState<string>('');
 
   // ফর্ম স্টেট
   const [amount, setAmount] = useState<number>(1000);
-  const [paymentMethod, setPaymentMethod] = useState<'bKash' | 'Nagad' | 'Bank_Transfer'>('bKash');
   const [senderAccount, setSenderAccount] = useState('');
   const [transactionRef, setTransactionRef] = useState('');
   const [slipUrl, setSlipUrl] = useState('');
@@ -34,19 +37,27 @@ export const UserWallet: React.FC = () => {
   useEffect(() => {
     async function load() {
       if (!user) return;
-      const [w, txs, deps, s] = await Promise.all([
+      const [w, txs, deps, configs] = await Promise.all([
         api.getWallet(user.id),
         api.getWalletTransactions(user.id),
         api.getAllDepositRequests(),
-        api.getSettings(),
+        api.getPaymentMethodConfigs(),
       ]);
       setWallet(w);
       setTransactions(txs);
       setDepositRequests(deps.filter((d) => d.user_id === user.id));
-      setSettings(s);
+      setPaymentConfigs(configs);
+
+      const activeList = configs.filter((c) => c.is_active);
+      if (activeList.length > 0) {
+        setSelectedMethodId(activeList[0].id);
+      }
     }
     load();
   }, [user]);
+
+  const activeConfigs = paymentConfigs.filter((c) => c.is_active);
+  const selectedConfig = activeConfigs.find((c) => c.id === selectedMethodId) || activeConfigs[0] || null;
 
   const handleCopy = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -57,6 +68,10 @@ export const UserWallet: React.FC = () => {
   const handleDepositSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    if (!selectedConfig) {
+      showToast({ type: 'error', title: 'পেমেন্ট মাধ্যম অনুপলব্ধ', message: 'বর্তমানে কোনো পেমেন্ট মেথড সক্রিয় নেই।' });
+      return;
+    }
     if (amount < 100) {
       showToast({ type: 'error', title: 'ন্যূনতম জমার পরিমাণ', message: 'ন্যূনতম জমার পরিমাণ ১০০ টাকা।' });
       return;
@@ -71,16 +86,16 @@ export const UserWallet: React.FC = () => {
       const newReq = await api.submitDepositRequest({
         userId: user.id,
         amount,
-        paymentMethod,
-        senderAccount,
-        transactionReference: transactionRef,
+        paymentMethod: selectedConfig.name,
+        senderAccount: senderAccount.trim(),
+        transactionReference: transactionRef.trim(),
         slipUrl,
       });
 
       showToast({
         type: 'success',
         title: 'জমার অনুরোধ জমা হয়েছে',
-        message: 'আপনার টাকা জমার অনুরোধটি অ্যাডমিন যাচাইকরণের তালিকায় যোগ করা হয়েছে।',
+        message: 'আপনার টাকা জমার অনুরোধটি পয়েন্ট ভেরিফিকেশন ও ট্রানজ্যাকশন চেকের জন্য জমা হয়েছে।',
       });
 
       setDepositRequests((prev) => [newReq, ...prev]);
@@ -147,7 +162,7 @@ export const UserWallet: React.FC = () => {
       </div>
 
       {/* টাকা জমার ফর্ম */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6 space-y-6">
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 space-y-6">
         <div>
           <h2 className="text-base font-bold text-slate-900">ওয়ালেটে টাকা জমা দিন</h2>
           <p className="text-xs text-slate-500 mt-1 leading-relaxed">
@@ -155,180 +170,188 @@ export const UserWallet: React.FC = () => {
           </p>
         </div>
 
-        {/* পেমেন্ট মেথড নির্বাচন */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {(['bKash', 'Nagad', 'Bank_Transfer'] as const).map((method) => (
-            <button
-              key={method}
-              type="button"
-              onClick={() => setPaymentMethod(method)}
-              className={`p-4 rounded-xl border text-left transition-all ${
-                paymentMethod === method
-                  ? 'border-indigo-600 bg-indigo-50/50 ring-1 ring-indigo-600'
-                  : 'border-slate-200 hover:border-slate-300 bg-white'
-              }`}
-            >
-              <div className="font-semibold text-slate-900 text-xs sm:text-sm">
-                {method === 'Bank_Transfer' ? 'সিটি ব্যাংক (Bank Transfer)' : method === 'bKash' ? 'বিকাশ (bKash)' : 'নগদ (Nagad)'}
-              </div>
-              <div className="text-[11px] text-slate-500 mt-0.5">
-                {method === 'Bank_Transfer' ? 'NPSB / BEFTN ট্রান্সফার' : 'মার্চেন্ট / পেমেন্ট নম্বর'}
-              </div>
-            </button>
-          ))}
-        </div>
-
-        {/* নির্দেশিকা বক্স */}
-        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-3">
-          <div className="font-semibold text-slate-800 uppercase tracking-wider text-[11px]">
-            {paymentMethod === 'Bank_Transfer' ? 'ব্যাংক ট্রান্সফার' : paymentMethod === 'bKash' ? 'বিকাশ' : 'নগদ'} পেমেন্ট নির্দেশিকা
+        {/* পেমেন্ট মেথড নির্বাচন (সুপার অ্যাডমিন কর্তৃক কনফিগারকৃত) */}
+        {activeConfigs.length === 0 ? (
+          <div className="p-6 text-center text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-2xl">
+            <Info className="w-5 h-5 text-amber-600 mx-auto mb-1" />
+            <p className="font-bold">বর্তমানে কোনো পেমেন্ট মেথড সক্রিয় নেই।</p>
+            <p className="text-[11px] mt-0.5 text-amber-700">অনুগ্ৰহ করে পেমেন্ট মেথড চালুর জন্য কিছু সময় অপেক্ষা করুন।</p>
           </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+              {activeConfigs.map((method) => {
+                const isSelected = selectedConfig?.id === method.id;
+                return (
+                  <button
+                    key={method.id}
+                    type="button"
+                    onClick={() => setSelectedMethodId(method.id)}
+                    className={`p-4 rounded-xl border text-left transition-all ${
+                      isSelected
+                        ? 'border-indigo-600 bg-indigo-50/50 ring-1 ring-indigo-600 shadow-2xs'
+                        : 'border-slate-200 hover:border-slate-300 bg-white'
+                    }`}
+                  >
+                    <div className="font-semibold text-slate-900 text-xs sm:text-sm">
+                      {method.name}
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5 truncate">
+                      {method.account_type_label}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
 
-          {paymentMethod === 'Bank_Transfer' ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-slate-700">
-              <div>
-                <span className="text-slate-400 block text-[11px]">ব্যাংকের নাম:</span>
-                <span className="font-semibold text-slate-900">The City Bank PLC</span>
-              </div>
-              <div>
-                <span className="text-slate-400 block text-[11px]">অ্যাকাউন্টের নাম:</span>
-                <span className="font-semibold text-slate-900">MukiSoft Technology Ltd.</span>
-              </div>
-              <div className="flex items-center justify-between pr-4">
-                <div>
-                  <span className="text-slate-400 block text-[11px]">অ্যাকাউন্ট নম্বর:</span>
-                  <span className="font-mono font-bold text-slate-900">11002233445566</span>
+            {/* নির্বাচিত পেমেন্ট মাধ্যমের নির্দেশিকা বক্স */}
+            {selectedConfig && (
+              <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200 text-xs space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                      অফিসিয়াল পেমেন্ট নম্বর / অ্যাকাউন্ট
+                    </span>
+                    <span className="text-base font-bold font-mono text-slate-900">
+                      {selectedConfig.number_or_account}
+                    </span>
+                    <span className="text-[11px] text-slate-500 block mt-0.5">
+                      ({selectedConfig.account_type_label})
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(selectedConfig.number_or_account, selectedConfig.id)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-50 transition-colors shrink-0"
+                  >
+                    {copiedKey === selectedConfig.id ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                    <span>{copiedKey === selectedConfig.id ? 'কপি হয়েছে' : 'নম্বর কপি করুন'}</span>
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleCopy('11002233445566', 'bank_acc')}
-                  className="text-indigo-600 hover:text-indigo-800 p-1"
-                  aria-label="অ্যাকাউন্ট নম্বর কপি করুন"
-                >
-                  {copiedKey === 'bank_acc' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                </button>
+
+                <div className="text-xs text-slate-700 leading-relaxed whitespace-pre-line">
+                  <span className="font-bold text-slate-800 block mb-1">পেমেন্ট ধাপসমূহ:</span>
+                  {selectedConfig.instructions || 'পেমেন্ট সম্পন্ন করে নিচের ইনপুট ফরম ফিলাপ করুন।'}
+                </div>
               </div>
+            )}
+
+            {/* জমা তথ্য ইনপুট ফর্ম */}
+            <form onSubmit={handleDepositSubmit} className="space-y-4 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    জমার পরিমাণ (৳) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={100}
+                    required
+                    value={amount}
+                    onChange={(e) => setAmount(Number(e.target.value))}
+                    className="w-full p-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500 focus:bg-white font-mono font-bold"
+                  />
+                  <span className="text-[10px] text-slate-400 mt-1 block">
+                    ন্যূনতম জমার পরিমাণ ৳১০০।
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    প্রেরকের নম্বর / অ্যাকাউন্ট <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={senderAccount}
+                    onChange={(e) => setSenderAccount(e.target.value)}
+                    placeholder="যে নম্বর বা অ্যাকাউন্ট থেকে টাকা পাঠিয়েছেন..."
+                    className="w-full p-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500 focus:bg-white font-mono"
+                  />
+                </div>
+              </div>
+
               <div>
-                <span className="text-slate-400 block text-[11px]">রাউটিং নম্বর:</span>
-                <span className="font-mono font-medium text-slate-900">085272183</span>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  ট্রানজ্যাকশন আইডি (TrxID) / রেফারেন্স নম্বর <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={transactionRef}
+                  onChange={(e) => setTransactionRef(e.target.value)}
+                  placeholder="যেমন: 9J3K8L2M1P"
+                  className="w-full p-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500 focus:bg-white font-mono font-bold"
+                />
               </div>
-            </div>
-          ) : (
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-slate-700">
+
               <div>
-                <span className="text-slate-400 block text-[11px]">অফিসিয়াল {paymentMethod === 'bKash' ? 'বিকাশ' : 'নগদ'} মার্চেন্ট নম্বর:</span>
-                <span className="text-sm font-bold font-mono text-slate-900">01700-000000</span>
-                <span className="text-[11px] text-slate-500 block mt-0.5">মার্চেন্ট অপশন সিলেক্ট করে পেমেন্ট করুন</span>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  পেমেন্ট স্লিপ / স্ক্রিনশট লিংক (ঐচ্ছিক)
+                </label>
+                <input
+                  type="url"
+                  value={slipUrl}
+                  onChange={(e) => setSlipUrl(e.target.value)}
+                  placeholder="https://drive.google.com/... অথবা ইমেজ ড্রাইভ লিংক"
+                  className="w-full p-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500 focus:bg-white font-mono"
+                />
               </div>
+
               <button
-                type="button"
-                onClick={() => handleCopy('01700000000', 'mobile_no')}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-700 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-50"
+                type="submit"
+                disabled={isSubmitting || !selectedConfig}
+                className="w-full sm:w-auto px-6 py-3 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-colors shadow-sm disabled:opacity-50"
               >
-                {copiedKey === 'mobile_no' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedKey === 'mobile_no' ? 'কপি হয়েছে' : 'নম্বর কপি করুন'}</span>
+                {isSubmitting ? 'প্রক্রিয়াধীন...' : 'জমার অনুরোধ জমা দিন'}
               </button>
-            </div>
-          )}
-        </div>
-
-        {/* ফর্ম ফিল্ডস */}
-        <form onSubmit={handleDepositSubmit} className="space-y-4 text-xs">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                জমার পরিমাণ (টাকা) <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="number"
-                min={100}
-                required
-                value={amount}
-                onChange={(e) => setAmount(Number(e.target.value))}
-                className="w-full p-2.5 font-mono font-bold text-sm bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:border-indigo-500"
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                আপনার প্রেরক মোবাইল / ব্যাংক অ্যাকাউন্ট <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                value={senderAccount}
-                onChange={(e) => setSenderAccount(e.target.value)}
-                placeholder="যেমন: 017xxxxxxxx"
-                className="w-full p-2.5 bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:border-indigo-500"
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                ট্রানজ্যাকশন আইডি / রেফারেন্স (TrxID) <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                value={transactionRef}
-                onChange={(e) => setTransactionRef(e.target.value)}
-                placeholder="যেমন: BL9A7K21X"
-                className="w-full p-2.5 font-mono uppercase bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:border-indigo-500"
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
-            <span className="text-[11px] text-slate-500">
-              অনুমোদনের সাথে সাথে স্বয়ংক্রিয়ভাবে ব্যালেন্স যোগ হবে এবং নোটিফিকেশন প্রদান করা হবে।
-            </span>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="px-6 py-2.5 text-xs font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors whitespace-nowrap"
-            >
-              {isSubmitting ? 'প্রসেসিং হচ্ছে...' : 'জমার অনুরোধ জমা দিন'}
-            </button>
-          </div>
-        </form>
+            </form>
+          </>
+        )}
       </div>
 
-      {/* প্রেরিত জমার অনুরোধসমূহের তালিকা */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-        <div className="p-4 sm:p-5 border-b border-slate-200">
-          <h3 className="font-bold text-slate-900 text-sm">আপনার টাকা জমার অনুরোধসমূহ</h3>
-          <p className="text-xs text-slate-500 mt-0.5">পাঠানো সকল জমার অনুরোধের স্ট্যাটাস</p>
-        </div>
+      {/* পূর্বে পাঠানো জমার অনুরোধ তালিকা */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 space-y-4">
+        <h2 className="text-base font-bold text-slate-900">আপনার জমার অনুরোধসমূহ</h2>
 
         {depositRequests.length === 0 ? (
-          <div className="p-6 text-center text-xs text-slate-500">এখনও কোনো জমার অনুরোধ পাঠানো হয়নি।</div>
+          <div className="p-8 text-center text-xs text-slate-400 bg-slate-50 rounded-xl border border-slate-200">
+            এখনও কোনো টাকা জমার অনুরোধ করা হয়নি।
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs text-left">
               <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
                 <tr>
-                  <th className="py-3 px-4 font-medium">তারিখ</th>
-                  <th className="py-3 px-4 font-medium">পদ্ধতি</th>
-                  <th className="py-3 px-4 font-medium">প্রেরকের নম্বর</th>
-                  <th className="py-3 px-4 font-medium">TrxID / রেফারেন্স</th>
-                  <th className="py-3 px-4 font-medium text-right">পরিমাণ</th>
-                  <th className="py-3 px-4 font-medium">অবস্থা</th>
+                  <th className="py-2.5 px-3 font-medium">তারিখ</th>
+                  <th className="py-2.5 px-3 font-medium">মেথড</th>
+                  <th className="py-2.5 px-3 font-medium">TrxID</th>
+                  <th className="py-2.5 px-3 font-medium text-right">পরিমাণ</th>
+                  <th className="py-2.5 px-3 font-medium">অবস্থা</th>
+                  <th className="py-2.5 px-3 font-medium">অ্যাডমিন নোট</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700">
-                {depositRequests.map((dep) => (
-                  <tr key={dep.id} className="hover:bg-slate-50/50">
-                    <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
-                      {toBengaliDate(dep.created_at)}
+              <tbody className="divide-y divide-slate-100">
+                {depositRequests.map((req) => (
+                  <tr key={req.id} className="hover:bg-slate-50/60">
+                    <td className="py-3 px-3 text-slate-500 whitespace-nowrap">
+                      {toBengaliDate(req.created_at)}
                     </td>
-                    <td className="py-3 px-4 font-semibold text-slate-800">{dep.payment_method}</td>
-                    <td className="py-3 px-4 font-mono">{dep.sender_account}</td>
-                    <td className="py-3 px-4 font-mono font-bold text-slate-900">{dep.transaction_reference}</td>
-                    <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">
-                      {toBengaliCurrency(dep.amount)}
+                    <td className="py-3 px-3 font-semibold text-slate-800">{req.payment_method}</td>
+                    <td className="py-3 px-3 font-mono font-bold text-slate-900">{req.transaction_reference}</td>
+                    <td className="py-3 px-3 text-right font-mono font-bold text-slate-900">
+                      {toBengaliCurrency(req.amount)}
                     </td>
-                    <td className="py-3 px-4">
-                      <StatusBadge status={dep.status} />
+                    <td className="py-3 px-3">
+                      <StatusBadge status={req.status} />
+                    </td>
+                    <td className="py-3 px-3 text-slate-500 max-w-[200px] truncate text-[11px]">
+                      {req.admin_notes || '—'}
                     </td>
                   </tr>
                 ))}
@@ -338,53 +361,37 @@ export const UserWallet: React.FC = () => {
         )}
       </div>
 
-      {/* সম্পূর্ণ লেনদেন লেজার */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-        <div className="p-4 sm:p-5 border-b border-slate-200">
-          <h3 className="font-bold text-slate-900 text-sm">অপরিবর্তনীয় লেনদেন লেজার</h3>
-          <p className="text-xs text-slate-500 mt-0.5">ডেটাবেজে সংরক্ষিত প্রতিটি ডেবিট ও ক্রেডিটের তালিকা</p>
-        </div>
-
+      {/* ট্রানজ্যাকশন লেজার */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 space-y-4">
+        <h2 className="text-base font-bold text-slate-900">অপরিবর্তনীয় ওয়ালেট লেজার</h2>
         {transactions.length === 0 ? (
-          <div className="p-6 text-center text-xs text-slate-500">কোনো লেজার রেকর্ড নেই।</div>
+          <div className="p-8 text-center text-xs text-slate-400 bg-slate-50 rounded-xl border border-slate-200">
+            কোনো ট্রানজ্যাকশন রেকর্ড নেই।
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs text-left">
               <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
                 <tr>
-                  <th className="py-3 px-4 font-medium">আইডি</th>
-                  <th className="py-3 px-4 font-medium">তারিখ</th>
-                  <th className="py-3 px-4 font-medium">বিবরণ</th>
-                  <th className="py-3 px-4 font-medium">ধরন</th>
-                  <th className="py-3 px-4 font-medium text-right">পরিমাণ</th>
-                  <th className="py-3 px-4 font-medium text-right">ব্যালেন্স</th>
+                  <th className="py-2.5 px-3 font-medium">তারিখ</th>
+                  <th className="py-2.5 px-3 font-medium">বিবরণ</th>
+                  <th className="py-2.5 px-3 font-medium text-right">পরিমাণ</th>
+                  <th className="py-2.5 px-3 font-medium text-right">ব্যালেন্স পর</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700">
+              <tbody className="divide-y divide-slate-100">
                 {transactions.map((tx) => (
-                  <tr key={tx.id} className="hover:bg-slate-50/50">
-                    <td className="py-3 px-4 font-mono text-[11px] text-slate-400">{tx.id.substring(0, 8)}...</td>
-                    <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
+                  <tr key={tx.id} className="hover:bg-slate-50/60">
+                    <td className="py-3 px-3 text-slate-500 whitespace-nowrap">
                       {toBengaliDate(tx.created_at)}
                     </td>
-                    <td className="py-3 px-4 text-slate-900 font-medium">{tx.description}</td>
-                    <td className="py-3 px-4">
-                      <span className="capitalize text-slate-600">
-                        {tx.type === 'deposit'
-                          ? 'টাকা জমা'
-                          : tx.type === 'service_purchase'
-                          ? 'সেবা ক্রয়'
-                          : 'সমন্বয়'}
-                      </span>
+                    <td className="py-3 px-3 font-medium text-slate-800">{tx.description}</td>
+                    <td className={`py-3 px-3 text-right font-mono font-bold ${
+                      tx.amount > 0 ? 'text-emerald-600' : 'text-slate-900'
+                    }`}>
+                      {tx.amount > 0 ? '+' : ''}{toBengaliCurrency(tx.amount)}
                     </td>
-                    <td
-                      className={`py-3 px-4 text-right font-mono font-semibold ${
-                        tx.amount >= 0 ? 'text-emerald-600' : 'text-slate-800'
-                      }`}
-                    >
-                      {tx.amount >= 0 ? `+${toBengaliCurrency(tx.amount)}` : `-${toBengaliCurrency(Math.abs(tx.amount))}`}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-slate-600">
+                    <td className="py-3 px-3 text-right font-mono text-slate-600">
                       {toBengaliCurrency(tx.balance_after)}
                     </td>
                   </tr>

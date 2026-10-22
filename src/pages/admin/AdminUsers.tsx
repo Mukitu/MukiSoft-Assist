@@ -119,6 +119,7 @@ export const AdminUsers: React.FC = () => {
                             className="p-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg font-medium focus:outline-hidden"
                           >
                             <option value="user">সাধারণ গ্রাহক</option>
+                            <option value="worker">স্পেশালিস্ট ওয়ার্কার</option>
                             <option value="admin">অ্যাডমিন</option>
                             <option value="super_admin">সুপার অ্যাডমিন</option>
                           </select>

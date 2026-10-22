@@ -41,6 +41,8 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status }) => {
         return 'text-purple-800 bg-purple-50 border border-purple-300';
       case 'admin':
         return 'text-blue-800 bg-blue-50 border border-blue-300';
+      case 'worker':
+        return 'text-teal-800 bg-teal-50 border border-teal-300';
       default:
         return 'text-slate-700 bg-slate-100 border border-slate-300';
     }

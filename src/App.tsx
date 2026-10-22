@@ -23,6 +23,7 @@ import { AboutPage } from './pages/public/AboutPage';
 import { ContactPage } from './pages/public/ContactPage';
 import { AuthPages } from './pages/public/AuthPages';
 import { LegalPages } from './pages/public/LegalPages';
+import { ApplyWorkerPage } from './pages/public/ApplyWorkerPage';
 
 // Dashboard Pages
 import { UserOverview } from './pages/dashboard/UserOverview';
@@ -32,18 +33,22 @@ import { UserOrderDetail } from './pages/dashboard/UserOrderDetail';
 import { UserSupport } from './pages/dashboard/UserSupport';
 import { UserProfile } from './pages/dashboard/UserProfile';
 import { UserPreferences } from './pages/dashboard/UserPreferences';
+import { WorkerWithdraw } from './pages/dashboard/WorkerWithdraw';
 
 // Admin Pages
 import { AdminOverview } from './pages/admin/AdminOverview';
 import { AdminServices } from './pages/admin/AdminServices';
 import { AdminDeposits } from './pages/admin/AdminDeposits';
 import { AdminOrders } from './pages/admin/AdminOrders';
+import { AdminClaimTasks } from './pages/admin/AdminClaimTasks';
 import { AdminTickets } from './pages/admin/AdminTickets';
 import { AdminUsers } from './pages/admin/AdminUsers';
 import { AdminAuditLogs } from './pages/admin/AdminAuditLogs';
 import { AdminCommunication } from './pages/admin/AdminCommunication';
 import { AdminSettings } from './pages/admin/AdminSettings';
 import { AdminLiveChat } from './pages/admin/AdminLiveChat';
+import { AdminCommissionWithdrawals } from './pages/admin/AdminCommissionWithdrawals';
+import { AdminWithdrawQueue } from './pages/admin/AdminWithdrawQueue';
 import { ResetPassword } from './pages/public/ResetPassword';
 import { LiveChatWidget } from './components/chat/LiveChatWidget';
 
@@ -139,6 +144,10 @@ function AppRouter() {
             <AdminDashboardLayout currentPath={pathname} onNavigate={navigate}>
               <AdminOrders />
             </AdminDashboardLayout>
+          ) : pathname === '/admin/claim-tasks' ? (
+            <AdminDashboardLayout currentPath={pathname} onNavigate={navigate}>
+              <AdminClaimTasks onNavigate={navigate} />
+            </AdminDashboardLayout>
           ) : pathname === '/admin/tickets' ? (
             <AdminDashboardLayout currentPath={pathname} onNavigate={navigate}>
               <AdminTickets />
@@ -146,6 +155,18 @@ function AppRouter() {
           ) : pathname === '/admin/users' ? (
             <AdminDashboardLayout currentPath={pathname} onNavigate={navigate}>
               <AdminUsers />
+            </AdminDashboardLayout>
+          ) : pathname === '/admin/commission' ? (
+            <AdminDashboardLayout currentPath={pathname} onNavigate={navigate}>
+              <AdminCommissionWithdrawals />
+            </AdminDashboardLayout>
+          ) : pathname === '/admin/withdraw' ? (
+            <AdminDashboardLayout currentPath={pathname} onNavigate={navigate}>
+              <AdminWithdrawQueue />
+            </AdminDashboardLayout>
+          ) : pathname === '/admin/my-withdraw' ? (
+            <AdminDashboardLayout currentPath={pathname} onNavigate={navigate}>
+              <WorkerWithdraw />
             </AdminDashboardLayout>
           ) : pathname === '/admin/audit-logs' ? (
             <AdminDashboardLayout currentPath={pathname} onNavigate={navigate}>
@@ -175,6 +196,8 @@ function AppRouter() {
 
     if (pathname === '/') {
       pageContent = <HomePage onNavigate={navigate} />;
+    } else if (pathname === '/apply-worker') {
+      pageContent = <ApplyWorkerPage onNavigate={navigate} />;
     } else if (pathname.startsWith('/services')) {
       const urlParams = new URLSearchParams(window.location.search);
       const query = urlParams.get('q') || '';

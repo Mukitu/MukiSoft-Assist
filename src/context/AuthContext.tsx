@@ -288,6 +288,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
+      worker: {
+        id: 'user_worker_demo',
+        email: 'worker@mukisoft.com',
+        full_name: 'Rafiqul Islam (Specialist Worker)',
+        role: 'worker',
+        preferred_language: 'bn',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
       user: {
         id: 'user_customer_demo',
         email: 'tanvir@example.com',
@@ -306,7 +315,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const role: UserRole = profile?.role || 'user';
-  const isAdmin = role === 'admin' || role === 'super_admin';
+  const isAdmin = role === 'admin' || role === 'super_admin' || role === 'worker';
   const isSuperAdmin = role === 'super_admin';
 
   return createElement(

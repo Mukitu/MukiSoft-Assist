@@ -1,4 +1,4 @@
-export type UserRole = 'super_admin' | 'admin' | 'user';
+export type UserRole = 'super_admin' | 'admin' | 'worker' | 'user';
 
 export type TransactionType = 'deposit' | 'service_purchase' | 'refund' | 'admin_adjustment';
 export type TransactionStatus = 'pending' | 'completed' | 'failed' | 'cancelled';
@@ -160,6 +160,9 @@ export interface Order {
   refund_amount?: number | null;
   created_at: string;
   updated_at: string;
+  service_title?: string;
+  customer_name?: string;
+  customer_email?: string;
   service?: ServiceItem;
   customer?: Profile;
   deliverables?: OrderDeliverable[];
@@ -361,6 +364,16 @@ export interface LiveChatMessage {
   created_at: string;
 }
 
+export interface PaymentMethodConfig {
+  id: string;
+  name: string;
+  type: 'mobile_banking' | 'bank_transfer' | 'other';
+  number_or_account: string;
+  account_type_label: string;
+  instructions: string;
+  is_active: boolean;
+}
+
 export interface LiveChatSession {
   id: string;
   session_token: string;
@@ -377,3 +390,66 @@ export interface LiveChatSession {
   unread_admin_count?: number;
   unread_customer_count?: number;
 }
+
+export interface WorkerApplication {
+  id: string;
+  user_id: string;
+  full_name: string;
+  phone: string;
+  whatsapp?: string;
+  skills: string;
+  experience?: string;
+  portfolio_url?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  admin_notes?: string;
+  created_at: string;
+  reviewed_at?: string;
+  reviewed_by?: string;
+}
+
+export interface CommissionSettings {
+  id: string;
+  worker_commission_percentage: number; // e.g. 80 (%)
+  admin_commission_percentage: number;  // e.g. 70 (%)
+  updated_at: string;
+  updated_by?: string;
+}
+
+export interface PayoutAccount {
+  user_id: string;
+  method: 'bkash' | 'nagad' | 'rocket' | 'bank';
+  account_number: string;
+  account_name?: string;
+  bank_name?: string;
+  branch_name?: string;
+  updated_at: string;
+}
+
+export interface WithdrawalRequest {
+  id: string;
+  user_id: string;
+  user_name: string;
+  user_email: string;
+  role: 'worker' | 'admin';
+  amount: number;
+  payout_account: PayoutAccount;
+  status: 'pending' | 'approved' | 'rejected';
+  admin_notes?: string;
+  created_at: string;
+  processed_at?: string;
+  processed_by?: string;
+}
+
+export interface CompanyProfitRecord {
+  id: string;
+  order_id: string;
+  service_title: string;
+  total_order_amount: number;
+  assigned_id: string;
+  assigned_name: string;
+  assigned_role: 'worker' | 'admin';
+  worker_or_admin_payout: number;
+  company_profit_amount: number;
+  created_at: string;
+}
+

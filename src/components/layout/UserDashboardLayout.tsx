@@ -77,21 +77,107 @@ export const UserDashboardLayout: React.FC<UserDashboardLayoutProps> = ({
         </button>
       </div>
 
-      {/* সাইডবার নেভিগেশন (ডেস্কটপে স্টিকি, মোবাইলে ড্রয়ার) */}
-      <aside
-        className={`${
-          mobileMenuOpen ? 'block' : 'hidden'
-        } md:block w-full md:w-64 bg-white border-r border-slate-200 shrink-0 md:min-h-screen flex flex-col justify-between`}
-      >
+      {/* মোবাইল ড্রয়ার নেভিগেশন (পপ-আপ ব্যাকড্রপ ওভারলে) */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-[100] md:hidden flex">
+          <div
+            className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm transition-opacity"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          <aside className="relative z-10 w-72 max-w-[85vw] bg-white h-screen flex flex-col justify-between shadow-2xl overflow-y-auto">
+            <div>
+              <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 block">
+                    গ্রাহক পোর্টাল
+                  </span>
+                  <h2 className="text-xs font-bold text-slate-900 truncate">
+                    {profile?.full_name || user?.email || 'গ্রাহক'}
+                  </h2>
+                </div>
+                <button
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="p-1.5 text-slate-500 hover:text-slate-900 rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* সাইডবারে ওয়ালেট ব্যালেন্স কার্ড */}
+              <div className="p-4 m-3 rounded-xl bg-slate-50 border border-slate-200">
+                <div className="flex items-center justify-between text-xs text-slate-600 mb-1">
+                  <span>ওয়ালেট ব্যালেন্স</span>
+                  <CreditCard className="w-3.5 h-3.5 text-slate-400" />
+                </div>
+                <div className="text-lg font-bold font-mono tabular-nums text-slate-900">
+                  {toBengaliCurrency(wallet?.balance ?? 0)}
+                </div>
+                <button
+                  onClick={() => {
+                    onNavigate('/dashboard/wallet');
+                    setMobileMenuOpen(false);
+                  }}
+                  className="mt-2.5 w-full py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors"
+                >
+                  + টাকা জমা দিন
+                </button>
+              </div>
+
+              <nav className="p-3 space-y-1">
+                {navItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = currentPath === item.path;
+                  return (
+                    <button
+                      key={item.path}
+                      onClick={() => {
+                        onNavigate(item.path);
+                        setMobileMenuOpen(false);
+                      }}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 text-xs font-medium rounded-xl transition-colors ${
+                        isActive
+                          ? 'bg-slate-900 text-white font-semibold'
+                          : 'text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4 shrink-0 text-indigo-600" />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
+
+            <div className="p-4 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
+              <div className="truncate pr-2">
+                <div className="font-medium text-slate-800 truncate">{user?.email}</div>
+                <div className="text-[11px] text-slate-500">গ্রাহক অ্যাকাউন্ট</div>
+              </div>
+              <button
+                onClick={() => {
+                  logout();
+                  onNavigate('/login');
+                }}
+                className="p-2 text-slate-400 hover:text-rose-600 rounded-lg transition-colors"
+                title="লগআউট"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {/* ডেস্কটপ সাইডবার নেভিগেশন */}
+      <aside className="hidden md:flex w-64 bg-white border-r border-slate-200 shrink-0 min-h-screen flex-col justify-between">
         <div>
-          {/* ওয়ার্কস্পেস হেডার */}
           <div className="p-5 border-b border-slate-100 flex items-center justify-between">
             <div>
               <span className="text-[11px] font-semibold uppercase tracking-wider text-indigo-600">
                 গ্রাহক পোর্টাল
               </span>
               <h2 className="text-sm font-bold text-slate-900 truncate">
-                {profile?.full_name || user?.name || 'গ্রাহক'}
+                {profile?.full_name || user?.email || 'গ্রাহক'}
               </h2>
             </div>
             <button
@@ -104,7 +190,6 @@ export const UserDashboardLayout: React.FC<UserDashboardLayoutProps> = ({
             </button>
           </div>
 
-          {/* সাইডবারে ওয়ালেট ব্যালেন্স কার্ড */}
           <div className="p-4 m-3 rounded-xl bg-slate-50 border border-slate-200">
             <div className="flex items-center justify-between text-xs text-slate-600 mb-1">
               <span>ওয়ালেট ব্যালেন্স</span>
@@ -114,17 +199,13 @@ export const UserDashboardLayout: React.FC<UserDashboardLayoutProps> = ({
               {toBengaliCurrency(wallet?.balance ?? 0)}
             </div>
             <button
-              onClick={() => {
-                onNavigate('/dashboard/wallet');
-                setMobileMenuOpen(false);
-              }}
+              onClick={() => onNavigate('/dashboard/wallet')}
               className="mt-2.5 w-full py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors"
             >
               + টাকা জমা দিন
             </button>
           </div>
 
-          {/* মেনু আইটেমসমূহ */}
           <nav className="p-3 space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon;
@@ -132,10 +213,7 @@ export const UserDashboardLayout: React.FC<UserDashboardLayoutProps> = ({
               return (
                 <button
                   key={item.path}
-                  onClick={() => {
-                    onNavigate(item.path);
-                    setMobileMenuOpen(false);
-                  }}
+                  onClick={() => onNavigate(item.path)}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 text-xs font-medium rounded-lg transition-colors ${
                     isActive
                       ? 'bg-slate-900 text-white'
@@ -150,11 +228,10 @@ export const UserDashboardLayout: React.FC<UserDashboardLayoutProps> = ({
           </nav>
         </div>
 
-        {/* সাইডবার ফুটার (ব্যবহারকারী ও লগআউট) */}
         <div className="p-4 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
           <div className="truncate pr-2">
             <div className="font-medium text-slate-800 truncate">{user?.email}</div>
-            <div className="text-[11px] text-slate-500">সাধারণ গ্রাহক অ্যাকাউন্ট</div>
+            <div className="text-[11px] text-slate-500">গ্রাহক অ্যাকাউন্ট</div>
           </div>
           <button
             onClick={() => {
@@ -162,8 +239,7 @@ export const UserDashboardLayout: React.FC<UserDashboardLayoutProps> = ({
               onNavigate('/login');
             }}
             className="p-2 text-slate-400 hover:text-rose-600 rounded-lg transition-colors"
-            title="লগআউট করুন"
-            aria-label="লগআউট"
+            title="লগআউট"
           >
             <LogOut className="w-4 h-4" />
           </button>

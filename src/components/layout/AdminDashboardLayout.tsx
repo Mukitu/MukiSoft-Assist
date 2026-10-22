@@ -17,9 +17,15 @@ import {
   Mail,
   Tag,
   MessageCircle,
+  UserCheck,
+  Sparkles,
+  DollarSign,
+  Wallet,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { StatusBadge } from '../common/StatusBadge';
+import { toBengaliDigits } from '../../lib/i18n';
+import { api } from '../../services/api';
 
 interface AdminDashboardLayoutProps {
   currentPath: string;
@@ -34,6 +40,35 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
 }) => {
   const { user, profile, role, isAdmin, isSuperAdmin, logout, switchDemoRole } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [pendingClaimCount, setPendingClaimCount] = useState(0);
+
+  React.useEffect(() => {
+    const updateCount = async () => {
+      try {
+        const orders = await api.getAllOrders();
+        const unassigned = orders.filter(
+          (o) => !o.assigned_admin && !['cancelled', 'refunded', 'completed'].includes(o.status)
+        ).length;
+        setPendingClaimCount(unassigned);
+      } catch {
+        // ignore
+      }
+    };
+    updateCount();
+
+    const handleUpdate = () => updateCount();
+    window.addEventListener('orders_updated', handleUpdate);
+    window.addEventListener('order_claimed', handleUpdate);
+    window.addEventListener('order_released', handleUpdate);
+
+    const interval = setInterval(updateCount, 4000);
+    return () => {
+      window.removeEventListener('orders_updated', handleUpdate);
+      window.removeEventListener('order_claimed', handleUpdate);
+      window.removeEventListener('order_released', handleUpdate);
+      clearInterval(interval);
+    };
+  }, []);
 
   // অননুমোদিত গ্রাহক প্রবেশ নিষেধ গেট
   if (!isAdmin) {
@@ -71,6 +106,13 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
 
   const navItems = [
     { label: 'প্রশাসনিক ড্যাশবোর্ড', path: '/admin', icon: LayoutDashboard },
+    {
+      label: 'ক্লেইম টাস্ক (Pending Queue)',
+      path: '/admin/claim-tasks',
+      icon: UserCheck,
+      badge: pendingClaimCount,
+      highlight: pendingClaimCount > 0,
+    },
     { label: 'লাইভ সাপোর্ট চ্যাট', path: '/admin/live-chat', icon: MessageCircle },
     { label: 'সেবা সমূহ', path: '/admin/services', icon: Layers },
     { label: 'সার্ভিস ক্যাটাগরি', path: '/admin/categories', icon: Tag },
@@ -78,12 +120,16 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
     { label: 'অর্ডার ও ফাইল ডেলিভারি', path: '/admin/orders', icon: ShoppingBag },
     { label: 'সহায়তা ডেস্ক ও টিকিট', path: '/admin/tickets', icon: HelpCircle },
     { label: 'ব্যবহারকারী ও ভূমিকা', path: '/admin/users', icon: Users },
+    { label: 'ওয়ার্কার ও ইনকাম প্যানেল', path: '/admin/commission', icon: DollarSign, superAdminOnly: true },
+    { label: 'উইথড্র রিকোয়েস্ট ও পে-আউট', path: '/admin/withdraw', icon: Wallet, superAdminOnly: true },
+    { label: 'আমার উপার্জন ও উত্তোলন', path: '/admin/my-withdraw', icon: DollarSign },
     { label: 'নিরাপত্তা অডিট লগ', path: '/admin/audit-logs', icon: ShieldAlert, superAdminOnly: true },
     { label: 'প্ল্যাটফর্ম সেটিংস', path: '/admin/settings', icon: Sliders, superAdminOnly: true },
   ];
 
   const getBreadcrumbs = () => {
     if (currentPath === '/admin') return ['প্রশাসনিক কনসোল', 'সারসংক্ষেপ'];
+    if (currentPath === '/admin/claim-tasks') return ['প্রশাসনিক কনসোল', 'ক্লেইম টাস্ক ও পেন্ডিং কিউ'];
     if (currentPath === '/admin/live-chat') return ['প্রশাসনিক কনসোল', 'লাইভ সাপোর্ট চ্যাট'];
     if (currentPath === '/admin/services') return ['প্রশাসনিক কনসোল', 'সেবা সমূহ'];
     if (currentPath === '/admin/categories') return ['প্রশাসনিক কনসোল', 'সার্ভিস ক্যাটাগরি'];
@@ -91,6 +137,9 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
     if (currentPath === '/admin/orders') return ['প্রশাসনিক কনসোল', 'অর্ডার ও ডেলিভারি'];
     if (currentPath === '/admin/tickets') return ['প্রশাসনিক কনসোল', 'সহায়তা ডেস্ক ও টিকিট'];
     if (currentPath === '/admin/users') return ['প্রশাসনিক কনসোল', 'ব্যবহারকারী ও ভূমিকা'];
+    if (currentPath === '/admin/commission') return ['প্রশাসনিক কনসোল', 'ওয়ার্কার, কমিশন ও প্যানেল'];
+    if (currentPath === '/admin/withdraw') return ['প্রশাসনিক কনসোল', 'উইথড্র রিকোয়েস্ট ও পে-আউট তালিকা'];
+    if (currentPath === '/admin/my-withdraw') return ['প্রশাসনিক কনসোল', 'আমার উপার্জিত অর্থ উত্তোলন'];
     if (currentPath === '/admin/audit-logs') return ['প্রশাসনিক কনসোল', 'অডিট লগ'];
     if (currentPath === '/admin/settings') return ['প্রশাসনিক কনসোল', 'প্ল্যাটফর্ম সেটিংস'];
     return ['প্রশাসনিক কনসোল'];
@@ -115,11 +164,21 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
         </button>
       </div>
 
+      {/* মোবাইল ওভারলে ব্যাকড্রপ */}
+      {mobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-40 md:hidden transition-opacity"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+
       {/* সাইডবার নেভিগেশন */}
       <aside
         className={`${
-          mobileMenuOpen ? 'block' : 'hidden'
-        } md:block w-full md:w-64 bg-slate-900 text-slate-300 shrink-0 md:min-h-screen flex flex-col justify-between border-r border-slate-800`}
+          mobileMenuOpen
+            ? 'fixed inset-y-0 left-0 z-50 w-72 shadow-2xl flex'
+            : 'hidden md:flex'
+        } md:static md:z-auto md:shadow-none md:w-64 bg-slate-900 text-slate-300 shrink-0 md:min-h-screen flex-col justify-between border-r border-slate-800 transition-all duration-300`}
       >
         <div>
           {/* ব্র্যান্ড হেডার */}
@@ -189,9 +248,16 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
                     <Icon className="w-4 h-4 shrink-0" />
                     <span>{item.label}</span>
                   </div>
-                  {item.superAdminOnly && (
-                    <span className="text-[10px] text-indigo-300 uppercase tracking-wider font-mono">সুপার</span>
-                  )}
+                  <div className="flex items-center gap-1.5">
+                    {item.badge !== undefined && item.badge > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold font-mono bg-amber-500 text-white animate-pulse">
+                        {toBengaliDigits(item.badge)}
+                      </span>
+                    )}
+                    {item.superAdminOnly && (
+                      <span className="text-[10px] text-indigo-300 uppercase tracking-wider font-mono">সুপার</span>
+                    )}
+                  </div>
                 </button>
               );
             })}

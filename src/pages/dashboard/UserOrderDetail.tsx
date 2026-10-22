@@ -83,6 +83,38 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
 
   useEffect(() => {
     loadData();
+
+    // লাইভ চ্যাট মেসেজ লিসেনার
+    const handleChatEvt = (e: Event) => {
+      const customEvt = e as CustomEvent<{ orderId: string; message: OrderWorkMessage }>;
+      if (customEvt.detail && customEvt.detail.orderId === orderId) {
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === customEvt.detail.message.id)) return prev;
+          return [...prev, customEvt.detail.message];
+        });
+      }
+    };
+
+    const handleClaimEvt = (e: Event) => {
+      const customEvt = e as CustomEvent<{ orderId: string; order: Order }>;
+      if (customEvt.detail && customEvt.detail.orderId === orderId) {
+        setOrder(customEvt.detail.order);
+      }
+    };
+
+    window.addEventListener('order_message_sent', handleChatEvt);
+    window.addEventListener('order_claimed', handleClaimEvt);
+
+    // লাইভ পোলিং
+    const interval = setInterval(() => {
+      loadData();
+    }, 3000);
+
+    return () => {
+      window.removeEventListener('order_message_sent', handleChatEvt);
+      window.removeEventListener('order_claimed', handleClaimEvt);
+      clearInterval(interval);
+    };
   }, [orderId, user]);
 
   useEffect(() => {
