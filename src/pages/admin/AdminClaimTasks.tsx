@@ -610,7 +610,7 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                         </div>
                       ) : (
                         chatMessages.map((msg) => {
-                          const isMe = msg.sender_id === user?.id || msg.sender_role === 'admin' || msg.sender_role === 'worker';
+                          const isMe = Boolean(user?.id && (msg.sender_id === user.id || msg.sender_id === user.email)) || msg.sender_role === 'admin' || msg.sender_role === 'worker';
                           return (
                             <div
                               key={msg.id}

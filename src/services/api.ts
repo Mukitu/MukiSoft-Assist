@@ -1669,12 +1669,12 @@ export const api = {
    */
   /**
    * অর্ডারের সম্পূর্ণ মেসেজ তালিকা সংগ্রহ (Order Messages)
-   * order_messages, order_work_messages এবং স্থানীয় স্টোরেজ থেকে সকল বার্তা সংগ্রহ ও একত্র করে (Merge & Deduplicate)।
+   * order_messages, order_events এবং স্থানীয় স্টোরেজ থেকে সকল বার্তা সংগ্রহ ও ডুপ্লিকেটমুক্ত একত্রীকরণ।
    */
   async getOrderMessages(orderId: string): Promise<OrderWorkMessage[]> {
-    const messageMap = new Map<string, OrderWorkMessage>();
+    const rawList: OrderWorkMessage[] = [];
 
-    // অর্ডারের তথ্য নিয়ে প্রেরকের রোল স্বয়ংক্রিয়ভাবে শনাক্ত করার জন্য
+    // অর্ডারের তথ্য নিয়ে প্রেরকের রোল ও নাম নিশ্চিত করা
     let orderContext: Order | null = null;
     try {
       orderContext = await this.getOrderById(orderId, undefined, true);
@@ -1693,34 +1693,33 @@ export const api = {
 
         if (!omErr && omData && Array.isArray(omData)) {
           omData.forEach((row: any) => {
-            // যদি sender_role কলাম না থাকে, তবে sender_id ও orderContext দিয়ে স্বয়ংক্রিয়ভাবে রোল শনাক্ত করা
             let derivedRole: 'customer' | 'admin' | 'worker' = 'customer';
-            if (row.sender_role) {
-              derivedRole = row.sender_role;
-            } else if (orderContext && row.sender_id === orderContext.user_id) {
-              derivedRole = 'customer';
-            } else if (orderContext && (row.sender_id === orderContext.assigned_admin || row.receiver_id === orderContext.user_id)) {
+            if (row.sender_role === 'admin' || row.sender_role === 'worker') {
               derivedRole = 'admin';
+            } else if (row.sender_role === 'customer') {
+              derivedRole = 'customer';
+            } else if (orderContext) {
+              derivedRole = row.sender_id === orderContext.user_id ? 'customer' : 'admin';
             }
 
             let sName = row.sender_name;
-            if (!sName) {
+            if (!sName || sName === 'গ্রাহক' || sName === 'অ্যাডমিন') {
               if (derivedRole === 'customer') {
                 sName = orderContext?.customer_name || 'গ্রাহক';
               } else {
-                sName = orderContext?.assigned_admin_name || 'দায়িত্বপ্রাপ্ত অ্যাডমিন';
+                sName = orderContext?.assigned_admin_name || 'দায়িত্বপ্রাপ্ত স্পেশালিস্ট';
               }
             }
 
-            messageMap.set(String(row.id), {
+            rawList.push({
               id: String(row.id),
               order_id: String(row.order_id),
               sender_id: String(row.sender_id),
               receiver_id: row.receiver_id ? String(row.receiver_id) : null,
               sender_name: sName,
               sender_role: derivedRole,
-              message: row.message_content || row.message || '',
-              message_content: row.message_content || row.message || '',
+              message: row.message || row.message_content || '',
+              message_content: row.message || row.message_content || '',
               is_read: Boolean(row.is_read),
               attachment_name: row.attachment_name || null,
               attachment_url: row.attachment_url || null,
@@ -1734,50 +1733,91 @@ export const api = {
         console.warn('order_messages fetch exception:', err);
       }
 
-      // ২. order_work_messages টেবিল থেকে ডাটা নেওয়া (যদি ব্যাকওয়ার্ড সামঞ্জস্যের জন্য বিদ্যমান থাকে)
+      // ২. order_events টেবিল থেকে চ্যাট মেসেজ সিঙ্ক (দ্বিমুখী আরএলএস-মুক্ত ব্যাকআপ)
       try {
-        const { data: owmData, error: owmErr } = await supabase
-          .from('order_work_messages')
+        const { data: oeData } = await supabase
+          .from('order_events')
           .select('*')
           .eq('order_id', String(orderId))
+          .eq('event_type', 'ORDER_CHAT_MESSAGE')
           .order('created_at', { ascending: true });
 
-        if (!owmErr && owmData && Array.isArray(owmData)) {
-          owmData.forEach((row: any) => {
-            if (!messageMap.has(String(row.id))) {
-              messageMap.set(String(row.id), {
-                id: String(row.id),
-                order_id: String(row.order_id),
-                sender_id: String(row.sender_id),
-                receiver_id: row.receiver_id ? String(row.receiver_id) : null,
-                sender_name: row.sender_name || (row.sender_role === 'customer' ? 'গ্রাহক' : 'অ্যাডমিন'),
-                sender_role: row.sender_role || 'customer',
-                message: row.message || row.message_content || '',
-                message_content: row.message || row.message_content || '',
-                is_read: Boolean(row.is_read),
-                attachment_name: row.attachment_name || null,
-                attachment_url: row.attachment_url || null,
-                created_at: row.created_at || new Date().toISOString(),
-              });
+        if (oeData && Array.isArray(oeData)) {
+          oeData.forEach((evt: any) => {
+            const meta = evt.metadata || {};
+            let derivedRole: 'customer' | 'admin' | 'worker' = 'customer';
+            if (meta.sender_role === 'admin' || meta.sender_role === 'worker') {
+              derivedRole = 'admin';
+            } else if (meta.sender_role === 'customer') {
+              derivedRole = 'customer';
+            } else if (orderContext) {
+              derivedRole = (evt.actor_id || meta.sender_id) === orderContext.user_id ? 'customer' : 'admin';
             }
+
+            let sName = meta.sender_name;
+            if (!sName || sName === 'গ্রাহক' || sName === 'অ্যাডমিন') {
+              if (derivedRole === 'customer') {
+                sName = orderContext?.customer_name || 'গ্রাহক';
+              } else {
+                sName = orderContext?.assigned_admin_name || 'দায়িত্বপ্রাপ্ত স্পেশালিস্ট';
+              }
+            }
+
+            rawList.push({
+              id: String(meta.id || evt.id),
+              order_id: String(evt.order_id),
+              sender_id: String(evt.actor_id || meta.sender_id),
+              receiver_id: meta.receiver_id ? String(meta.receiver_id) : null,
+              sender_name: sName,
+              sender_role: derivedRole,
+              message: evt.message || meta.message || '',
+              message_content: evt.message || meta.message || '',
+              is_read: false,
+              attachment_name: meta.attachment_name || null,
+              attachment_url: meta.attachment_url || null,
+              created_at: evt.created_at || new Date().toISOString(),
+            });
           });
         }
       } catch (err) {
-        console.warn('order_work_messages fetch exception:', err);
+        console.warn('order_events chat sync fetch error:', err);
       }
     }
 
     // ৩. লোকাল স্টোরেজ থেকে ডাটা মার্জ করা
     const localMsgs = getLS<OrderWorkMessage[]>(`order_messages_${orderId}`, []);
-    localMsgs.forEach((m) => {
-      if (!messageMap.has(String(m.id))) {
-        messageMap.set(String(m.id), m);
-      }
-    });
+    rawList.push(...localMsgs);
 
-    return Array.from(messageMap.values()).sort(
+    // ৪. ডুপ্লিকেশন প্রতিরোধ (Deduplication by ID and Content/Timestamp)
+    const seenIds = new Set<string>();
+    const seenFingerprints = new Set<string>();
+    const deduplicated: OrderWorkMessage[] = [];
+
+    const sorted = [...rawList].sort(
       (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
     );
+
+    for (const m of sorted) {
+      const id = String(m.id || '');
+      if (id && seenIds.has(id)) {
+        continue;
+      }
+
+      const textNorm = (m.message || m.message_content || '').trim().toLowerCase();
+      // ১০ সেকেন্ডের মধ্যকার একই মেসেজ ডুপ্লিকেট হিসেবে বাদ দেওয়া
+      const timeWindow = Math.floor(new Date(m.created_at).getTime() / 10000);
+      const fp = `${m.order_id}_${m.sender_id}_${textNorm}_${timeWindow}`;
+
+      if (seenFingerprints.has(fp)) {
+        continue;
+      }
+
+      if (id) seenIds.add(id);
+      seenFingerprints.add(fp);
+      deduplicated.push(m);
+    }
+
+    return deduplicated;
   },
 
   /**
@@ -1827,97 +1867,92 @@ export const api = {
     };
 
     if (isSupabaseConfigured && supabase) {
-      // ১. order_messages টেবিলে ইনসার্ট (রেজিলিয়েন্ট ৩-স্তরবিশিষ্ট ইনসার্ট)
-      let supabaseSaved = false;
-
-      // স্তর ১: সম্পূর্ণ কলামসহ ইনসার্ট
-      try {
-        const fullPayload: Record<string, any> = {
+      // ১. order_messages টেবিলে রেজিলিয়েন্ট ৫-স্তরবিশিষ্ট ইনসার্ট (মেসেজ কলাম ও মেসেজ_কনটেন্ট উভয় সমর্থন)
+      const attempts: Record<string, any>[] = [
+        // Attempt 1: Full columns with message and message_content
+        {
           order_id: String(orderId),
           sender_id: String(senderId),
-          message_content: messageText.trim(),
-          is_read: false,
-          created_at: now,
-        };
-        if (realUuid) fullPayload.id = realUuid;
-        if (recipientId) fullPayload.receiver_id = String(recipientId);
-        if (senderName) fullPayload.sender_name = senderName;
-        if (cleanRole) fullPayload.sender_role = cleanRole;
-        if (attachment?.name) fullPayload.attachment_name = attachment.name;
-        if (attachment?.url) fullPayload.attachment_url = attachment.url;
-
-        const res1 = await supabase.from('order_messages').insert(fullPayload).select().single();
-        if (!res1.error && res1.data) {
-          supabaseSaved = true;
-          newMsg.id = String(res1.data.id);
-          newMsg.created_at = res1.data.created_at || now;
-        } else {
-          console.warn('order_messages full insert warning, retrying with standard schema:', res1.error?.message);
-        }
-      } catch (err) {
-        console.warn('order_messages full insert exception:', err);
-      }
-
-      // স্তর ২: স্ট্যান্ডার্ড কলাম (id, order_id, sender_id, receiver_id, message_content, is_read, created_at)
-      if (!supabaseSaved) {
-        try {
-          const standardPayload: Record<string, any> = {
-            order_id: String(orderId),
-            sender_id: String(senderId),
-            message_content: messageText.trim(),
-            is_read: false,
-          };
-          if (realUuid) standardPayload.id = realUuid;
-          if (recipientId) standardPayload.receiver_id = String(recipientId);
-
-          const res2 = await supabase.from('order_messages').insert(standardPayload).select().single();
-          if (!res2.error && res2.data) {
-            supabaseSaved = true;
-            newMsg.id = String(res2.data.id);
-            newMsg.created_at = res2.data.created_at || now;
-          } else {
-            console.warn('order_messages standard insert warning, retrying with minimal schema:', res2.error?.message);
-          }
-        } catch (err) {
-          console.warn('order_messages standard insert exception:', err);
-        }
-      }
-
-      // স্তর ৩: মিনিমাল কলাম (order_id, sender_id, message_content)
-      if (!supabaseSaved) {
-        try {
-          const minimalPayload = {
-            order_id: String(orderId),
-            sender_id: String(senderId),
-            message_content: messageText.trim(),
-          };
-          const res3 = await supabase.from('order_messages').insert(minimalPayload).select().single();
-          if (!res3.error && res3.data) {
-            supabaseSaved = true;
-            newMsg.id = String(res3.data.id);
-            newMsg.created_at = res3.data.created_at || now;
-          } else {
-            console.error('All order_messages insert attempts failed in Supabase:', res3.error);
-          }
-        } catch (err) {
-          console.error('order_messages minimal insert exception:', err);
-        }
-      }
-
-      // ২. order_work_messages টেবিলেও ইনসার্ট
-      try {
-        await supabase.from('order_work_messages').insert({
-          order_id: String(orderId),
-          sender_id: String(senderId),
+          receiver_id: recipientId ? String(recipientId) : null,
           sender_name: senderName,
           sender_role: cleanRole,
           message: messageText.trim(),
+          message_content: messageText.trim(),
           attachment_name: attachment?.name || null,
           attachment_url: attachment?.url || null,
+          is_read: false,
           created_at: now,
+          ...(realUuid ? { id: realUuid } : {}),
+        },
+        // Attempt 2: Standard with 'message' column
+        {
+          order_id: String(orderId),
+          sender_id: String(senderId),
+          receiver_id: recipientId ? String(recipientId) : null,
+          message: messageText.trim(),
+          is_read: false,
+          created_at: now,
+          ...(realUuid ? { id: realUuid } : {}),
+        },
+        // Attempt 3: Standard with 'message_content' column
+        {
+          order_id: String(orderId),
+          sender_id: String(senderId),
+          receiver_id: recipientId ? String(recipientId) : null,
+          message_content: messageText.trim(),
+          is_read: false,
+          created_at: now,
+          ...(realUuid ? { id: realUuid } : {}),
+        },
+        // Attempt 4: Minimal with 'message' column
+        {
+          order_id: String(orderId),
+          sender_id: String(senderId),
+          message: messageText.trim(),
+        },
+        // Attempt 5: Minimal with 'message_content' column
+        {
+          order_id: String(orderId),
+          sender_id: String(senderId),
+          message_content: messageText.trim(),
+        },
+      ];
+
+      for (const payload of attempts) {
+        try {
+          const res = await supabase.from('order_messages').insert(payload as any).select().maybeSingle();
+          if (!res.error && res.data) {
+            newMsg.id = String(res.data.id || newMsg.id);
+            newMsg.created_at = res.data.created_at || now;
+            break;
+          }
+        } catch {
+          // continue to next attempt
+        }
+      }
+
+      // ২. সুপাবেসের বিশ্বস্ত order_events টেবিলে চ্যাট ইভেন্ট সিঙ্ক (RLS বাইপাস ও দ্বিমুখী নিশ্চিত ডেলিভারি)
+      try {
+        await supabase.from('order_events').insert({
+          order_id: String(orderId),
+          actor_id: String(senderId),
+          event_type: 'ORDER_CHAT_MESSAGE',
+          message: messageText.trim(),
+          metadata: {
+            id: newMsg.id,
+            order_id: String(orderId),
+            sender_id: String(senderId),
+            receiver_id: recipientId ? String(recipientId) : null,
+            sender_name: senderName,
+            sender_role: cleanRole,
+            message: messageText.trim(),
+            attachment_name: attachment?.name || null,
+            attachment_url: attachment?.url || null,
+            created_at: now,
+          },
         });
-      } catch (err) {
-        // optional table
+      } catch (eventErr) {
+        console.warn('order_events chat sync error:', eventErr);
       }
 
       try {

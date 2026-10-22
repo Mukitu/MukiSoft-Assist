@@ -62,7 +62,7 @@ export function useMessages(orderId: string | null | undefined) {
           {
             event: '*',
             schema: 'public',
-            table: 'order_work_messages',
+            table: 'order_events',
           },
           (payload) => {
             const raw = (payload.new || payload.old) as any;
@@ -82,12 +82,6 @@ export function useMessages(orderId: string | null | undefined) {
     const handleLocalMsg = (e: Event) => {
       const customEvt = e as CustomEvent<{ orderId: string; message: OrderWorkMessage }>;
       if (customEvt.detail && String(customEvt.detail.orderId) === String(orderId) && isMounted) {
-        if (customEvt.detail.message) {
-          setMessages((prev) => {
-            if (prev.some((m) => m.id === customEvt.detail.message.id)) return prev;
-            return [...prev, customEvt.detail.message];
-          });
-        }
         fetchMessages();
       }
     };

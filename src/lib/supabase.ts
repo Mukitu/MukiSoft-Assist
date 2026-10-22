@@ -78,6 +78,34 @@ if (isSupabaseConfigured && supabase) {
       )
       .on(
         'postgres_changes',
+        { event: '*', schema: 'public', table: 'order_events' },
+        (payload) => {
+          const raw = (payload.new || payload.old) as any;
+          if (typeof window !== 'undefined' && raw && raw.order_id && raw.event_type === 'ORDER_CHAT_MESSAGE') {
+            const meta = raw.metadata || {};
+            const formatted = {
+              id: String(meta.id || raw.id),
+              order_id: String(raw.order_id),
+              sender_id: String(raw.actor_id || meta.sender_id),
+              receiver_id: meta.receiver_id ? String(meta.receiver_id) : null,
+              sender_name: meta.sender_name || 'বার্তাপ্রেরক',
+              sender_role: meta.sender_role || 'customer',
+              message: raw.message || meta.message || '',
+              message_content: raw.message || meta.message || '',
+              attachment_name: meta.attachment_name || null,
+              attachment_url: meta.attachment_url || null,
+              created_at: raw.created_at || new Date().toISOString(),
+            };
+            window.dispatchEvent(
+              new CustomEvent('order_message_sent', {
+                detail: { orderId: raw.order_id, message: formatted },
+              })
+            );
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
         { event: '*', schema: 'public', table: 'deposit_requests' },
         (payload) => {
           if (typeof window !== 'undefined') {

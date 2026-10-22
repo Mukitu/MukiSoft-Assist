@@ -841,21 +841,23 @@ export const AdminOrders: React.FC = () => {
                     </div>
                   ) : (
                     orderMessages.map((m) => {
-                      const isAdminMsg = m.sender_role === 'admin';
+                      const isMe = Boolean(user?.id && (m.sender_id === user.id || m.sender_id === user.email)) || m.sender_role === 'admin' || m.sender_role === 'worker';
                       return (
                         <div
                           key={m.id}
-                          className={`flex gap-2.5 ${isAdminMsg ? 'justify-end' : 'justify-start'}`}
+                          className={`flex gap-2.5 ${isMe ? 'justify-end' : 'justify-start'}`}
                         >
                           <div className="max-w-[75%] space-y-1">
-                            <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
-                              <span className="font-semibold text-slate-700">{m.sender_name}</span>
+                            <div className={`flex items-center gap-1.5 text-[10px] text-slate-400 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                              <span className="font-semibold text-slate-700">
+                                {isMe ? 'আপনি (স্পেশালিস্ট)' : `${m.sender_name || selectedOrder.customer_name || 'গ্রাহক'} (গ্রাহক)`}
+                              </span>
                               <span>•</span>
                               <span>{new Date(m.created_at).toLocaleTimeString('bn-BD', { hour: '2-digit', minute: '2-digit' })}</span>
                             </div>
                             <div
                               className={`p-3 rounded-2xl whitespace-pre-wrap leading-relaxed ${
-                                isAdminMsg
+                                isMe
                                   ? 'bg-slate-900 text-white rounded-br-xs'
                                   : 'bg-white text-slate-800 border border-slate-200 rounded-bl-xs shadow-xs'
                               }`}

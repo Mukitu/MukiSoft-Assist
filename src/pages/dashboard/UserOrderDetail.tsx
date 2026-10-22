@@ -752,7 +752,7 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
               </div>
             ) : (
               messages.map((msg) => {
-                const isMe = msg.sender_id === user?.id || msg.sender_role === 'customer';
+                const isMe = Boolean(user?.id && (msg.sender_id === user.id || msg.sender_id === user.email));
                 return (
                   <div
                     key={msg.id}
@@ -760,7 +760,7 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
                   >
                     <div className="flex items-center gap-1.5 mb-1 text-[10px] text-slate-400">
                       <span className="font-bold text-slate-700">
-                        {isMe ? 'আপনি (গ্রাহক)' : `${msg.sender_name || 'দায়িত্বপ্রাপ্ত স্পেশালিস্ট'} (স্পেশালিস্ট)`}
+                        {isMe ? 'আপনি (গ্রাহক)' : `${msg.sender_name || order.assigned_admin_name || 'দায়িত্বপ্রাপ্ত স্পেশালিস্ট'} (স্পেশালিস্ট)`}
                       </span>
                       <span>•</span>
                       <span>{toBengaliDate(msg.created_at)}</span>
