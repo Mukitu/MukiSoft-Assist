@@ -5,17 +5,38 @@ interface StatusBadgeProps {
   status: string;
   type?: 'order' | 'deposit' | 'ticket' | 'role';
   assignedAdmin?: string | null;
+  variant?: 'user' | 'admin';
 }
 
-export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, assignedAdmin }) => {
-  // যদি কোনো অর্ডারের কোনো অ্যাডমিন/ওয়ার্কার দায়িত্ব গ্রহণ না করে থাকে, তবে 'অপেক্ষমাণ (অনুগ্রহ করে অপেক্ষা করুন)' প্রদর্শন করবে
+export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, assignedAdmin, variant = 'user' }) => {
+  // যদি কোনো অর্ডারের কোনো অ্যাডমিন/ওয়ার্কার দায়িত্ব গ্রহণ না করে থাকে
   const isUnassignedOrder = !assignedAdmin && (status === 'pending' || status === 'accepted');
 
   let label = statusLabels[status] || status;
+
   if (isUnassignedOrder) {
     label = 'অপেক্ষমাণ (অনুগ্রহ করে অপেক্ষা করুন)';
-  } else if (status === 'accepted' && assignedAdmin) {
-    label = 'গ্রহণ করা হয়েছে';
+  } else if (variant === 'admin') {
+    if (status === 'completed') {
+      label = 'অর্ডার ডেলিভারি সম্পন্ন হয়েছে';
+    } else if (status === 'revision_requested') {
+      label = 'অর্ডারটি রিভিশনের জন্য পাঠানো হয়েছে';
+    } else if (status === 'delivered') {
+      label = 'ডেলিভারিকৃত (গ্রাহক অনুমোদনের অপেক্ষায়)';
+    } else if (status === 'in_progress' || (status === 'accepted' && assignedAdmin)) {
+      label = 'কাজ চলমান';
+    }
+  } else {
+    // User view default
+    if (status === 'completed') {
+      label = 'অর্ডারটি গ্রহণ করা হয়েছে';
+    } else if (status === 'revision_requested') {
+      label = 'রিভিশনে পাঠানো হয়েছে';
+    } else if (status === 'delivered') {
+      label = 'ডেলিভারি করা হয়েছে (এক্সেপ্ট করুন)';
+    } else if (status === 'in_progress' || (status === 'accepted' && assignedAdmin)) {
+      label = 'কাজ চলছে';
+    }
   }
 
   const getStyle = () => {
@@ -26,12 +47,12 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, assignedAdmin 
       case 'completed':
       case 'approved':
       case 'resolved':
-        return 'text-emerald-800 bg-emerald-50 border border-emerald-300';
+        return 'text-emerald-800 bg-emerald-50 border border-emerald-300 font-bold';
       case 'accepted':
       case 'delivered':
       case 'in_review':
       case 'review':
-        return 'text-indigo-800 bg-indigo-50 border border-indigo-300';
+        return 'text-indigo-800 bg-indigo-50 border border-indigo-300 font-bold';
       case 'waiting_for_user':
         return 'text-sky-800 bg-sky-50 border border-sky-300';
       case 'in_progress':
@@ -41,7 +62,7 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, assignedAdmin 
         return 'text-amber-800 bg-amber-50 border border-amber-300';
       case 'needs_information':
       case 'revision_requested':
-        return 'text-orange-800 bg-orange-50 border border-orange-300';
+        return 'text-orange-800 bg-orange-50 border border-orange-300 font-bold';
       case 'failed':
       case 'rejected':
       case 'cancelled':
@@ -68,3 +89,4 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, assignedAdmin 
     </span>
   );
 };
+

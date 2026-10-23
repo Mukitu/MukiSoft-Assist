@@ -644,7 +644,7 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                           <span className="font-mono font-bold text-[11px] text-slate-700">
                             {ord.order_number}
                           </span>
-                          <StatusBadge status={ord.status} />
+                          <StatusBadge status={ord.status} variant="admin" />
                         </div>
 
                         <h4 className="font-semibold text-xs text-slate-900 mt-1 line-clamp-1">
@@ -922,7 +922,7 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                         <span className="font-mono font-bold text-xs text-slate-700 bg-slate-100 px-2.5 py-0.5 rounded-md">
                           #{ord.order_number}
                         </span>
-                        <StatusBadge status={ord.status} />
+                        <StatusBadge status={ord.status} variant="admin" />
                       </div>
 
                       {/* সার্ভিস শিরোনাম */}
@@ -1082,7 +1082,7 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                         {toBengaliCurrency(ord.amount)}
                       </td>
                       <td className="py-2.5 px-3">
-                        <StatusBadge status={ord.status} />
+                        <StatusBadge status={ord.status} variant="admin" />
                       </td>
                       <td className="py-2.5 px-3 text-right">
                         <button

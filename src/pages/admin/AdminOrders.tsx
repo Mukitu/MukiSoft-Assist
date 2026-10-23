@@ -692,7 +692,7 @@ export const AdminOrders: React.FC = () => {
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-mono font-bold text-sm text-slate-900">{selectedOrder.order_number}</span>
-                  <StatusBadge status={selectedOrder.status} />
+                  <StatusBadge status={selectedOrder.status} variant="admin" />
                 </div>
                 <h3 className="font-bold text-base text-slate-900 mt-1">
                   {selectedOrder.service?.title_bn || selectedOrder.service?.title}
