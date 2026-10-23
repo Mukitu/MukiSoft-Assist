@@ -173,7 +173,7 @@ export const UserOverview: React.FC<UserOverviewProps> = ({ onNavigate }) => {
                       {toBengaliCurrency(order.amount)}
                     </td>
                     <td className="py-3 px-4">
-                      <StatusBadge status={order.status} />
+                      <StatusBadge status={order.status} assignedAdmin={order.assigned_admin} />
                     </td>
                     <td className="py-3 px-4 text-slate-500">
                       {toBengaliDate(order.created_at)}

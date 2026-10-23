@@ -139,6 +139,7 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
     setIsSubmitting(true);
     try {
       await api.requestOrderRevision(order.id, user.id, revisionNotes.trim());
+      setOrder((prev) => prev ? { ...prev, status: 'revision_requested' } : null);
       showToast({
         type: 'success',
         title: 'সংশোধনের অনুরোধ জমা হয়েছে',
@@ -164,7 +165,10 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
 
     setIsConfirmingCompletion(true);
     try {
-      await api.confirmOrderCompletion(order.id, user.id);
+      const updated = await api.confirmOrderCompletion(order.id, user.id);
+      if (updated) {
+        setOrder(updated);
+      }
       showToast({
         type: 'success',
         title: 'অর্ডার সফলভাবে সম্পন্ন হয়েছে! 🎉',
@@ -254,16 +258,26 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
     e.preventDefault();
     if (!user || !order || !cancelReason.trim()) return;
 
+    if (order.status === 'refunded' || order.status === 'cancelled') {
+      showToast({ type: 'error', title: 'ত্রুটি', message: 'এই অর্ডারটি ইতিমধ্যে বাতিল ও রিফান্ড করা হয়েছে।' });
+      setCancelModalOpen(false);
+      return;
+    }
+
     setIsCancelling(true);
+    const orderIdToCancel = order.id;
+    const orderAmountToRefund = order.amount;
+    const reasonText = cancelReason.trim();
     try {
-      await api.cancelUserOrder(order.id, user.id, cancelReason.trim());
+      await api.cancelUserOrder(orderIdToCancel, user.id, reasonText);
       showToast({
         type: 'success',
         title: 'অর্ডার বাতিল ও রিফান্ড সম্পন্ন',
-        message: `অর্ডারটি বাতিল করা হয়েছে এবং সম্পূর্ণ ৳ ${toBengaliDigits(order.amount)} আপনার ওয়ালেটে ফেরত দেওয়া হয়েছে।`,
+        message: `অর্ডারটি বাতিল করা হয়েছে এবং সম্পূর্ণ ৳ ${toBengaliDigits(orderAmountToRefund)} আপনার ওয়ালেটে ফেরত দেওয়া হয়েছে।`,
       });
       setCancelModalOpen(false);
       setCancelReason('');
+      setOrder((prev) => (prev ? { ...prev, status: 'refunded', cancellation_reason: reasonText, refund_amount: orderAmountToRefund } : null));
       await loadData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'অর্ডার বাতিল ব্যর্থ হয়েছে';
@@ -289,7 +303,7 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
         <div>
           <div className="flex items-center gap-3">
             <span className="text-xs font-mono font-bold text-slate-500">{order.order_number}</span>
-            <StatusBadge status={order.status} />
+            <StatusBadge status={order.status} assignedAdmin={order.assigned_admin} />
           </div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">
             {order.service?.title_bn || order.service?.title}

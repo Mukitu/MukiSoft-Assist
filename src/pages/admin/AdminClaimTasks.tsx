@@ -43,7 +43,7 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'pending_queue' | 'my_claimed' | 'super_audit'>('pending_queue');
+  const [activeTab, setActiveTab] = useState<'pending_queue' | 'my_claimed' | 'my_delivered' | 'super_audit'>('pending_queue');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
 
   // লাইভ চ্যাট হুক
@@ -154,10 +154,12 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
     );
   });
 
-  // ২. আমার দায়িত্বপ্রাপ্ত কাজ: শুধুমাত্র বর্তমান লগইন করা অ্যাডমিনের ক্লেইম করা কাজ
+  // ২. আমার দায়িত্বপ্রাপ্ত সক্রিয় কাজ (শুধুমাত্র চলমান কাজ: accepted, in_progress, revision_requested ইত্যাদি)
   const myClaimedOrders = orders.filter((o) => {
     const isMine = o.assigned_admin === user?.id;
     if (!isMine) return false;
+    // ডেলিভারি ও সম্পন্ন কাজগুলো আলাদা সেকশনে থাকবে
+    if (['delivered', 'completed', 'cancelled', 'refunded'].includes(o.status)) return false;
     if (!search) return true;
     const q = search.toLowerCase();
     return (
@@ -168,7 +170,22 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
     );
   });
 
-  // ৩. অন্যান্য অ্যাডমিনদের কাজ (শুধুমাত্র সুপার অ্যাডমিনের অডিটের জন্য)
+  // ৩. আমার ডেলিভারিকৃত কাজ (My Delivered & Completed Tasks)
+  const myDeliveredOrders = orders.filter((o) => {
+    const isMine = o.assigned_admin === user?.id;
+    if (!isMine) return false;
+    if (!['delivered', 'completed'].includes(o.status)) return false;
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (
+      o.order_number.toLowerCase().includes(q) ||
+      (o.service?.title_bn && o.service.title_bn.includes(search)) ||
+      (o.service?.title && o.service.title.toLowerCase().includes(q)) ||
+      (o.customer?.email && o.customer.email.toLowerCase().includes(q))
+    );
+  });
+
+  // ৪. অন্যান্য অ্যাডমিনদের কাজ (শুধুমাত্র সুপার অ্যাডমিনের অডিটের জন্য)
   const otherClaimedOrders = orders.filter((o) => {
     return Boolean(o.assigned_admin && o.assigned_admin !== user?.id);
   });
@@ -258,19 +275,23 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
       });
 
       // চ্যাটেও একটি অটোমেটেড ডেলিভারি নোটিস পাঠানো
-      await api.sendOrderMessage(
-        selectedOrder.id,
-        user.id,
-        profile?.full_name || 'দায়িত্বপ্রাপ্ত অ্যাডমিন',
-        'admin',
-        `📦 আপনার কাজের ডেলিভারি ফাইল যুক্ত করা হয়েছে: "${deliverableTitle.trim()}"। অনুগ্রহ করে ডাউনলোড করে দেখে নিন।`,
-        { name: deliverableTitle.trim(), url: fileUrl }
-      );
+      try {
+        await api.sendOrderMessage(
+          selectedOrder.id,
+          user.id,
+          profile?.full_name || 'দায়িত্বপ্রাপ্ত স্পেশালিস্ট',
+          'admin',
+          `📦 আপনার কাজের ডেলিভারি ফাইল যুক্ত করা হয়েছে: "${deliverableTitle.trim()}"। অনুগ্রহ করে ডাউনলোড করে দেখে নিন।`,
+          { name: deliverableTitle.trim(), url: fileUrl }
+        );
+      } catch (chatErr) {
+        console.warn('Delivery chat notice warning:', chatErr);
+      }
 
       showToast({
         type: 'success',
-        title: 'ফাইল ডেলিভারি সম্পন্ন! 🚀',
-        message: 'ডেলিভারি ফাইল যুক্ত হয়েছে এবং গ্রাহককে ডেলিভারি নোটিফিকেশন পাঠানো হয়েছে।',
+        title: 'আপনি কাজটি সুন্দরভাবে ডেলিভারি করেছেন! 🚀',
+        message: 'ডেলিভারি ফাইল ও বিবরণ সফলভাবে পাঠানো হয়েছে। কাজটি আপনার "আমার ডেলিভারিকৃত কাজ" ট্যাবে সংরক্ষিত হয়েছে।',
       });
 
       setDeliverableModalOpen(false);
@@ -278,6 +299,8 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
       setDeliverableUrl('');
       setSelectedFile(null);
       setDeliverableNotes('');
+      setSelectedOrderId(null);
+      setActiveTab('my_delivered');
       await loadOrders();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'ডেলিভারি ব্যর্থ হয়েছে';
@@ -290,19 +313,31 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
   const handleRefundOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedOrder) return;
+    if (selectedOrder.status === 'refunded' || selectedOrder.status === 'cancelled') {
+      showToast({ type: 'error', title: 'ত্রুটি', message: 'এই অর্ডারটি ইতিমধ্যে বাতিল ও রিফান্ড করা হয়েছে।' });
+      setRefundModalOpen(false);
+      setSelectedOrderId(null);
+      return;
+    }
     if (!refundReason.trim()) {
       showToast({ type: 'error', title: 'ত্রুটি', message: 'রিফান্ডের একটি কারণ লিখুন' });
       return;
     }
     setIsRefunding(true);
+    const orderIdToRefund = selectedOrder.id;
+    const orderNum = selectedOrder.order_number;
+    const reasonText = refundReason.trim();
     try {
-      await api.refundOrder(selectedOrder.id, refundReason.trim());
+      await api.refundOrder(orderIdToRefund, reasonText);
       showToast({
         type: 'success',
         title: 'অর্ডার বাতিল ও রিফান্ড সফল',
-        message: `অর্ডার #${selectedOrder.order_number} বাতিল করে গ্রাহকের ওয়ালেটে সম্পূর্ণ টাকা ফেরত দেওয়া হয়েছে।`
+        message: `অর্ডার #${orderNum} বাতিল করে গ্রাহকের ওয়ালেটে সম্পূর্ণ টাকা ফেরত দেওয়া হয়েছে।`
       });
       setRefundModalOpen(false);
+      setSelectedOrderId(null);
+      setRefundReason('');
+      setOrders((prev) => prev.filter((o) => o.id !== orderIdToRefund));
       await loadOrders();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'রিফান্ড সম্পন্ন করা যায়নি';
@@ -338,8 +373,13 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
           </div>
 
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            <span>আমার দায়িত্বে: {toBengaliDigits(myClaimedOrders.length)}টি কাজ</span>
+            <Clock className="w-4 h-4 text-emerald-600" />
+            <span>চলমান দায়িত্ব: {toBengaliDigits(myClaimedOrders.length)}টি</span>
+          </div>
+
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-800 text-xs font-bold">
+            <CheckCircle2 className="w-4 h-4 text-indigo-600" />
+            <span>ডেলিভারিকৃত: {toBengaliDigits(myDeliveredOrders.length)}টি</span>
           </div>
         </div>
       </div>
@@ -378,6 +418,23 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
               activeTab === 'my_claimed' ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-800'
             }`}>
               {toBengaliDigits(myClaimedOrders.length)}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('my_delivered')}
+            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${
+              activeTab === 'my_delivered'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-700 hover:text-slate-900 hover:bg-white/50'
+            }`}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>আমার ডেলিভারিকৃত কাজ</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+              activeTab === 'my_delivered' ? 'bg-indigo-700 text-white' : 'bg-indigo-100 text-indigo-800'
+            }`}>
+              {toBengaliDigits(myDeliveredOrders.length)}
             </span>
           </button>
 
@@ -641,17 +698,19 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                           <span>ফাইল ডেলিভারি</span>
                         </button>
 
-                        <button
-                          onClick={() => {
-                            setRefundReason('গ্রাহকের অনুরোধে অর্ডার বাতিল ও সম্পূর্ণ রিফান্ড করা হয়েছে');
-                            setRefundModalOpen(true);
-                          }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-lg text-xs font-semibold transition-colors"
-                          title="গ্রাহকের অনুরোধে অর্ডার বাতিল ও ওয়ালেটে রিফান্ড দিন"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
-                          <span>বাতিল ও রিফান্ড</span>
-                        </button>
+                        {!['cancelled', 'refunded', 'completed'].includes(selectedOrder.status) && (
+                          <button
+                            onClick={() => {
+                              setRefundReason('গ্রাহকের অনুরোধে অর্ডার বাতিল ও সম্পূর্ণ রিফান্ড করা হয়েছে');
+                              setRefundModalOpen(true);
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-lg text-xs font-semibold transition-colors"
+                            title="গ্রাহকের অনুরোধে অর্ডার বাতিল ও ওয়ালেটে রিফান্ড দিন"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
+                            <span>বাতিল ও রিফান্ড</span>
+                          </button>
+                        )}
 
                         <button
                           onClick={() => handleRelease(selectedOrder)}
@@ -663,6 +722,32 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                         </button>
                       </div>
                     </div>
+
+                    {/* রিভিশন অ্যালার্ট নোটিস (যদি গ্রাহক রিভিশন অনুরোধ জানিয়ে থাকেন) */}
+                    {selectedOrder.status === 'revision_requested' && (
+                      <div className="px-4 py-3 bg-amber-500 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-xs">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="w-5 h-5 shrink-0 text-amber-100 mt-0.5 animate-bounce" />
+                          <div>
+                            <span className="font-bold text-xs block">
+                              গ্রাহক এই অর্ডারের কাজে রিভিশন (সংশোধন) চেয়েছেন!
+                            </span>
+                            <span className="text-[11px] text-amber-100">
+                              চ্যাটে গ্রাহকের ফিডব্যাক পড়ুন এবং সংশোধন সম্পন্ন করে ফাইল ডেলিভারি করুন।
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setDeliverableTitle(`সংশোধিত ডেলিভারি ফাইল (Rev) — ${selectedOrder.service?.title_bn || selectedOrder.service?.title}`);
+                            setDeliverableModalOpen(true);
+                          }}
+                          className="px-3.5 py-1.5 bg-white text-amber-900 rounded-lg font-bold text-xs hover:bg-amber-50 shrink-0 shadow-xs"
+                        >
+                          সংশোধিত ফাইল ডেলিভারি করুন
+                        </button>
+                      </div>
+                    )}
 
                     {/* প্রজেক্ট রিকোয়ারমেন্টস ড্রপডাউন/স্ট্রিপ */}
                     {selectedOrder.requirements_submitted && (
@@ -780,6 +865,168 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                   </div>
                 )}
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ৩. আমার ডেলিভারিকৃত কাজ (My Delivered & Completed Tasks) */}
+      {activeTab === 'my_delivered' && (
+        <div className="space-y-4">
+          <div className="bg-indigo-50/60 border border-indigo-200 rounded-xl p-3.5 flex items-start gap-2.5 text-xs text-indigo-950">
+            <CheckCircle2 className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+            <div className="leading-relaxed">
+              <span className="font-bold">ডেলিভারি স্থিতি ও রিভিউ ট্র্যাকিং:</span> আপনার ডেলিভারি করা সকল প্রজেক্ট এখানে তালিকাভুক্ত থাকে। গ্রাহক ফাইল যাচাই করে গ্রহণ ও সম্পন্ন ঘোষণা করলে আপনার কমিশন সরাসরি উত্তোলনযোগ্য অ্যাকাউন্টে জমা হয়।
+            </div>
+          </div>
+
+          {myDeliveredOrders.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-3 shadow-xs">
+              <div className="w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
+                <Upload className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-bold text-slate-800">এখনও কোনো কাজ ডেলিভারি করা হয়নি</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                আপনার চলমান কাজগুলো সফলভাবে সম্পন্ন করে ফাইল ডেলিভারি করুন। ডেলিভারি করার সাথে সাথে কাজটি এখানে স্থানান্তরিত হবে।
+              </p>
+              <button
+                onClick={() => setActiveTab('my_claimed')}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-colors"
+              >
+                <Clock className="w-4 h-4" />
+                <span>আমার চলমান কাজ দেখুন ({toBengaliDigits(myClaimedOrders.length)})</span>
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {myDeliveredOrders.map((ord) => {
+                const commission = Math.round(ord.amount * 0.75); // আনুমানিক ৭৫% ওয়ার্কার কমিশন
+                return (
+                  <div
+                    key={ord.id}
+                    className="bg-white rounded-2xl border border-slate-200 p-5 hover:shadow-md transition-all flex flex-col justify-between space-y-4 relative overflow-hidden"
+                  >
+                    <div className={`absolute top-0 right-0 left-0 h-1.5 ${
+                      ord.status === 'completed'
+                        ? 'bg-gradient-to-r from-emerald-500 to-teal-500'
+                        : 'bg-gradient-to-r from-indigo-500 to-purple-500'
+                    }`} />
+
+                    <div className="space-y-3">
+                      {/* টপ মেটা ও স্ট্যাটাস */}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono font-bold text-xs text-slate-700 bg-slate-100 px-2.5 py-0.5 rounded-md">
+                          #{ord.order_number}
+                        </span>
+                        <StatusBadge status={ord.status} />
+                      </div>
+
+                      {/* সার্ভিস শিরোনাম */}
+                      <div>
+                        <h3 className="font-bold text-sm text-slate-900 line-clamp-1">
+                          {ord.service?.title_bn || ord.service?.title}
+                        </h3>
+                        <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-1">
+                          <User className="w-3.5 h-3.5 text-slate-400" />
+                          <span className="font-mono text-[11px] truncate max-w-[200px]">
+                            {ord.customer?.email || ord.customer?.full_name || ord.user_id}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* মূল্য ও কমিশন কার্ড */}
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
+                        <div>
+                          <span className="text-[10px] text-slate-400 block uppercase font-medium">অর্ডার বাজেট</span>
+                          <span className="font-bold font-mono text-slate-900">{toBengaliCurrency(ord.amount)}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[10px] text-indigo-600 block uppercase font-bold">আপনার কমিশন</span>
+                          <span className="font-bold font-mono text-indigo-700 text-sm">~{toBengaliCurrency(commission)}</span>
+                        </div>
+                      </div>
+
+                      {/* ডেলিভারিকৃত ফাইলসমূহ */}
+                      <div className="space-y-1.5 pt-1">
+                        <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                          <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>ডেলিভারি ফাইলসমূহ ({toBengaliDigits(ord.deliverables?.length || 0)}টি):</span>
+                        </span>
+                        {ord.deliverables && ord.deliverables.length > 0 ? (
+                          <div className="space-y-1 max-h-32 overflow-y-auto">
+                            {ord.deliverables.map((deliv) => (
+                              <div
+                                key={deliv.id}
+                                className="p-2 bg-indigo-50/50 rounded-lg border border-indigo-100 text-[11px] flex items-center justify-between gap-2"
+                              >
+                                <span className="font-medium text-slate-800 truncate" title={deliv.title}>
+                                  {deliv.title}
+                                </span>
+                                <a
+                                  href={deliv.file_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-indigo-600 hover:text-indigo-800 shrink-0 font-bold text-[10px] underline flex items-center gap-0.5"
+                                >
+                                  <span>ডাউনলোড</span>
+                                  <ExternalLink className="w-2.5 h-2.5" />
+                                </a>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-slate-400 italic">ফাইল রেকর্ড সংরক্ষিত</span>
+                        )}
+                      </div>
+
+                      {/* ক্লায়েন্ট রিভিউ (যদি থাকে) */}
+                      {ord.customer_review && (
+                        <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-200 text-xs space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-amber-900 text-[11px]">গ্রাহকের মূল্যায়ন</span>
+                            <span className="text-amber-600 font-bold text-[11px]">
+                              {'★'.repeat(ord.customer_review.rating)} ({toBengaliDigits(ord.customer_review.rating)}/৫)
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-700 italic">
+                            &quot;{ord.customer_review.comment}&quot;
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* নিচের অ্যাকশন বাটনসমূহ */}
+                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                      <span className={`text-[11px] font-semibold flex items-center gap-1 ${
+                        ord.status === 'completed' ? 'text-emerald-700' : 'text-amber-700'
+                      }`}>
+                        {ord.status === 'completed' ? (
+                          <>
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>অনুমোদিত ও সম্পন্ন 🎉</span>
+                          </>
+                        ) : (
+                          <>
+                            <Clock className="w-3.5 h-3.5 text-amber-600" />
+                            <span>গ্রাহকের পর্যালোচনায় আছে</span>
+                          </>
+                        )}
+                      </span>
+
+                      <button
+                        onClick={() => {
+                          setSelectedOrderId(ord.id);
+                          setActiveTab('my_claimed');
+                        }}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>চ্যাট দেখুন</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

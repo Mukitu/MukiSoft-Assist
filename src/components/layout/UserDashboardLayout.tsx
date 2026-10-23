@@ -42,9 +42,9 @@ export const UserDashboardLayout: React.FC<UserDashboardLayoutProps> = ({
 
   const navItems = [
     { label: 'ড্যাশবোর্ড ওভারভিউ', path: '/dashboard', icon: LayoutDashboard },
+    { label: 'আমার অর্ডার ও ডেলিভারি', path: '/dashboard/orders', icon: ShoppingBag },
     { label: 'বার্তা ও লাইভ চ্যাট', path: '/dashboard/messages', icon: MessageSquare, badge: 'লাইভ' },
     { label: 'ওয়ালেট ও টাকা জমা', path: '/dashboard/wallet', icon: WalletIcon },
-    { label: 'আমার অর্ডার ও ডেলিভারি', path: '/dashboard/orders', icon: ShoppingBag },
     { label: 'সহায়তা টিকিট ডেস্ক', path: '/dashboard/support', icon: HelpCircle },
     { label: 'বিজ্ঞপ্তি পছন্দসমূহ', path: '/dashboard/preferences', icon: Bell },
     { label: 'প্রোফাইল সেটিংস', path: '/dashboard/profile', icon: UserIcon },

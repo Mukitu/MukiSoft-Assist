@@ -1241,7 +1241,27 @@ export const api = {
     const localOrders = getLS<Order[]>('orders', []).filter((o) => o.user_id === userId);
     const map = new Map<string, Order>();
     remoteOrders.forEach((o) => map.set(o.id, o));
-    localOrders.forEach((o) => { if (!map.has(o.id)) map.set(o.id, o); });
+    localOrders.forEach((o) => {
+      if (!map.has(o.id)) {
+        map.set(o.id, o);
+      } else {
+        const remote = map.get(o.id)!;
+        let finalStatus = remote.status;
+        if (remote.status === 'refunded' || o.status === 'refunded') {
+          finalStatus = 'refunded';
+        } else if (remote.status === 'cancelled' || o.status === 'cancelled') {
+          finalStatus = 'cancelled';
+        } else if (remote.status === 'completed' || o.status === 'completed') {
+          finalStatus = 'completed';
+        }
+        map.set(o.id, {
+          ...remote,
+          status: finalStatus,
+          cancellation_reason: o.cancellation_reason || remote.cancellation_reason,
+          refund_amount: o.refund_amount || remote.refund_amount,
+        });
+      }
+    });
 
     return Array.from(map.values()).sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
@@ -1275,17 +1295,28 @@ export const api = {
         map.set(o.id, o);
       } else {
         const remote = map.get(o.id)!;
-        // Preserve local claim attributes if local has assigned_admin and remote hasn't reflected it yet
-        if (o.assigned_admin && !remote.assigned_admin) {
-          map.set(o.id, {
-            ...remote,
-            assigned_admin: o.assigned_admin,
-            assigned_admin_name: o.assigned_admin_name,
-            assigned_admin_email: o.assigned_admin_email,
-            claimed_at: o.claimed_at,
-            status: o.status === 'pending' ? 'in_progress' : o.status,
-          });
+        // টার্মিনাল স্ট্যাটাস অগ্রাধিকার: একবার কোনো অর্ডার বাতিল, রিফান্ড বা সমাপ্ত হলে তা আর রিভার্ট হবে না
+        let finalStatus = remote.status;
+        if (remote.status === 'refunded' || o.status === 'refunded') {
+          finalStatus = 'refunded';
+        } else if (remote.status === 'cancelled' || o.status === 'cancelled') {
+          finalStatus = 'cancelled';
+        } else if (remote.status === 'completed' || o.status === 'completed') {
+          finalStatus = 'completed';
+        } else if (o.assigned_admin && !remote.assigned_admin) {
+          finalStatus = o.status === 'pending' ? 'in_progress' : o.status;
         }
+
+        map.set(o.id, {
+          ...remote,
+          assigned_admin: o.assigned_admin || remote.assigned_admin,
+          assigned_admin_name: o.assigned_admin_name || remote.assigned_admin_name,
+          assigned_admin_email: o.assigned_admin_email || remote.assigned_admin_email,
+          claimed_at: o.claimed_at || remote.claimed_at,
+          status: finalStatus,
+          cancellation_reason: o.cancellation_reason || remote.cancellation_reason,
+          refund_amount: o.refund_amount || remote.refund_amount,
+        });
       }
     });
 
@@ -1621,7 +1652,7 @@ export const api = {
    * গ্রাহক কর্তৃক কাজ অনুমোদন ও সম্পন্ন ঘোষণা (Delivery Confirmation)
    */
   async confirmOrderCompletion(orderId: string, userId: string): Promise<Order> {
-    const existing = await this.getOrderById(orderId, userId, false);
+    const existing = await this.getOrderById(orderId, undefined, true);
     if (!existing) throw new Error('অর্ডার পাওয়া যায়নি।');
 
     const now = new Date().toISOString();
@@ -1676,6 +1707,8 @@ export const api = {
         completed_at: now,
         updated_at: now,
       };
+      orders.unshift(updatedOrder);
+      setLS('orders', orders);
     }
 
     // কাজের কমিশন ও কোম্পানির লাভ স্বয়ংক্রিয়ভাবে ক্রেডিট ও ডিস্ট্রিবিউট করা
@@ -1683,6 +1716,10 @@ export const api = {
       await this.distributeOrderCommission(updatedOrder);
     } catch (err) {
       console.warn('Commission distribution error:', err);
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('orders_updated'));
     }
 
     // অ্যাডমিন বা ওয়ার্কারকে নোটিফাই করা
@@ -2017,9 +2054,9 @@ export const api = {
     const order = await this.getOrderById(orderId, undefined, true);
     if (!order) throw new Error('অর্ডার পাওয়া যায়নি।');
 
-    // ডেলিভারিকৃত বা সম্পন্ন অর্ডারের ক্ষেত্রে চ্যাট বন্ধ
-    if (['delivered', 'completed', 'cancelled', 'refunded'].includes(order.status)) {
-      throw new Error('এই অর্ডারের কাজ ডেলিভারি/সম্পন্ন বা বাতিল হওয়ায় চ্যাট সার্ভিস স্বয়ংক্রিয়ভাবে বন্ধ রয়েছে।');
+    // সম্পন্ন বা বাতিল অর্ডারের ক্ষেত্রে চ্যাট বন্ধ (ডেলিভারিকৃত ও রিভিশন চলাকালীন চ্যাট সম্পূর্ণ সক্রিয় থাকবে)
+    if (['completed', 'cancelled', 'refunded'].includes(order.status)) {
+      throw new Error('এই অর্ডারের কাজ সম্পন্ন বা বাতিল হওয়ায় চ্যাট সার্ভিস বন্ধ রয়েছে।');
     }
 
     const now = new Date().toISOString();
@@ -2281,53 +2318,82 @@ export const api = {
       throw new Error('রিফান্ড করার জন্য সুনির্দিষ্ট কারণ উল্লেখ করা আবশ্যক।');
     }
 
+    // ১. আইডিমপোটেন্সি ও প্রি-চেক: ইতিপূর্বে রিফান্ড বা বাতিল হয়ে থাকলে কোনো অবস্থাতেই পুনরায় রিফান্ড হবে না
+    const existingOrder = await this.getOrderById(orderId, undefined, true);
+    if (!existingOrder) {
+      throw new Error('অর্ডারটি পাওয়া যায়নি।');
+    }
+    if (existingOrder.status === 'refunded' || existingOrder.status === 'cancelled') {
+      throw new Error('এই অর্ডারটি ইতিমধ্যে বাতিল ও রিফান্ড করা হয়েছে। একাধিকবার রিফান্ড গ্রহণ সম্ভব নয়।');
+    }
+
     let refundBalance = 0;
+    const now = new Date().toISOString();
+    const orderAmount = existingOrder.amount;
+    const orderUserId = existingOrder.user_id;
 
     if (isSupabaseConfigured && supabase) {
-      let rpcSucceeded = false;
-      try {
-        const { data, error } = await supabase.rpc('refund_order', {
-          p_order_id: orderId,
-          p_refund_reason: refundReason.trim(),
-        });
-        if (!error && data) {
-          refundBalance = data.new_balance;
-          rpcSucceeded = true;
-        }
-      } catch (e) {
-        console.warn('RPC refund_order warning, trying direct queries:', e);
-      }
+      // লেজারে ডুপ্লিকেট রিফান্ড এড়াতে আগে চেক করা
+      const { data: existingTx } = await supabase
+        .from('wallet_transactions')
+        .select('id')
+        .eq('reference_id', orderId)
+        .eq('type', 'refund')
+        .maybeSingle();
 
-      if (!rpcSucceeded) {
-        const { data: ord } = await supabase.from('orders').select('*').eq('id', orderId).single();
-        if (ord) {
-          const now = new Date().toISOString();
+      if (existingTx) {
+        // লেজারে ইতিমধ্যে রিফান্ড সম্পন্ন হয়ে আছে
+        await supabase.from('orders').update({
+          status: 'refunded',
+          cancellation_reason: refundReason,
+          refund_amount: orderAmount,
+          updated_at: now,
+        }).eq('id', orderId);
+
+        const { data: currentW } = await supabase.from('wallets').select('balance').eq('user_id', orderUserId).single();
+        refundBalance = currentW?.balance || 0;
+      } else {
+        let rpcSucceeded = false;
+        try {
+          const { data, error } = await supabase.rpc('refund_order', {
+            p_order_id: orderId,
+            p_refund_reason: refundReason,
+          });
+          if (!error && data) {
+            refundBalance = data.new_balance;
+            rpcSucceeded = true;
+          }
+        } catch (e) {
+          console.warn('RPC refund_order warning, trying direct queries:', e);
+        }
+
+        if (!rpcSucceeded) {
           await supabase.from('orders').update({
             status: 'refunded',
-            cancellation_reason: refundReason.trim(),
-            refund_amount: ord.amount,
+            cancellation_reason: refundReason,
+            refund_amount: orderAmount,
             updated_at: now,
           }).eq('id', orderId);
 
-          const { data: w } = await supabase.from('wallets').select('*').eq('user_id', ord.user_id).single();
+          const { data: w } = await supabase.from('wallets').select('*').eq('user_id', orderUserId).single();
           if (w) {
-            const newBal = (w.balance || 0) + ord.amount;
+            const newBal = (w.balance || 0) + orderAmount;
             await supabase.from('wallets').update({
               balance: newBal,
-              total_spent: Math.max(0, (w.total_spent || 0) - ord.amount),
+              total_spent: Math.max(0, (w.total_spent || 0) - orderAmount),
               updated_at: now,
             }).eq('id', w.id);
 
             await supabase.from('wallet_transactions').insert({
               wallet_id: w.id,
-              user_id: ord.user_id,
+              user_id: orderUserId,
               type: 'refund',
-              amount: ord.amount,
+              amount: orderAmount,
               balance_after: newBal,
               status: 'completed',
               reference_id: orderId,
               reference_type: 'order',
-              description: `অর্ডার রিফান্ড: #${ord.order_number} (কারণ: ${refundReason.trim()})`,
+              description: `অর্ডার রিফান্ড: #${existingOrder.order_number} (কারণ: ${refundReason})`,
             });
             refundBalance = newBal;
           }
@@ -2338,7 +2404,16 @@ export const api = {
       const orders = getLS<Order[]>('orders', []);
       const order = orders.find((o) => o.id === orderId);
       if (!order) throw new Error('অর্ডার পাওয়া যায়নি');
-      if (order.status === 'refunded') throw new Error('এই অর্ডারটি ইতিমধ্যে রিফান্ড করা হয়েছে।');
+      if (order.status === 'refunded' || order.status === 'cancelled') {
+        throw new Error('এই অর্ডারটি ইতিমধ্যে রিফান্ড বা বাতিল করা হয়েছে।');
+      }
+
+      // লেজার ডুপ্লিকেট চেক
+      const txs = getLS<WalletTransaction[]>('transactions', []);
+      const duplicateTx = txs.find((t) => t.reference_id === orderId && t.type === 'refund');
+      if (duplicateTx) {
+        throw new Error('এই অর্ডারের অর্থ ইতিপূর্বে রিফান্ড করা হয়েছে।');
+      }
 
       // Refund wallet
       const wallets = getLS<Record<string, Wallet>>('wallets', {});
@@ -2349,17 +2424,16 @@ export const api = {
         pending_balance: 0,
         total_deposited: 0,
         total_spent: 0,
-        updated_at: new Date().toISOString(),
+        updated_at: now,
       };
 
       wallet.balance += order.amount;
       wallet.total_spent = Math.max(0, wallet.total_spent - order.amount);
-      wallet.updated_at = new Date().toISOString();
+      wallet.updated_at = now;
       wallets[order.user_id] = wallet;
       setLS('wallets', wallets);
 
       // Ledger record
-      const txs = getLS<WalletTransaction[]>('transactions', []);
       txs.unshift({
         id: `tx_${Date.now()}`,
         wallet_id: wallet.id,
@@ -2370,28 +2444,44 @@ export const api = {
         status: 'completed',
         reference_id: order.id,
         reference_type: 'order',
-        description: `অর্ডার রিফান্ড: #${order.order_number} (কারণ: ${refundReason.trim()})`,
-        created_at: new Date().toISOString(),
+        description: `অর্ডার রিফান্ড: #${order.order_number} (কারণ: ${refundReason})`,
+        created_at: now,
       });
       setLS('transactions', txs);
 
       // Update order
       order.status = 'refunded';
-      order.cancellation_reason = refundReason.trim();
+      order.cancellation_reason = refundReason;
       order.refund_amount = order.amount;
-      order.updated_at = new Date().toISOString();
+      order.updated_at = now;
       if (!order.events) order.events = [];
       order.events.push({
         id: `event_${Date.now()}`,
         order_id: orderId,
         actor_id: adminId,
         event_type: 'ORDER_REFUNDED',
-        message: `অ্যাডমিন কর্তৃক ৳ ${order.amount} সম্পূর্ণ রিফান্ড অনুমোদিত হয়েছে। কারণ: ${refundReason.trim()}`,
-        created_at: new Date().toISOString(),
+        message: `অ্যাডমিন কর্তৃক ৳ ${order.amount} সম্পূর্ণ রিফান্ড অনুমোদিত হয়েছে। কারণ: ${refundReason}`,
+        created_at: now,
       });
       setLS('orders', orders);
 
       refundBalance = wallet.balance;
+    }
+
+    // লোকাল স্টোরেজ অর্ডারস সবসময় সিঙ্ক নিশ্চিত করা (Supabase সচল থাকলেও)
+    const localOrders = getLS<Order[]>('orders', []);
+    const localIdx = localOrders.findIndex((o) => o.id === orderId);
+    if (localIdx !== -1) {
+      localOrders[localIdx].status = 'refunded';
+      localOrders[localIdx].cancellation_reason = refundReason;
+      localOrders[localIdx].refund_amount = orderAmount;
+      localOrders[localIdx].updated_at = now;
+      setLS('orders', localOrders);
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('orders_updated', { detail: { orderId, status: 'refunded' } }));
+      window.dispatchEvent(new CustomEvent('wallet_updated', { detail: { newBalance: refundBalance } }));
     }
 
     // Notify customer about authorized refund
@@ -2404,14 +2494,14 @@ export const api = {
           recipientEmail: userProf?.email,
           recipientName: userProf?.full_name,
           title: 'অর্ডার রিফান্ড সম্পন্ন হয়েছে',
-          message: `আপনার অর্ডার #${refundOrderObj.order_number}-এর ৳${refundOrderObj.amount.toLocaleString('bn-BD')} নিরাপদে ওয়ালেট ব্যালেন্সে ফেরত দেওয়া হয়েছে। কারণ: ${refundReason.trim()}`,
+          message: `আপনার অর্ডার #${refundOrderObj.order_number}-এর ৳${refundOrderObj.amount.toLocaleString('bn-BD')} নিরাপদে ওয়ালেট ব্যালেন্সে ফেরত দেওয়া হয়েছে। কারণ: ${refundReason}`,
           link: `/dashboard/orders/${orderId}`,
           category: 'wallet',
           templateType: 'refund_processed',
           templateData: {
             orderNumber: refundOrderObj.order_number,
             amount: refundOrderObj.amount,
-            statusNote: refundReason.trim(),
+            statusNote: refundReason,
             actionUrl: `${window.location.origin}/dashboard/wallet`,
           },
           eventKey: `order_refund_${orderId}`,
@@ -2429,103 +2519,131 @@ export const api = {
     userId: string,
     cancellationReason: string
   ): Promise<{ success: boolean; newBalance: number }> {
-    if (!cancellationReason.trim()) {
+    const cleanReason = cancellationReason.trim();
+    if (!cleanReason) {
       throw new Error('বাতিল করার কারণ উল্লেখ করা আবশ্যক।');
     }
 
+    // ১. আইডিমপোটেন্সি ও অনুমতি যাচাই
+    const existingOrder = await this.getOrderById(orderId, userId, false);
+    if (!existingOrder) {
+      throw new Error('অর্ডার পাওয়া যায়নি অথবা আপনার এই অর্ডারে অনুমতি নেই।');
+    }
+
+    if (existingOrder.status === 'refunded' || existingOrder.status === 'cancelled') {
+      throw new Error('এই অর্ডারটি ইতিমধ্যে বাতিল ও রিফান্ড করা হয়েছে। একাধিকবার বাতিল সম্ভব নয়।');
+    }
+
+    if (existingOrder.assigned_admin) {
+      throw new Error('এই কাজটির দায়িত্ব ইতিমধ্যে একজন স্পেশালিস্ট অ্যাডমিন/ওয়ার্কার গ্রহণ করেছেন। অর্ডারটি এখন সরাসরি বাতিল করা সম্ভব নয়। দয়া করে সরাসরি চ্যাটে দায়িত্বে থাকা কর্মকর্তার সাথে যোগাযোগ করে বাতিলের অনুরোধ করুন।');
+    }
+
+    if (['delivered', 'completed'].includes(existingOrder.status)) {
+      throw new Error('ডেলিভারি সম্পন্ন বা সমাপ্ত হওয়া অর্ডার সরাসরি বাতিলযোগ্য নয়।');
+    }
+
     let finalBalance = 0;
+    const now = new Date().toISOString();
+    const orderAmount = existingOrder.amount;
 
     if (isSupabaseConfigured && supabase) {
-      try {
-        const { data, error } = await supabase.rpc('cancel_order_by_customer', {
-          p_order_id: orderId,
-          p_reason: cancellationReason.trim(),
-        });
-        if (!error && data) {
-          finalBalance = data.new_balance;
-        }
-      } catch {
-        // Continue to direct queries fallback
-      }
+      // লেজারে পূর্বে রিফান্ড হয়েছে কি না চেক
+      const { data: existingTx } = await supabase
+        .from('wallet_transactions')
+        .select('id')
+        .eq('reference_id', orderId)
+        .eq('type', 'refund')
+        .maybeSingle();
 
-      if (finalBalance === 0) {
-        const { data: orderData, error: orderErr } = await supabase
-          .from('orders')
-          .select('*')
-          .eq('id', orderId)
-          .eq('user_id', userId)
-          .single();
-
-        if (orderErr || !orderData) {
-          throw new Error('অর্ডার পাওয়া যায়নি অথবা আপনার এই অর্ডারে অনুমতি নেই।');
-        }
-
-        if (orderData.assigned_admin) {
-          throw new Error('এই কাজটির দায়িত্ব ইতিমধ্যে একজন স্পেশালিস্ট অ্যাডমিন/ওয়ার্কার গ্রহণ করেছেন। অর্ডারটি এখন সরাসরি বাতিল করা সম্ভব নয়। দয়া করে সরাসরি চ্যাটে দায়িত্বে থাকা কর্মকর্তার সাথে যোগাযোগ করে বাতিলের অনুরোধ করুন।');
-        }
-
-        if (['delivered', 'completed', 'refunded'].includes(orderData.status)) {
-          throw new Error('ডেলিভারি সম্পন্ন বা রিফান্ড হওয়া অর্ডার সরাসরি বাতিলযোগ্য নয়।');
-        }
-
+      if (existingTx) {
         await supabase
           .from('orders')
           .update({
             status: 'refunded',
-            cancellation_reason: cancellationReason.trim(),
-            refund_amount: orderData.amount,
-            updated_at: new Date().toISOString(),
+            cancellation_reason: cleanReason,
+            refund_amount: orderAmount,
+            updated_at: now,
           })
           .eq('id', orderId);
 
-        await supabase.from('order_events').insert({
-          order_id: orderId,
-          actor_id: userId,
-          event_type: 'ORDER_REFUNDED',
-          message: `গ্রাহক কর্তৃক অর্ডার বাতিল করা হয়েছে এবং ৳ ${orderData.amount} ওয়ালেটে ফেরত দেওয়া হয়েছে। কারণ: ${cancellationReason.trim()}`,
-        });
-
-        const { data: walletData } = await supabase
-          .from('wallets')
-          .select('*')
-          .eq('user_id', userId)
-          .single();
-
-        const newBal = (walletData?.balance || 0) + orderData.amount;
-        if (walletData) {
-          await supabase
-            .from('wallets')
-            .update({
-              balance: newBal,
-              total_spent: Math.max(0, (walletData.total_spent || 0) - orderData.amount),
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', walletData.id);
-
-          await supabase.from('wallet_transactions').insert({
-            wallet_id: walletData.id,
-            user_id: userId,
-            type: 'refund',
-            amount: orderData.amount,
-            balance_after: newBal,
-            status: 'completed',
-            reference_id: orderId,
-            reference_type: 'order',
-            description: `অর্ডার বাতিল ও রিফান্ড: #${orderData.order_number} (কারণ: ${cancellationReason.trim()})`,
+        const { data: currentW } = await supabase.from('wallets').select('balance').eq('user_id', userId).single();
+        finalBalance = currentW?.balance || 0;
+      } else {
+        try {
+          const { data, error } = await supabase.rpc('cancel_order_by_customer', {
+            p_order_id: orderId,
+            p_reason: cleanReason,
           });
+          if (!error && data) {
+            finalBalance = data.new_balance;
+          }
+        } catch {
+          // Continue to direct queries fallback
         }
-        finalBalance = newBal;
+
+        if (finalBalance === 0) {
+          await supabase
+            .from('orders')
+            .update({
+              status: 'refunded',
+              cancellation_reason: cleanReason,
+              refund_amount: orderAmount,
+              updated_at: now,
+            })
+            .eq('id', orderId);
+
+          await supabase.from('order_events').insert({
+            order_id: orderId,
+            actor_id: userId,
+            event_type: 'ORDER_REFUNDED',
+            message: `গ্রাহক কর্তৃক অর্ডার বাতিল করা হয়েছে এবং ৳ ${orderAmount} ওয়ালেটে ফেরত দেওয়া হয়েছে। কারণ: ${cleanReason}`,
+          });
+
+          const { data: walletData } = await supabase
+            .from('wallets')
+            .select('*')
+            .eq('user_id', userId)
+            .single();
+
+          const newBal = (walletData?.balance || 0) + orderAmount;
+          if (walletData) {
+            await supabase
+              .from('wallets')
+              .update({
+                balance: newBal,
+                total_spent: Math.max(0, (walletData.total_spent || 0) - orderAmount),
+                updated_at: now,
+              })
+              .eq('id', walletData.id);
+
+            await supabase.from('wallet_transactions').insert({
+              wallet_id: walletData.id,
+              user_id: userId,
+              type: 'refund',
+              amount: orderAmount,
+              balance_after: newBal,
+              status: 'completed',
+              reference_id: orderId,
+              reference_type: 'order',
+              description: `অর্ডার বাতিল ও রিফান্ড: #${existingOrder.order_number} (কারণ: ${cleanReason})`,
+            });
+          }
+          finalBalance = newBal;
+        }
       }
     } else {
       // Local state fallback
       const orders = getLS<Order[]>('orders', []);
       const order = orders.find((o) => o.id === orderId && o.user_id === userId);
       if (!order) throw new Error('অর্ডার পাওয়া যায়নি');
-      if (order.assigned_admin) {
-        throw new Error('এই কাজটির দায়িত্ব ইতিমধ্যে একজন স্পেশালিস্ট অ্যাডমিন/ওয়ার্কার গ্রহণ করেছেন। অর্ডারটি এখন সরাসরি বাতিল করা সম্ভব নয়। দয়া করে সরাসরি চ্যাটে দায়িত্বে থাকা কর্মকর্তার সাথে যোগাযোগ করে বাতিলের অনুরোধ করুন।');
+      if (order.status === 'refunded' || order.status === 'cancelled') {
+        throw new Error('এই অর্ডারটি ইতিমধ্যে বাতিল ও রিফান্ড করা হয়েছে।');
       }
-      if (['delivered', 'completed', 'refunded'].includes(order.status)) {
-        throw new Error('ডেলিভারি সম্পন্ন বা রিফান্ড হওয়া অর্ডার সরাসরি বাতিলযোগ্য নয়।');
+
+      const txs = getLS<WalletTransaction[]>('transactions', []);
+      const duplicateTx = txs.find((t) => t.reference_id === orderId && t.type === 'refund');
+      if (duplicateTx) {
+        throw new Error('এই অর্ডারের অর্থ ইতিপূর্বে রিফান্ড করা হয়েছে।');
       }
 
       const wallets = getLS<Record<string, Wallet>>('wallets', {});
@@ -2536,16 +2654,15 @@ export const api = {
         pending_balance: 0,
         total_deposited: 0,
         total_spent: 0,
-        updated_at: new Date().toISOString(),
+        updated_at: now,
       };
 
       wallet.balance += order.amount;
       wallet.total_spent = Math.max(0, wallet.total_spent - order.amount);
-      wallet.updated_at = new Date().toISOString();
+      wallet.updated_at = now;
       wallets[userId] = wallet;
       setLS('wallets', wallets);
 
-      const txs = getLS<WalletTransaction[]>('transactions', []);
       txs.unshift({
         id: `tx_${Date.now()}`,
         wallet_id: wallet.id,
@@ -2556,27 +2673,43 @@ export const api = {
         status: 'completed',
         reference_id: order.id,
         reference_type: 'order',
-        description: `অর্ডার বাতিল ও রিফান্ড: #${order.order_number} (কারণ: ${cancellationReason.trim()})`,
-        created_at: new Date().toISOString(),
+        description: `অর্ডার বাতিল ও রিফান্ড: #${order.order_number} (কারণ: ${cleanReason})`,
+        created_at: now,
       });
       setLS('transactions', txs);
 
       order.status = 'refunded';
-      order.cancellation_reason = cancellationReason.trim();
+      order.cancellation_reason = cleanReason;
       order.refund_amount = order.amount;
-      order.updated_at = new Date().toISOString();
+      order.updated_at = now;
       if (!order.events) order.events = [];
       order.events.push({
         id: `event_${Date.now()}`,
         order_id: orderId,
         actor_id: userId,
         event_type: 'ORDER_REFUNDED',
-        message: `গ্রাহক কর্তৃক অর্ডার বাতিল করা হয়েছে এবং ৳ ${order.amount} ওয়ালেটে ফেরত দেওয়া হয়েছে। কারণ: ${cancellationReason.trim()}`,
-        created_at: new Date().toISOString(),
+        message: `গ্রাহক কর্তৃক অর্ডার বাতিল করা হয়েছে এবং ৳ ${order.amount} ওয়ালেটে ফেরত দেওয়া হয়েছে। কারণ: ${cleanReason}`,
+        created_at: now,
       });
       setLS('orders', orders);
 
       finalBalance = wallet.balance;
+    }
+
+    // লোকাল স্টোরেজ অর্ডারস সবসময় সিঙ্ক নিশ্চিত করা (Supabase সচল থাকলেও)
+    const localOrders = getLS<Order[]>('orders', []);
+    const localIdx = localOrders.findIndex((o) => o.id === orderId);
+    if (localIdx !== -1) {
+      localOrders[localIdx].status = 'refunded';
+      localOrders[localIdx].cancellation_reason = cleanReason;
+      localOrders[localIdx].refund_amount = orderAmount;
+      localOrders[localIdx].updated_at = now;
+      setLS('orders', localOrders);
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('orders_updated', { detail: { orderId, status: 'refunded' } }));
+      window.dispatchEvent(new CustomEvent('wallet_updated', { detail: { newBalance: finalBalance } }));
     }
 
     // Notify customer about successful cancellation and refund
@@ -2596,7 +2729,7 @@ export const api = {
           templateData: {
             orderNumber: cancelOrderObj.order_number,
             amount: cancelOrderObj.amount,
-            statusNote: `গ্রাহক কর্তৃক বাতিল: ${cancellationReason.trim()}`,
+            statusNote: `গ্রাহক কর্তৃক বাতিল: ${cleanReason}`,
             actionUrl: `${window.location.origin}/dashboard/wallet`,
           },
           eventKey: `customer_cancel_${orderId}`,
@@ -2610,30 +2743,99 @@ export const api = {
   },
 
   async requestOrderRevision(orderId: string, userId: string, revisionNotes: string): Promise<boolean> {
-    if (!revisionNotes.trim()) throw new Error('সংশোধনের বিবরণ দেওয়া আবশ্যক।');
+    const cleanNotes = revisionNotes.trim();
+    if (!cleanNotes) throw new Error('সংশোধনের বিবরণ দেওয়া আবশ্যক।');
+
+    let supabaseHandled = false;
 
     if (isSupabaseConfigured && supabase) {
-      const { error } = await supabase.rpc('request_order_revision', {
-        p_order_id: orderId,
-        p_revision_notes: revisionNotes.trim(),
-      });
-      if (error) throw new Error(error.message);
-    } else {
-      const orders = getLS<Order[]>('orders', []);
-      const order = orders.find((o) => o.id === orderId);
-      if (!order) throw new Error('অর্ডার পাওয়া যায়নি');
+      try {
+        const { error: rpcErr } = await supabase.rpc('request_order_revision', {
+          p_order_id: orderId,
+          p_revision_notes: cleanNotes,
+        });
+        if (!rpcErr) {
+          supabaseHandled = true;
+        } else {
+          console.warn('Supabase RPC request_order_revision warning:', rpcErr.message);
+        }
+      } catch (rpcEx) {
+        console.warn('request_order_revision RPC exception:', rpcEx);
+      }
+
+      if (!supabaseHandled) {
+        // Direct query update with enum resilience:
+        // Try updating status to 'revision_requested'
+        let { error: statusErr } = await supabase
+          .from('orders')
+          .update({
+            status: 'revision_requested',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', orderId);
+
+        // If PostgreSQL enum order_status does not yet include 'revision_requested', fallback safely
+        if (statusErr) {
+          console.warn('Fallback status update due to enum constraint:', statusErr.message);
+          await supabase
+            .from('orders')
+            .update({
+              status: 'in_progress',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', orderId);
+        }
+
+        // Record event in order_events table
+        try {
+          await supabase.from('order_events').insert({
+            order_id: orderId,
+            actor_id: userId,
+            event_type: 'REVISION_REQUESTED',
+            message: `গ্রাহক সংশোধনের (Revision) অনুরোধ পাঠিয়েছেন: ${cleanNotes}`,
+          });
+        } catch (evErr) {
+          console.warn('order_events revision insert error:', evErr);
+        }
+      }
+    }
+
+    // Always keep LocalStorage state in sync
+    const orders = getLS<Order[]>('orders', []);
+    const order = orders.find((o) => o.id === orderId);
+    if (order) {
       order.status = 'revision_requested';
       order.updated_at = new Date().toISOString();
       if (!order.events) order.events = [];
-      order.events.push({
+      order.events.unshift({
         id: `event_${Date.now()}`,
         order_id: orderId,
         actor_id: userId,
         event_type: 'REVISION_REQUESTED',
-        message: `গ্রাহক সংশোধনের অনুরোধ জানিয়েছেন: ${revisionNotes.trim()}`,
+        message: `গ্রাহক সংশোধনের (Revision) অনুরোধ পাঠিয়েছেন: ${cleanNotes}`,
         created_at: new Date().toISOString(),
       });
       setLS('orders', orders);
+    }
+
+    // চ্যাটে নোটিশ পাঠানো যাতে দায়িত্বপ্রাপ্ত ওয়ার্কার/অ্যাডমিন সরাসরি দেখতে পান
+    try {
+      const orderObj = await this.getOrderById(orderId, undefined, true);
+      if (orderObj && orderObj.assigned_admin) {
+        await this.sendOrderMessage(
+          orderId,
+          userId,
+          'গ্রাহক',
+          'customer',
+          `⚠️ কাজের সংশোধনের (Revision) অনুরোধ পাঠানো হয়েছে:\n"${cleanNotes}"\nঅনুগ্রহ করে সংশোধন করে পুনরায় ফাইল আপলোড করুন।`
+        );
+      }
+    } catch (chatNoticeErr) {
+      console.warn('Revision chat notice error:', chatNoticeErr);
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('orders_updated'));
     }
 
     // Notify customer about revision request recorded
@@ -3933,7 +4135,59 @@ export const api = {
 
   async getUserWithdrawableBalance(userId: string): Promise<number> {
     const balances = getLS<Record<string, number>>('worker_withdrawable_balances', {});
-    return balances[userId] || 0;
+    const currentExplicit = balances[userId] || 0;
+
+    try {
+      const [allOrders, commSettings, withdrawals] = await Promise.all([
+        this.getAllOrders(),
+        this.getCommissionSettings(),
+        this.getWithdrawalRequests(),
+      ]);
+
+      const myCompleted = allOrders.filter(
+        (o) => o.assigned_admin === userId && o.status === 'completed'
+      );
+
+      const rate = commSettings.worker_commission_percentage || 80;
+      const totalEarned = myCompleted.reduce((sum, o) => {
+        return sum + Math.round((o.amount * rate) / 100);
+      }, 0);
+
+      const totalWithdrawn = withdrawals
+        .filter((w) => w.user_id === userId && (w.status === 'approved' || w.status === 'pending'))
+        .reduce((sum, w) => sum + w.amount, 0);
+
+      const calculated = Math.max(0, totalEarned - totalWithdrawn);
+      const effective = Math.max(currentExplicit, calculated);
+
+      if (effective !== currentExplicit) {
+        balances[userId] = effective;
+        setLS('worker_withdrawable_balances', balances);
+      }
+      return effective;
+    } catch {
+      return currentExplicit;
+    }
+  },
+
+  async getWorkerCompletedOrders(userId: string): Promise<{ order: Order; commission: number; rate: number }[]> {
+    try {
+      const [allOrders, commSettings] = await Promise.all([
+        this.getAllOrders(),
+        this.getCommissionSettings(),
+      ]);
+      const rate = commSettings.worker_commission_percentage || 80;
+      const myCompleted = allOrders.filter(
+        (o) => o.assigned_admin === userId && o.status === 'completed'
+      );
+      return myCompleted.map((o) => ({
+        order: o,
+        commission: Math.round((o.amount * rate) / 100),
+        rate,
+      }));
+    } catch {
+      return [];
+    }
   },
 
   async submitWithdrawalRequest(

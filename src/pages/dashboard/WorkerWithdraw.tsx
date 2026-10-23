@@ -19,6 +19,7 @@ export const WorkerWithdraw: React.FC = () => {
     updated_at: new Date().toISOString(),
   });
   const [withdrawHistory, setWithdrawHistory] = useState<WithdrawalRequest[]>([]);
+  const [completedOrders, setCompletedOrders] = useState<{ order: any; commission: number; rate: number }[]>([]);
   const [withdrawAmount, setWithdrawAmount] = useState<string>('');
 
   const [savingAccount, setSavingAccount] = useState(false);
@@ -29,15 +30,17 @@ export const WorkerWithdraw: React.FC = () => {
     if (!user) return;
     setLoading(true);
     try {
-      const [bal, acc, reqs] = await Promise.all([
+      const [bal, acc, reqs, doneOrders] = await Promise.all([
         api.getUserWithdrawableBalance(user.id),
         api.getPayoutAccount(user.id),
         api.getWithdrawalRequests(),
+        api.getWorkerCompletedOrders(user.id),
       ]);
 
       setBalance(bal);
       if (acc) setPayoutAccount(acc);
       setWithdrawHistory(reqs.filter((r) => r.user_id === user.id));
+      setCompletedOrders(doneOrders);
     } catch (err) {
       console.warn('Load withdraw page error:', err);
     } finally {
@@ -116,6 +119,9 @@ export const WorkerWithdraw: React.FC = () => {
     }
   };
 
+  const totalEarnedCommission = completedOrders.reduce((sum, item) => sum + item.commission, 0);
+  const totalWithdrawnAmount = withdrawHistory.filter((w) => w.status === 'approved').reduce((sum, w) => sum + w.amount, 0);
+
   return (
     <div className="space-y-6">
       {/* পেজ হেডার */}
@@ -131,28 +137,57 @@ export const WorkerWithdraw: React.FC = () => {
         </p>
       </div>
 
-      {/* ব্যালেন্স কার্ড */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="md:col-span-1 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-6 shadow-lg space-y-4">
+      {/* ব্যালেন্স ও সামারি কার্ডস */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-5 shadow-lg space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium uppercase tracking-wider text-indigo-300">
-              উপার্জিত উইথড্রএবল ব্যালেন্স
+              উত্তোলনযোগ্য ব্যালেন্স
             </span>
             <Wallet className="w-5 h-5 text-indigo-400" />
           </div>
-
-          <div>
-            <div className="text-2xl sm:text-3xl font-extrabold font-mono tracking-tight">
-              {toBengaliCurrency(balance)}
-            </div>
-            <p className="text-[11px] text-slate-300 mt-1">
-              সম্পূর্ণকৃত অর্ডারের আপনার ৭০%-৮০% নিট কাজের কমিশন।
-            </p>
+          <div className="text-2xl sm:text-3xl font-extrabold font-mono tracking-tight">
+            {toBengaliCurrency(balance)}
           </div>
+          <p className="text-[11px] text-slate-300">
+            বর্তমানে আপনি এই অর্থ ক্যাশআউট করতে পারবেন।
+          </p>
         </div>
 
-        {/* উইথড্র সাবমিশন ফর্ম */}
-        <div className="md:col-span-2 bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-2xs space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium uppercase tracking-wider text-emerald-700">
+              সর্বমোট অর্জিত কমিশন
+            </span>
+            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+          </div>
+          <div className="text-2xl sm:text-3xl font-extrabold font-mono tracking-tight text-slate-900">
+            {toBengaliCurrency(totalEarnedCommission || balance)}
+          </div>
+          <p className="text-[11px] text-slate-500">
+            মোট {toBengaliDigits(completedOrders.length)}টি সফলভাবে সম্পন্ন অর্ডারের কমিশন।
+          </p>
+        </div>
+
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-2xs space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium uppercase tracking-wider text-purple-700">
+              মোট উত্তোলিত টাকা
+            </span>
+            <Building className="w-5 h-5 text-purple-600" />
+          </div>
+          <div className="text-2xl sm:text-3xl font-extrabold font-mono tracking-tight text-slate-900">
+            {toBengaliCurrency(totalWithdrawnAmount)}
+          </div>
+          <p className="text-[11px] text-slate-500">
+            সুপার অ্যাডমিন কর্তৃক সফলভাবে অনুমোদিত উইথড্র।
+          </p>
+        </div>
+      </div>
+
+      {/* উইথড্র সাবমিশন ফর্ম */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="md:col-span-3 bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
           <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
             <Send className="w-4 h-4 text-indigo-600" />
             <span>টাকা উত্তোলনের অনুরোধ জমা দিন</span>
@@ -272,6 +307,70 @@ export const WorkerWithdraw: React.FC = () => {
             {savingAccount ? 'সেভ হচ্ছে...' : 'পেমেন্ট নম্বর আপডেট করুন'}
           </button>
         </form>
+      </div>
+
+      {/* আমার সম্পন্নকৃত কাজ ও কমিশন বিবরণ */}
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden space-y-4">
+        <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900">আমার সম্পন্নকৃত কাজ ও উপার্জিত কমিশন বিবরণ</h3>
+            <p className="text-[11px] text-slate-500">গ্রাহক অনুমোদিত প্রতিটি অর্ডারের আপনার ৭০%-৮০% নিট কাজের কমিশন</p>
+          </div>
+          <span className="text-xs font-mono font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200">
+            মোট সম্পন্ন: {toBengaliDigits(completedOrders.length)}টি কাজ
+          </span>
+        </div>
+
+        {completedOrders.length === 0 ? (
+          <div className="p-8 text-center text-xs text-slate-500">
+            এখন পর্যন্ত আপনার কোনো সম্পন্নকৃত কাজের রেকর্ড নেই। কাজ সম্পন্ন হওয়ার সাথে সাথে এখানে স্বয়ংক্রিয়ভাবে কমিশন যুক্ত হবে।
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-left">
+              <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                <tr>
+                  <th className="py-3 px-4 font-medium">অর্ডার নম্বর</th>
+                  <th className="py-3 px-4 font-medium">সার্ভিস নাম</th>
+                  <th className="py-3 px-4 font-medium">মোট বাজেট</th>
+                  <th className="py-3 px-4 font-medium">কমিশন রেট</th>
+                  <th className="py-3 px-4 font-medium">উপার্জিত কমিশন</th>
+                  <th className="py-3 px-4 font-medium">তারিখ</th>
+                  <th className="py-3 px-4 font-medium">স্ট্যাটাস</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-700">
+                {completedOrders.map(({ order, commission, rate }) => (
+                  <tr key={order.id} className="hover:bg-slate-50/50">
+                    <td className="py-3 px-4 font-mono font-bold text-slate-900">
+                      #{order.order_number}
+                    </td>
+                    <td className="py-3 px-4 font-medium text-slate-800">
+                      {order.service?.title_bn || order.service?.title || 'ডিজিটাল সার্ভিস'}
+                    </td>
+                    <td className="py-3 px-4 font-mono font-bold text-slate-700">
+                      {toBengaliCurrency(order.amount)}
+                    </td>
+                    <td className="py-3 px-4 font-mono text-indigo-600 font-bold">
+                      {toBengaliDigits(rate)}%
+                    </td>
+                    <td className="py-3 px-4 font-mono font-extrabold text-emerald-600 text-sm">
+                      +{toBengaliCurrency(commission)}
+                    </td>
+                    <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
+                      {toBengaliDate(order.completed_at || order.updated_at || order.created_at)}
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> সম্পন্ন ও ক্রেডিট
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* পূর্ববর্তী উইথড্র হিস্ট্রি */}

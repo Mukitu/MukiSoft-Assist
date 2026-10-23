@@ -35,7 +35,7 @@ export function toBengaliDate(dateString: string): string {
 // স্ট্যাটাস ম্যাপিং
 export const statusLabels: Record<string, string> = {
   // অর্ডার স্ট্যাটাস
-  pending: 'অপেক্ষমাণ',
+  pending: 'অপেক্ষমাণ (অনুগ্রহ করে অপেক্ষা করুন)',
   pending_requirements: 'প্রয়োজনীয় তথ্যের অপেক্ষা',
   accepted: 'গ্রহণ করা হয়েছে',
   in_progress: 'কাজ চলছে',

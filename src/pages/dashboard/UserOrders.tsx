@@ -145,7 +145,7 @@ export const UserOrders: React.FC<UserOrdersProps> = ({ onNavigate }) => {
                 <div key={order.id} className="p-4 space-y-3 hover:bg-slate-50/50">
                   <div className="flex items-center justify-between">
                     <span className="font-mono font-bold text-xs text-slate-900">{order.order_number}</span>
-                    <StatusBadge status={order.status} />
+                    <StatusBadge status={order.status} assignedAdmin={order.assigned_admin} />
                   </div>
 
                   <div>
@@ -214,7 +214,7 @@ export const UserOrders: React.FC<UserOrdersProps> = ({ onNavigate }) => {
                         {toBengaliCurrency(order.amount)}
                       </td>
                       <td className="py-3.5 px-4">
-                        <StatusBadge status={order.status} />
+                        <StatusBadge status={order.status} assignedAdmin={order.assigned_admin} />
                       </td>
                       <td className="py-3.5 px-4 text-slate-500 whitespace-nowrap">
                         {toBengaliDate(order.created_at)}

@@ -4,12 +4,24 @@ import { statusLabels } from '../../lib/i18n';
 interface StatusBadgeProps {
   status: string;
   type?: 'order' | 'deposit' | 'ticket' | 'role';
+  assignedAdmin?: string | null;
 }
 
-export const StatusBadge: React.FC<StatusBadgeProps> = ({ status }) => {
-  const label = statusLabels[status] || status;
+export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, assignedAdmin }) => {
+  // যদি কোনো অর্ডারের কোনো অ্যাডমিন/ওয়ার্কার দায়িত্ব গ্রহণ না করে থাকে, তবে 'অপেক্ষমাণ (অনুগ্রহ করে অপেক্ষা করুন)' প্রদর্শন করবে
+  const isUnassignedOrder = !assignedAdmin && (status === 'pending' || status === 'accepted');
+
+  let label = statusLabels[status] || status;
+  if (isUnassignedOrder) {
+    label = 'অপেক্ষমাণ (অনুগ্রহ করে অপেক্ষা করুন)';
+  } else if (status === 'accepted' && assignedAdmin) {
+    label = 'গ্রহণ করা হয়েছে';
+  }
 
   const getStyle = () => {
+    if (isUnassignedOrder) {
+      return 'text-amber-800 bg-amber-50 border border-amber-300';
+    }
     switch (status) {
       case 'completed':
       case 'approved':
