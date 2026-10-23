@@ -79,9 +79,6 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
       if (!deliverableTitle.trim()) {
         setDeliverableTitle(file.name.replace(/\.[^/.]+$/, ''));
       }
-      if (!deliverableUrl.trim()) {
-        setDeliverableUrl(dataUrl);
-      }
     };
     reader.readAsDataURL(file);
   };
@@ -258,42 +255,47 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
     }
   };
 
-  // ৪. ফাইল ডেলিভারি সাবমিট
+  // ৪. ফাইল ডেলিভারি সাবমিট (দ্রুত ও স্মুথ সম্পন্ন)
   const handleSubmitDeliverable = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !selectedOrder || !deliverableTitle.trim()) return;
 
     setSubmittingDeliverable(true);
+    const orderIdToDeliver = selectedOrder.id;
+    const titleToDeliver = deliverableTitle.trim();
+    const fileUrl = deliverableUrl.trim() || selectedFile?.dataUrl || 'https://mukisoft.com/deliverables/final_work.pdf';
+    const notesToDeliver = deliverableNotes.trim();
+
     try {
-      const fileUrl = deliverableUrl.trim() || selectedFile?.dataUrl || 'https://mukisoft.com/deliverables/final_work.pdf';
-      await api.addOrderDeliverable(selectedOrder.id, user.id, {
-        title: deliverableTitle.trim(),
+      await api.addOrderDeliverable(orderIdToDeliver, user.id, {
+        title: titleToDeliver,
         fileUrl,
         fileSize: selectedFile?.size,
         fileType: selectedFile?.type,
-        notes: deliverableNotes.trim(),
+        notes: notesToDeliver,
       });
 
-      // চ্যাটেও একটি অটোমেটেড ডেলিভারি নোটিস পাঠানো
-      try {
-        await api.sendOrderMessage(
-          selectedOrder.id,
-          user.id,
-          profile?.full_name || 'দায়িত্বপ্রাপ্ত স্পেশালিস্ট',
-          'admin',
-          `📦 আপনার কাজের ডেলিভারি ফাইল যুক্ত করা হয়েছে: "${deliverableTitle.trim()}"। অনুগ্রহ করে ডাউনলোড করে দেখে নিন।`,
-          { name: deliverableTitle.trim(), url: fileUrl }
-        );
-      } catch (chatErr) {
-        console.warn('Delivery chat notice warning:', chatErr);
-      }
+      // চ্যাটে অটোমেটেড ডেলিভারি নোটিস ব্যাকগ্রাউন্ডে পাঠানো (যাতে UI দীর্ঘক্ষণ আটকে না থাকে)
+      const attachmentParam = fileUrl && !fileUrl.startsWith('data:')
+        ? { name: titleToDeliver, url: fileUrl }
+        : undefined;
+
+      api.sendOrderMessage(
+        orderIdToDeliver,
+        user.id,
+        profile?.full_name || 'দায়িত্বপ্রাপ্ত স্পেশালিস্ট',
+        'admin',
+        `📦 আপনার কাজের ডেলিভারি ফাইল যুক্ত করা হয়েছে: "${titleToDeliver}"। অনুগ্রহ করে ডাউনলোড করে দেখে নিন।`,
+        attachmentParam
+      ).catch((chatErr) => console.warn('Delivery chat notice warning:', chatErr));
 
       showToast({
         type: 'success',
-        title: 'আপনি কাজটি সুন্দরভাবে ডেলিভারি করেছেন! 🚀',
-        message: 'ডেলিভারি ফাইল ও বিবরণ সফলভাবে পাঠানো হয়েছে। কাজটি আপনার "আমার ডেলিভারিকৃত কাজ" ট্যাবে সংরক্ষিত হয়েছে।',
+        title: 'আপনি কাজটি সফলভাবে ডেলিভারি করেছেন! 🚀',
+        message: 'ডেলিভারি ফাইল ও বিবরণ দ্রুত পাঠানো হয়েছে। কাজটি আপনার "আমার ডেলিভারিকৃত কাজ" ট্যাবে যুক্ত হয়েছে।',
       });
 
+      // সাথে সাথে মডাল বন্ধ ও ট্যাবে রূপান্তর
       setDeliverableModalOpen(false);
       setDeliverableTitle('');
       setDeliverableUrl('');
@@ -301,7 +303,9 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
       setDeliverableNotes('');
       setSelectedOrderId(null);
       setActiveTab('my_delivered');
-      await loadOrders();
+
+      // ব্যাকগ্রাউন্ডে অর্ডার রিফ্রেশ
+      loadOrders().catch(() => {});
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'ডেলিভারি ব্যর্থ হয়েছে';
       showToast({ type: 'error', title: 'ত্রুটি', message: msg });

@@ -586,30 +586,42 @@ export const AdminOrders: React.FC = () => {
 
                       {/* দায়িত্বপ্রাপ্ত অ্যাডমিন কলাম */}
                       <td className="py-3.5 px-4">
-                        {isUnassigned ? (
-                          !['cancelled', 'refunded', 'completed'].includes(ord.status) ? (
-                            <button
-                              onClick={() => handleClaimOrder(ord)}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-bold rounded-lg text-xs shadow-2xs transition-all animate-pulse"
-                              title="এই কাজটি নিজের দায়িত্বে নিয়ে নিন"
-                            >
-                              <UserCheck className="w-3.5 h-3.5" />
-                              <span>আমি কাজটি নিচ্ছি (Claim)</span>
-                            </button>
-                          ) : (
-                            <span className="text-slate-400 text-[11px] italic">উন্মুক্ত</span>
-                          )
-                        ) : isClaimedByMe ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 text-emerald-800 font-bold rounded-lg text-[11px] border border-emerald-300">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>আমার দায়িত্ব ({ord.assigned_admin_name || 'আমি'})</span>
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 text-slate-700 font-medium rounded-lg text-[11px] border border-slate-200">
-                            <Lock className="w-3 h-3 text-slate-400" />
-                            <span>{ord.assigned_admin_name || 'অন্য অ্যাডমিন'}</span>
-                          </span>
-                        )}
+                        {(() => {
+                          const isDoneOrRefunded = ['cancelled', 'refunded'].includes(ord.status) || Boolean(ord.refund_amount && ord.refund_amount > 0);
+                          if (isDoneOrRefunded) {
+                            return (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-50 text-rose-700 font-semibold rounded-lg text-[11px] border border-rose-200">
+                                বাতিল ও রিফান্ডকৃত
+                              </span>
+                            );
+                          }
+                          if (isUnassigned) {
+                            return (
+                              <button
+                                onClick={() => handleClaimOrder(ord)}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-bold rounded-lg text-xs shadow-2xs transition-all animate-pulse"
+                                title="এই কাজটি নিজের দায়িত্বে নিয়ে নিন"
+                              >
+                                <UserCheck className="w-3.5 h-3.5" />
+                                <span>আমি কাজটি নিচ্ছি (Claim)</span>
+                              </button>
+                            );
+                          }
+                          if (isClaimedByMe) {
+                            return (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 text-emerald-800 font-bold rounded-lg text-[11px] border border-emerald-300">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>আমার দায়িত্ব ({ord.assigned_admin_name || 'আমি'})</span>
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 text-slate-700 font-medium rounded-lg text-[11px] border border-slate-200">
+                              <Lock className="w-3 h-3 text-slate-400" />
+                              <span>{ord.assigned_admin_name || 'অন্য অ্যাডমিন'}</span>
+                            </span>
+                          );
+                        })()}
                       </td>
 
                       {/* কাজের অবস্থা সিলেক্ট */}
@@ -698,52 +710,70 @@ export const AdminOrders: React.FC = () => {
             </div>
 
             {/* অ্যাডমিন ক্লেইম ও অ্যাসাইনমেন্ট স্ট্যাটাস বক্স */}
-            <div className="p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs bg-slate-50 border-slate-200">
-              <div className="space-y-1">
-                <span className="font-bold block text-slate-900">
-                  {selectedOrder.assigned_admin
-                    ? `দায়িত্বপ্রাপ্ত স্পেশালিস্ট অ্যাডমিন: ${selectedOrder.assigned_admin_name || 'নির্ধারিত অ্যাডমিন'}`
-                    : '⚠️ কোনো অ্যাডমিন এখনও দায়িত্ব নেননি (উন্মুক্ত অর্ডার)'}
-                </span>
-                <p className="text-[11px] text-slate-500">
-                  {selectedOrder.assigned_admin
-                    ? `ক্লেইম সময়: ${toBengaliDate(selectedOrder.claimed_at || selectedOrder.created_at)}। ডুপ্লিকেট কাজ রোধে এটি লক করা আছে।`
-                    : '২০-৩০ জন অ্যাডমিনের মধ্যে যিনি এই কাজে পারদর্শী, তিনি অবিলম্বে কাজটি ক্লেইম করে ক্লায়েন্টের সাথে যোগাযোগ শুরু করুন।'}
-                </p>
-              </div>
+            {(() => {
+              const isRefundedOrCancelled = ['cancelled', 'refunded'].includes(selectedOrder.status) || Boolean(selectedOrder.refund_amount && selectedOrder.refund_amount > 0);
+              if (isRefundedOrCancelled) {
+                return (
+                  <div className="p-3.5 rounded-xl border flex items-center justify-between gap-3 text-xs bg-cyan-50/70 border-cyan-200 text-cyan-900">
+                    <div>
+                      <span className="font-bold block text-cyan-950">এই অর্ডারটি বাতিল ও অর্থ ফেরত (Refunded) সম্পন্ন হয়েছে</span>
+                      <p className="text-[11px] text-cyan-800 mt-0.5">
+                        অর্ডারের সম্পূর্ণ অর্থ {toBengaliCurrency(selectedOrder.refund_amount || selectedOrder.amount)} গ্রাহকের ওয়ালেটে ফেরত দেওয়া হয়েছে। এই অর্ডারে আর কোনো কাজের প্রয়োজন নেই।
+                      </p>
+                    </div>
+                  </div>
+                );
+              }
 
-              <div className="flex items-center gap-2 shrink-0">
-                {!selectedOrder.assigned_admin ? (
-                  <button
-                    onClick={() => handleClaimOrder(selectedOrder)}
-                    className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition-all animate-pulse"
-                  >
-                    <UserCheck className="w-4 h-4" />
-                    <span>এই কাজটি আমি নিচ্ছি (Claim)</span>
-                  </button>
-                ) : selectedOrder.assigned_admin === user?.id ? (
-                  <button
-                    onClick={() => handleReleaseOrder(selectedOrder)}
-                    className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-lg text-xs transition-colors flex items-center gap-1"
-                    title="অন্য অ্যাডমিনদের জন্য উন্মুক্ত করুন"
-                  >
-                    <Unlock className="w-3.5 h-3.5" />
-                    <span>রিলিজ করুন</span>
-                  </button>
-                ) : isSuperAdmin ? (
-                  <button
-                    onClick={() => handleReleaseOrder(selectedOrder)}
-                    className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold rounded-lg text-xs border border-rose-200 transition-colors"
-                  >
-                    পুনরায় উন্মুক্ত করুন (Super Admin)
-                  </button>
-                ) : (
-                  <span className="px-2.5 py-1 bg-slate-200 text-slate-600 rounded-md font-medium text-[11px]">
-                    লকড (অন্যের কাজ)
-                  </span>
-                )}
-              </div>
-            </div>
+              return (
+                <div className="p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs bg-slate-50 border-slate-200">
+                  <div className="space-y-1">
+                    <span className="font-bold block text-slate-900">
+                      {selectedOrder.assigned_admin
+                        ? `দায়িত্বপ্রাপ্ত স্পেশালিস্ট অ্যাডমিন: ${selectedOrder.assigned_admin_name || 'নির্ধারিত অ্যাডমিন'}`
+                        : '⚠️ কোনো অ্যাডমিন এখনও দায়িত্ব নেননি (উন্মুক্ত অর্ডার)'}
+                    </span>
+                    <p className="text-[11px] text-slate-500">
+                      {selectedOrder.assigned_admin
+                        ? `ক্লেইম সময়: ${toBengaliDate(selectedOrder.claimed_at || selectedOrder.created_at)}। ডুপ্লিকেট কাজ রোধে এটি লক করা আছে।`
+                        : '২০-৩০ জন অ্যাডমিনের মধ্যে যিনি এই কাজে পারদর্শী, তিনি অবিলম্বে কাজটি ক্লেইম করে ক্লায়েন্টের সাথে যোগাযোগ শুরু করুন।'}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    {!selectedOrder.assigned_admin ? (
+                      <button
+                        onClick={() => handleClaimOrder(selectedOrder)}
+                        className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition-all animate-pulse"
+                      >
+                        <UserCheck className="w-4 h-4" />
+                        <span>এই কাজটি আমি নিচ্ছি (Claim)</span>
+                      </button>
+                    ) : selectedOrder.assigned_admin === user?.id ? (
+                      <button
+                        onClick={() => handleReleaseOrder(selectedOrder)}
+                        className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-lg text-xs transition-colors flex items-center gap-1"
+                        title="অন্য অ্যাডমিনদের জন্য উন্মুক্ত করুন"
+                      >
+                        <Unlock className="w-3.5 h-3.5" />
+                        <span>রিলিজ করুন</span>
+                      </button>
+                    ) : isSuperAdmin ? (
+                      <button
+                        onClick={() => handleReleaseOrder(selectedOrder)}
+                        className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold rounded-lg text-xs border border-rose-200 transition-colors"
+                      >
+                        পুনরায় উন্মুক্ত করুন (Super Admin)
+                      </button>
+                    ) : (
+                      <span className="px-2.5 py-1 bg-slate-200 text-slate-600 rounded-md font-medium text-[11px]">
+                        লকড (অন্যের কাজ)
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* মডাল ট্যাব বার */}
             <div className="flex items-center gap-2 border-b border-slate-200 text-xs font-semibold">
@@ -1060,37 +1090,44 @@ export const AdminOrders: React.FC = () => {
             )}
 
             {/* অ্যাকশন বোতামসমূহ */}
-            <div className="pt-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setNeedsInfoOrderTarget(selectedOrder)}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 rounded-lg font-semibold"
-                >
-                  <HelpCircle className="w-3.5 h-3.5" />
-                  <span>তথ্য চান</span>
-                </button>
+            {(() => {
+              const isOrderDone = ['cancelled', 'refunded'].includes(selectedOrder.status) || Boolean(selectedOrder.refund_amount && selectedOrder.refund_amount > 0);
+              return (
+                <div className="pt-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2">
+                    {!isOrderDone && (
+                      <button
+                        type="button"
+                        onClick={() => setNeedsInfoOrderTarget(selectedOrder)}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 rounded-lg font-semibold"
+                      >
+                        <HelpCircle className="w-3.5 h-3.5" />
+                        <span>তথ্য চান</span>
+                      </button>
+                    )}
 
-                {selectedOrder.status !== 'refunded' && (
+                    {!isOrderDone && (
+                      <button
+                        type="button"
+                        onClick={() => setRefundOrderTarget(selectedOrder)}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg font-semibold"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>রিফান্ড করুন</span>
+                      </button>
+                    )}
+                  </div>
+
                   <button
                     type="button"
-                    onClick={() => setRefundOrderTarget(selectedOrder)}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg font-semibold"
+                    onClick={() => setSelectedOrder(null)}
+                    className="px-4 py-2 font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
                   >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>রিফান্ড করুন</span>
+                    বন্ধ করুন
                   </button>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setSelectedOrder(null)}
-                className="px-4 py-2 font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-              >
-                বন্ধ করুন
-              </button>
-            </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

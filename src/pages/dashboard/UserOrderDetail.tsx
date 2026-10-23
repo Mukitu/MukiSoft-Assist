@@ -158,12 +158,12 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
 
   const handleConfirmCompletion = async () => {
     if (!user || !order) return;
-    const confirmed = window.confirm(
-      'আপনি কি ডেলিভারিকৃত কাজ যাচাই করেছেন এবং সম্পন্ন ঘোষণা করতে চান? নিশ্চিত করলে কাজের অর্থ অ্যাডমিনকে রিলিজ করা হবে এবং আপনি রিভিউ প্রদান করতে পারবেন।'
-    );
-    if (!confirmed) return;
 
     setIsConfirmingCompletion(true);
+    const nowIso = new Date().toISOString();
+    // Optimistic UI update so order immediately reflects completed
+    setOrder((prev) => (prev ? { ...prev, status: 'completed', completed_at: nowIso } : null));
+
     try {
       const updated = await api.confirmOrderCompletion(order.id, user.id);
       if (updated) {
@@ -175,10 +175,10 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
         message: 'কাজটি সফলভাবে সম্পন্ন হিসেবে চিহ্নিত করা হয়েছে। আপনার অভিজ্ঞতা শেয়ার করতে একটি রিভিউ দিন।',
       });
       setActiveTab('reviews');
-      await loadData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'অর্ডার সম্পন্নকরণ ব্যর্থ হয়েছে';
       showToast({ type: 'error', title: 'ত্রুটি', message: msg });
+      await loadData();
     } finally {
       setIsConfirmingCompletion(false);
     }
@@ -351,6 +351,10 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
 
       {/* স্পেশালিস্ট অ্যাডমিন অ্যাসাইনমেন্ট স্ট্যাটাস ব্যানার */}
       {(() => {
+        const isRefundedOrCancelled = ['refunded', 'cancelled'].includes(order.status) || Boolean(order.refund_amount && order.refund_amount > 0);
+        // রিফান্ড বা বাতিল হলে স্পেশালিস্ট অ্যাসাইনমেন্ট / ক্লেইম ব্যানার আর দেখাবে না
+        if (isRefundedOrCancelled) return null;
+
         const hasAssigned = Boolean(order.assigned_admin || order.assigned_admin_name);
         const assignedName = order.assigned_admin_name || (order.assigned_admin ? 'দায়িত্বপ্রাপ্ত স্পেশালিস্ট কর্মকর্তা' : null);
 
@@ -408,7 +412,7 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
 
       {/* ডেলিভারি অনুমোদন ও সম্পন্ন করার বড় হাইলাইট ব্যানার (যদি status === 'delivered' হয়) */}
       {order.status === 'delivered' && (
-        <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-lg space-y-3">
+        <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-lg space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-1">
               <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/20 text-white text-[11px] font-bold uppercase tracking-wider">
@@ -416,7 +420,7 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
               </div>
               <h3 className="text-lg font-bold">কাজটি যাচাই করুন এবং ডেলিভারি গ্রহণ নিশ্চিত করুন</h3>
               <p className="text-xs text-emerald-100 leading-relaxed max-w-2xl">
-                আপনার দায়িত্বপ্রাপ্ত অ্যাডমিন প্রজেক্টের ফাইল ডেলিভারি করেছেন। ফাইলগুলো ডাউনলোড করে দেখে নিন। সবকিছু ঠিক থাকলে &quot;ডেলিভারি গ্রহণ ও সম্পন্ন করুন&quot; বাটনে ক্লিক করে অর্ডারটি সফলভাবে সম্পন্ন করুন। কোনো পরিবর্তন দরকার হলে রিভিশন চাইতে পারেন।
+                আপনার দায়িত্বপ্রাপ্ত কর্মকর্তা প্রজেক্টের ফাইল ডেলিভারি করেছেন। ফাইলগুলো ডাউনলোড করে দেখে নিন। সবকিছু ঠিক থাকলে &quot;ডেলিভারি গ্রহণ ও সম্পন্ন করুন&quot; বাটনে ক্লিক করে অর্ডারটি সফলভাবে সম্পন্ন করুন। কোনো পরিবর্তন দরকার হলে রিভিশন চাইতে পারেন।
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -436,6 +440,13 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
                 <span>{isConfirmingCompletion ? 'সম্পন্ন হচ্ছে...' : 'ডেলিভারি গ্রহণ ও সম্পন্ন করুন'}</span>
               </button>
             </div>
+          </div>
+
+          <div className="pt-3 border-t border-emerald-500/40 flex items-center gap-2 text-xs text-emerald-100 bg-emerald-800/40 px-3.5 py-2.5 rounded-xl">
+            <Clock className="w-4 h-4 text-amber-300 shrink-0" />
+            <span>
+              <strong className="text-white font-medium">⏰ ৪৮ ঘণ্টার স্বয়ংক্রিয় সমাপ্তি নীতি:</strong> ডেলিভারি পাওয়ার ৪৮ ঘণ্টার মধ্যে আপনি ডেলিভারি গ্রহণ বা কোনো রিভিশনের আবেদন না জানালে, সিস্টেম অর্ডারটি স্বয়ংক্রিয়ভাবে সফল ঘোষণা করবে এবং কর্মকর্তা/অ্যাডমিনকে কাজের অর্থ ছাড় করবে।
+            </span>
           </div>
         </div>
       )}
@@ -498,14 +509,14 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
       )}
 
       {/* রিফান্ড নোটিশ */}
-      {order.status === 'refunded' && (
+      {(order.status === 'refunded' || order.status === 'cancelled' || Boolean(order.refund_amount && order.refund_amount > 0)) && (
         <div className="p-4 rounded-xl bg-cyan-50 border border-cyan-200 text-xs text-cyan-900 space-y-1">
           <div className="font-bold text-sm">অর্থ ফেরত (Refund) সম্পন্ন হয়েছে</div>
           <p className="leading-relaxed">
-            এই অর্ডারের সম্পূর্ণ <strong>{toBengaliCurrency(order.amount)}</strong> আপনার ওয়ালেট ব্যালেন্সে ফেরত পাঠানো হয়েছে।
+            এই অর্ডারের সম্পূর্ণ <strong>{toBengaliCurrency(order.refund_amount || order.amount)}</strong> আপনার ওয়ালেট ব্যালেন্সে ফেরত পাঠানো হয়েছে।
             {order.cancellation_reason && (
               <span className="block mt-1 text-cyan-800">
-                রিফান্ডের কারণ: {order.cancellation_reason}
+                বাতিল/রিফান্ডের কারণ: {order.cancellation_reason}
               </span>
             )}
           </p>

@@ -156,6 +156,8 @@ export interface Order {
   assigned_admin_email?: string | null;
   claimed_at?: string | null;
   completed_at?: string | null;
+  delivered_at?: string | null;
+  auto_completed_after_48h?: boolean | null;
   customer_review?: OrderReview | null;
   admin_review?: OrderReview | null;
   idempotency_key?: string | null;

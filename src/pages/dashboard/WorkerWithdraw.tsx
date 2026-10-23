@@ -28,13 +28,12 @@ export const WorkerWithdraw: React.FC = () => {
 
   const loadData = async () => {
     if (!user) return;
-    setLoading(true);
     try {
       const [bal, acc, reqs, doneOrders] = await Promise.all([
-        api.getUserWithdrawableBalance(user.id),
+        api.getUserWithdrawableBalance(user.id, user.email),
         api.getPayoutAccount(user.id),
         api.getWithdrawalRequests(),
-        api.getWorkerCompletedOrders(user.id),
+        api.getWorkerCompletedOrders(user.id, user.email),
       ]);
 
       setBalance(bal);
@@ -50,6 +49,20 @@ export const WorkerWithdraw: React.FC = () => {
 
   useEffect(() => {
     loadData();
+
+    const handleUpdate = () => {
+      loadData();
+    };
+
+    window.addEventListener('orders_updated', handleUpdate);
+    window.addEventListener('wallet_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+
+    return () => {
+      window.removeEventListener('orders_updated', handleUpdate);
+      window.removeEventListener('wallet_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
   }, [user]);
 
   const handleSaveAccount = async (e: React.FormEvent) => {

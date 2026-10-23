@@ -1261,6 +1261,7 @@ export const api = {
   },
 
   async getUserOrders(userId: string): Promise<Order[]> {
+    await this.checkAndAutoCompleteOrders();
     let remoteOrders: Order[] = [];
     if (isSupabaseConfigured && supabase) {
       try {
@@ -1307,6 +1308,7 @@ export const api = {
   },
 
   async getAllOrders(): Promise<Order[]> {
+    await this.checkAndAutoCompleteOrders();
     let remoteOrders: Order[] = [];
     if (isSupabaseConfigured && supabase) {
       try {
@@ -1364,6 +1366,11 @@ export const api = {
   },
 
   async getOrderById(orderId: string, currentUserId?: string, isAdmin?: boolean): Promise<Order | null> {
+    const localOrders = getLS<Order[]>('orders', []);
+    const localFound = localOrders.find((o) => o.id === orderId);
+
+    let resultOrder: Order | null = null;
+
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase
@@ -1377,19 +1384,59 @@ export const api = {
             return null; // unauthorized access
           }
           const enriched = await this.enrichOrders([data]);
-          return enriched[0] || (data as Order);
+          resultOrder = enriched[0] || (data as Order);
         }
       } catch (err) {
         console.error('getOrderById exception:', err);
       }
     }
-    const orders = getLS<Order[]>('orders', []);
-    const found = orders.find((o) => o.id === orderId);
-    if (!found) return null;
-    if (currentUserId && !isAdmin && found.user_id !== currentUserId) {
+
+    if (!resultOrder) {
+      resultOrder = localFound || null;
+    } else if (localFound) {
+      // লোকাল স্টোরেজে টার্মিনাল স্ট্যাটাস (যেমন completed, refunded, cancelled) থাকলে তা অগ্রাধিকার পাবে
+      let finalStatus = resultOrder.status;
+      if (localFound.status === 'completed' || resultOrder.status === 'completed') {
+        finalStatus = 'completed';
+      } else if (localFound.status === 'refunded' || resultOrder.status === 'refunded') {
+        finalStatus = 'refunded';
+      } else if (localFound.status === 'cancelled' || resultOrder.status === 'cancelled') {
+        finalStatus = 'cancelled';
+      }
+
+      resultOrder = {
+        ...resultOrder,
+        status: finalStatus,
+        completed_at: localFound.completed_at || resultOrder.completed_at,
+        delivered_at: localFound.delivered_at || resultOrder.delivered_at,
+        auto_completed_after_48h: localFound.auto_completed_after_48h ?? resultOrder.auto_completed_after_48h,
+        cancellation_reason: localFound.cancellation_reason || resultOrder.cancellation_reason,
+        refund_amount: localFound.refund_amount || resultOrder.refund_amount,
+        deliverables: (resultOrder.deliverables && resultOrder.deliverables.length > 0)
+          ? resultOrder.deliverables
+          : (localFound.deliverables || []),
+      };
+    }
+
+    if (!resultOrder) return null;
+    if (currentUserId && !isAdmin && resultOrder.user_id !== currentUserId) {
       return null; // unauthorized access
     }
-    return found;
+
+    // ৪৮ ঘণ্টার অটো-কমপ্লিশন চেক
+    if (resultOrder.status === 'delivered') {
+      const deliveredAtStr = resultOrder.delivered_at || resultOrder.deliverables?.[0]?.created_at || resultOrder.updated_at || resultOrder.created_at;
+      const deliveredMs = new Date(deliveredAtStr).getTime();
+      const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
+      if (!isNaN(deliveredMs) && Date.now() - deliveredMs >= FORTY_EIGHT_HOURS_MS) {
+        resultOrder.status = 'completed';
+        resultOrder.completed_at = new Date().toISOString();
+        resultOrder.auto_completed_after_48h = true;
+        this.distributeOrderCommission(resultOrder).catch(() => {});
+      }
+    }
+
+    return resultOrder;
   },
 
   async updateOrderStatus(orderId: string, status: OrderStatus, adminId: string, eventMessage?: string): Promise<boolean> {
@@ -1758,6 +1805,7 @@ export const api = {
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('orders_updated'));
+      window.dispatchEvent(new CustomEvent('wallet_updated'));
     }
 
     // অ্যাডমিন বা ওয়ার্কারকে নোটিফাই করা
@@ -1776,6 +1824,85 @@ export const api = {
     }
 
     return updatedOrder;
+  },
+
+  /**
+   * ৪৮ ঘণ্টা পার হওয়া ডেলিভারিকৃত অর্ডার স্বয়ংক্রিয়ভাবে সম্পন্ন করা
+   * গ্রাহক যদি ৪৮ ঘণ্টার মধ্যে অনুমোদন বা রিভিশন না চান, তবে সিস্টেম স্বয়ংক্রিয়ভাবে
+   * অর্ডারটি সম্পন্ন করবে এবং ওয়ার্কার/অ্যাডমিনের অ্যাকাউন্টে সম্পূর্ণ টাকা হস্তান্তর করবে।
+   */
+  async checkAndAutoCompleteOrders(): Promise<void> {
+    try {
+      const orders = getLS<Order[]>('orders', []);
+      const nowMs = Date.now();
+      const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
+      let hasChanges = false;
+
+      for (const order of orders) {
+        if (order.status === 'delivered') {
+          const deliveredAtStr = order.delivered_at || order.deliverables?.[0]?.created_at || order.updated_at || order.created_at;
+          const deliveredMs = new Date(deliveredAtStr).getTime();
+
+          if (!isNaN(deliveredMs) && nowMs - deliveredMs >= FORTY_EIGHT_HOURS_MS) {
+            const nowIso = new Date().toISOString();
+            order.status = 'completed';
+            order.completed_at = nowIso;
+            order.updated_at = nowIso;
+            order.auto_completed_after_48h = true;
+
+            if (!order.events) order.events = [];
+            order.events.unshift({
+              id: `evt_auto_comp_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
+              order_id: order.id,
+              actor_id: 'system',
+              event_type: 'ORDER_COMPLETED',
+              message: '৪৮ ঘণ্টা পার হয়ে যাওয়ায় সিস্টেম স্বয়ংক্রিয়ভাবে অর্ডারটি সম্পন্ন ঘোষণা করেছে এবং দায়িত্বপ্রাপ্ত স্পেশালিস্টের অ্যাকাউন্টে টাকা স্থানান্তর করেছে।',
+              created_at: nowIso,
+            });
+
+            try {
+              await this.distributeOrderCommission(order);
+            } catch (distErr) {
+              console.warn('Auto-complete commission distribute error:', distErr);
+            }
+
+            if (isSupabaseConfigured && supabase) {
+              try {
+                await supabase
+                  .from('orders')
+                  .update({
+                    status: 'completed',
+                    completed_at: nowIso,
+                    updated_at: nowIso,
+                  })
+                  .eq('id', order.id);
+
+                await supabase.from('order_events').insert({
+                  order_id: order.id,
+                  actor_id: 'system',
+                  event_type: 'ORDER_COMPLETED',
+                  message: '৪৮ ঘণ্টা পার হয়ে যাওয়ায় সিস্টেম স্বয়ংক্রিয়ভাবে অর্ডারটি সম্পন্ন ঘোষণা করেছে এবং দায়িত্বপ্রাপ্ত স্পেশালিস্টের অ্যাকাউন্টে টাকা স্থানান্তর করেছে।',
+                });
+              } catch (sbErr) {
+                console.warn('Supabase auto-complete sync error:', sbErr);
+              }
+            }
+
+            hasChanges = true;
+          }
+        }
+      }
+
+      if (hasChanges) {
+        setLS('orders', orders);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('orders_updated'));
+          window.dispatchEvent(new CustomEvent('wallet_updated'));
+        }
+      }
+    } catch (e) {
+      console.warn('checkAndAutoCompleteOrders exception:', e);
+    }
   },
 
   /**
@@ -2943,12 +3070,19 @@ export const api = {
     adminId: string,
     deliverable: { title: string; fileUrl: string; fileSize?: number; fileType?: string; notes?: string }
   ): Promise<OrderDeliverable> {
+    const now = new Date().toISOString();
     let newDeliverable: OrderDeliverable;
+
+    // যদি fileUrl বড় ডেটা ইউআরএল হয়, তবে ইভেন্ট টেক্সটে পুরো বেস৬৪ না রেখে পরিচ্ছন্ন টেক্সট রাখা
+    const eventLinkNote = deliverable.fileUrl.startsWith('data:')
+      ? ''
+      : ` (ফাইল লিংক: ${deliverable.fileUrl})`;
 
     if (isSupabaseConfigured && supabase) {
       let insertedData: any = null;
       try {
-        const { data, error } = await supabase
+        // দ্রুত রেসপন্স ও টাইমআউট গার্ড
+        const insertPromise = supabase
           .from('order_deliverables')
           .insert({
             order_id: orderId,
@@ -2960,22 +3094,29 @@ export const api = {
             uploaded_by: adminId,
           })
           .select()
-          .single();
+          .maybeSingle();
 
-        if (!error && data) {
-          insertedData = data;
-        } else {
-          console.warn('order_deliverables insert warning (RLS or table):', error?.message);
+        const timeoutPromise = new Promise<{ data: null; error: null }>((resolve) =>
+          setTimeout(() => resolve({ data: null, error: null }), 3000)
+        );
+
+        const raceRes: any = await Promise.race([insertPromise, timeoutPromise]);
+        if (raceRes && !raceRes.error && raceRes.data) {
+          insertedData = raceRes.data;
         }
       } catch (insertErr) {
         console.warn('order_deliverables insert exception:', insertErr);
       }
 
-      // Always update order status to delivered
+      // Always update order status to delivered with delivered_at
       try {
         await supabase
           .from('orders')
-          .update({ status: 'delivered', updated_at: new Date().toISOString() })
+          .update({
+            status: 'delivered',
+            delivered_at: now,
+            updated_at: now,
+          })
           .eq('id', orderId);
       } catch (orderUpdateErr) {
         console.warn('orders status update error:', orderUpdateErr);
@@ -2987,7 +3128,7 @@ export const api = {
           order_id: orderId,
           actor_id: adminId,
           event_type: 'DELIVERABLE_UPLOADED',
-          message: `ডেলিভারি ফাইল যুক্ত করা হয়েছে: "${deliverable.title}" (ফাইল লিংক: ${deliverable.fileUrl})`,
+          message: `ডেলিভারি ফাইল যুক্ত করা হয়েছে: "${deliverable.title}"${eventLinkNote}`,
         });
       } catch (eventErr) {
         console.warn('order_events insert error:', eventErr);
@@ -3005,7 +3146,7 @@ export const api = {
           file_type: deliverable.fileType || 'application/pdf',
           deliverable_notes: deliverable.notes || null,
           uploaded_by: adminId,
-          created_at: new Date().toISOString(),
+          created_at: now,
         };
       }
 
@@ -3017,7 +3158,8 @@ export const api = {
           if (!order.deliverables) order.deliverables = [];
           order.deliverables.unshift(newDeliverable);
           order.status = 'delivered';
-          order.updated_at = new Date().toISOString();
+          order.delivered_at = now;
+          order.updated_at = now;
           setLS('orders', orders);
         }
       } catch {}
@@ -3034,21 +3176,27 @@ export const api = {
         file_type: deliverable.fileType || 'application/pdf',
         deliverable_notes: deliverable.notes || null,
         uploaded_by: adminId,
-        created_at: new Date().toISOString(),
+        created_at: now,
       };
       if (!order.deliverables) order.deliverables = [];
       order.deliverables.unshift(newDeliverable);
       order.status = 'delivered';
+      order.delivered_at = now;
+      order.updated_at = now;
       if (!order.events) order.events = [];
       order.events.push({
         id: `event_${Date.now()}`,
         order_id: orderId,
         actor_id: adminId,
         event_type: 'DELIVERABLE_UPLOADED',
-        message: `ডেলিভারি ফাইল আপলোড সম্পন্ন: "${deliverable.title}"। কাজের অবস্থা "ডেলিভারি সম্পন্ন" হিসেবে চিহ্নিত।`,
-        created_at: new Date().toISOString(),
+        message: `ডেলিভারি ফাইল আপলোড সম্পন্ন: "${deliverable.title}"${eventLinkNote}। কাজের অবস্থা "ডেলিভারি সম্পন্ন" হিসেবে চিহ্নিত।`,
+        created_at: now,
       });
       setLS('orders', orders);
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('orders_updated'));
     }
 
     // Notify customer that deliverable is available (without leaking private URLs)
@@ -4083,6 +4231,9 @@ export const api = {
     // ওয়ার্কার/অ্যাডমিনের উইথড্রএবল ব্যালেন্স বৃদ্ধি করা
     const balances = getLS<Record<string, number>>('worker_withdrawable_balances', {});
     balances[order.assigned_admin] = (balances[order.assigned_admin] || 0) + workerPayout;
+    if (order.assigned_admin_email) {
+      balances[order.assigned_admin_email] = (balances[order.assigned_admin_email] || 0) + workerPayout;
+    }
     setLS('worker_withdrawable_balances', balances);
 
     // নোটিফাই করা
@@ -4091,7 +4242,7 @@ export const api = {
         userId: order.assigned_admin,
         title: 'কাজের কমিশন অ্যাকাউন্টে যোগ হয়েছে! 💵',
         message: `অর্ডার #${order.order_number}-এর জন্য আপনার ৳${workerPayout.toLocaleString('bn-BD')} উপার্জিত ব্যালেন্সে ক্রেডিট হয়েছে। আপনি এখন উইথড্র রিকোয়েস্ট পাঠাতে পারবেন।`,
-        link: '/admin/withdraw',
+        link: '/admin/my-withdraw',
         category: 'wallet',
       });
     } catch {
@@ -4171,9 +4322,12 @@ export const api = {
     return payload;
   },
 
-  async getUserWithdrawableBalance(userId: string): Promise<number> {
+  async getUserWithdrawableBalance(userId: string, userEmail?: string): Promise<number> {
+    await this.checkAndAutoCompleteOrders();
     const balances = getLS<Record<string, number>>('worker_withdrawable_balances', {});
-    const currentExplicit = balances[userId] || 0;
+    const explicitById = balances[userId] || 0;
+    const explicitByEmail = userEmail ? balances[userEmail] || 0 : 0;
+    const currentExplicit = Math.max(explicitById, explicitByEmail);
 
     try {
       const [allOrders, commSettings, withdrawals] = await Promise.all([
@@ -4182,9 +4336,13 @@ export const api = {
         this.getWithdrawalRequests(),
       ]);
 
-      const myCompleted = allOrders.filter(
-        (o) => o.assigned_admin === userId && o.status === 'completed'
-      );
+      const myCompleted = allOrders.filter((o) => {
+        const isAssigned =
+          o.assigned_admin === userId ||
+          (userEmail && o.assigned_admin === userEmail) ||
+          (o.assigned_admin_email && (o.assigned_admin_email === userId || (userEmail && o.assigned_admin_email === userEmail)));
+        return isAssigned && o.status === 'completed';
+      });
 
       const rate = commSettings.worker_commission_percentage || 80;
       const totalEarned = myCompleted.reduce((sum, o) => {
@@ -4192,7 +4350,7 @@ export const api = {
       }, 0);
 
       const totalWithdrawn = withdrawals
-        .filter((w) => w.user_id === userId && (w.status === 'approved' || w.status === 'pending'))
+        .filter((w) => (w.user_id === userId || (userEmail && w.user_email === userEmail)) && (w.status === 'approved' || w.status === 'pending'))
         .reduce((sum, w) => sum + w.amount, 0);
 
       const calculated = Math.max(0, totalEarned - totalWithdrawn);
@@ -4200,6 +4358,7 @@ export const api = {
 
       if (effective !== currentExplicit) {
         balances[userId] = effective;
+        if (userEmail) balances[userEmail] = effective;
         setLS('worker_withdrawable_balances', balances);
       }
       return effective;
@@ -4208,16 +4367,21 @@ export const api = {
     }
   },
 
-  async getWorkerCompletedOrders(userId: string): Promise<{ order: Order; commission: number; rate: number }[]> {
+  async getWorkerCompletedOrders(userId: string, userEmail?: string): Promise<{ order: Order; commission: number; rate: number }[]> {
+    await this.checkAndAutoCompleteOrders();
     try {
       const [allOrders, commSettings] = await Promise.all([
         this.getAllOrders(),
         this.getCommissionSettings(),
       ]);
       const rate = commSettings.worker_commission_percentage || 80;
-      const myCompleted = allOrders.filter(
-        (o) => o.assigned_admin === userId && o.status === 'completed'
-      );
+      const myCompleted = allOrders.filter((o) => {
+        const isAssigned =
+          o.assigned_admin === userId ||
+          (userEmail && o.assigned_admin === userEmail) ||
+          (o.assigned_admin_email && (o.assigned_admin_email === userId || (userEmail && o.assigned_admin_email === userEmail)));
+        return isAssigned && o.status === 'completed';
+      });
       return myCompleted.map((o) => ({
         order: o,
         commission: Math.round((o.amount * rate) / 100),
