@@ -126,9 +126,13 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
     );
   }
 
-  const hasDeliverables = Boolean(order?.deliverables && order.deliverables.length > 0);
-  const isTerminalOrRevision = order ? ['completed', 'cancelled', 'refunded', 'revision_requested'].includes(order.status) : false;
-  const isDeliveredOrder = Boolean(order && (order.status === 'delivered' || (hasDeliverables && !isTerminalOrRevision)));
+  const hasDeliverables = Boolean((order?.deliverables && order.deliverables.length > 0) || order?.delivered_at);
+  const isDeliveredOrder = Boolean(order && (order.status === 'delivered' || hasDeliverables));
+  const showDeliveryConfirmationBox = Boolean(
+    order &&
+    order.assigned_admin &&
+    !['completed', 'cancelled', 'refunded'].includes(order.status)
+  );
 
   const handleRequestRevision = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -376,9 +380,9 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
         );
       })()}
 
-      {/* ডেলিভারি অনুমোদন ও সম্পন্ন করার বড় হাইলাইট ব্যানার (যদি status === 'delivered' বা ফাইল ডেলিভারি যুক্ত থাকে) */}
-      {isDeliveredOrder && (() => {
-        const timeStr = order.delivered_at || order.deliverables?.[0]?.created_at || order.updated_at;
+      {/* ডেলিভারি অনুমোদন ও সম্পন্ন করার প্রমিনেন্ট অ্যাকশন কার্ড */}
+      {showDeliveryConfirmationBox && (() => {
+        const timeStr = order.delivered_at || order.deliverables?.[0]?.created_at || order.updated_at || order.claimed_at || order.created_at;
         let remainingText = '৪৮ ঘণ্টা ০০ মিনিট';
         if (timeStr) {
           const deliveredMs = new Date(timeStr).getTime();
@@ -396,22 +400,24 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
           }
         }
 
+        const isDelivered = order.status === 'delivered' || hasDeliverables;
+
         return (
-          <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-lg space-y-4">
+          <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-teal-700 text-white shadow-lg space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-1">
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/20 text-white text-[11px] font-bold uppercase tracking-wider">
-                  <Sparkles className="w-3.5 h-3.5 text-yellow-300" /> কাজ ডেলিভারি সম্পন্ন হয়েছে
+                  <Sparkles className="w-3.5 h-3.5 text-yellow-300" /> {isDelivered ? 'কাজ ডেলিভারি সম্পন্ন হয়েছে' : 'কাজ চলমান ও ডেলিভারি এক্সেপ্টেন্স'}
                 </div>
                 <h3 className="text-lg font-bold">কাজটি যাচাই করুন এবং ডেলিভারি গ্রহণ নিশ্চিত করুন</h3>
                 <p className="text-xs text-emerald-100 leading-relaxed max-w-2xl">
-                  আপনার দায়িত্বপ্রাপ্ত কর্মকর্তা প্রজেক্টের ফাইল ডেলিভারি করেছেন। ফাইলগুলো ডাউনলোড করে দেখে নিন। সবকিছু ঠিক থাকলে &quot;ডেলিভারি গ্রহণ ও সম্পন্ন করুন&quot; বাটনে ক্লিক করে অর্ডারটি সফলভাবে সম্পন্ন করুন। কোনো পরিবর্তন দরকার হলে রিভিশন চাইতে পারেন।
+                  আপনার দায়িত্বপ্রাপ্ত কর্মকর্তা প্রজেক্ট পরিচালনা করছেন। চ্যাট বা ফাইল সেকশনে কাজের আপডেট দেখে নিন। সন্তুষ্ট হলে <strong>&quot;কাজটি গ্রহণ ও কনফার্ম করুন&quot;</strong> বাটনে ক্লিক করে অর্ডারটি সম্পন্ন করুন, অথবা পরিবর্তন দরকার হলে <strong>&quot;রিভিশন পাঠান&quot;</strong>।
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2 shrink-0">
                 <button
                   onClick={() => setRevisionModalOpen(true)}
-                  className="px-4 py-2 text-xs font-semibold bg-white/10 hover:bg-white/20 text-white border border-white/30 rounded-xl transition-colors flex items-center gap-1.5"
+                  className="px-4 py-2 text-xs font-semibold bg-white/10 hover:bg-white/20 text-white border border-white/30 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                   <span>রিভিশন / পুনরায় চেকের জন্য পাঠান</span>
@@ -419,7 +425,7 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
                 <button
                   onClick={handleConfirmCompletion}
                   disabled={isConfirmingCompletion}
-                  className="px-5 py-2.5 text-xs font-bold bg-white text-emerald-900 hover:bg-emerald-50 rounded-xl shadow-md transition-transform active:scale-95 flex items-center gap-2"
+                  className="px-5 py-2.5 text-xs font-bold bg-white text-emerald-900 hover:bg-emerald-50 rounded-xl shadow-md transition-transform active:scale-95 flex items-center gap-2 cursor-pointer"
                 >
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                   <span>{isConfirmingCompletion ? 'সম্পন্ন হচ্ছে...' : 'কাজটি গ্রহণ ও কনফার্ম করুন'}</span>
@@ -430,7 +436,7 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
             <div className="pt-3 border-t border-emerald-500/40 flex items-center gap-2 text-xs text-emerald-100 bg-emerald-800/40 px-3.5 py-2.5 rounded-xl">
               <Clock className="w-4 h-4 text-amber-300 shrink-0" />
               <span>
-                <strong className="text-white font-medium">⏰ ৪৮ ঘণ্টার স্বয়ংক্রিয় সমাপ্তি (অবশিষ্ট সময়: {remainingText}):</strong> ডেলিভারি পাওয়ার ৪৮ ঘণ্টার মধ্যে আপনি ডেলিভারি গ্রহণ বা কোনো রিভিশনের আবেদন না জানালে, সিস্টেম অর্ডারটি স্বয়ংক্রিয়ভাবে সফল ঘোষণা করবে এবং কর্মকর্তা/অ্যাডমিনকে কাজের অর্থ ছাড় করবে।
+                <strong className="text-white font-medium">⏰ ৪৮ ঘণ্টার স্বয়ংক্রিয় সমাপ্তি (অবশিষ্ট সময়: {remainingText}):</strong> ডেলিভারি সাবমিট হওয়া বা কাজ শুরুর ৪৮ ঘণ্টার মধ্যে আপনি ডেলিভারি গ্রহণ বা কোনো রিভিশনের আবেদন না জানালে, সিস্টেম অর্ডারটি স্বয়ংক্রিয়ভাবে সফল ঘোষণা করবে এবং কর্মকর্তা/অ্যাডমিনকে কাজের অর্থ ছাড় করবে।
               </span>
             </div>
           </div>

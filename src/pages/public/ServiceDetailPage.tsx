@@ -138,6 +138,9 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({ serviceSlu
     }
 
     setIsSubmitting(true);
+    // Instant modal close (0ms) so user never sits waiting in modal screen
+    setIsCommissionModalOpen(false);
+
     try {
       let attachUrl: string | undefined = undefined;
       const attachName = attachmentFile ? attachmentFile.name : undefined;
@@ -169,7 +172,6 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({ serviceSlu
         title: 'অর্ডার সফলভাবে গ্রহণ করা হয়েছে',
         message: `অর্ডার #${result.orderNumber} সম্পন্ন হয়েছে। ওয়ালেট থেকে ${toBengaliCurrency(price)} কর্তন করা হয়েছে।`,
       });
-      setIsCommissionModalOpen(false);
       onNavigate(`/dashboard/orders/${result.orderId}`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'অর্ডার সম্পন্ন করা সম্ভব হয়নি';
@@ -178,6 +180,7 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({ serviceSlu
         title: 'অর্ডার ব্যর্থ',
         message: msg,
       });
+      setIsCommissionModalOpen(true);
     } finally {
       setIsSubmitting(false);
     }

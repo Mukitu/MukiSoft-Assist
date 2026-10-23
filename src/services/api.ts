@@ -1125,32 +1125,34 @@ export const api = {
       window.dispatchEvent(new CustomEvent('orders_updated'));
     }
 
-    // Notify customer about created order
-    try {
-      const userProf = await this.getUserProfile(userId);
-      const srv = await this.getServiceById(serviceId);
-      const price = srv ? (srv.promotional_price ?? srv.price) : 0;
-      await communicationService.notifyAndEmail({
-        userId: userId,
-        recipientEmail: userProf?.email,
-        recipientName: userProf?.full_name,
-        title: 'অর্ডার নিশ্চিত হয়েছে',
-        message: `আপনার অর্ডার #${orderNumber} (${srv?.title_bn || srv?.title || 'ডিজিটাল সার্ভিস'}) নিশ্চিত হয়েছে। কাজ প্রক্রিয়াধীন রয়েছে।`,
-        link: `/dashboard/orders/${orderId}`,
-        category: 'orders',
-        templateType: 'order_created',
-        templateData: {
-          orderNumber: orderNumber,
-          serviceTitle: srv?.title_bn || srv?.title || 'ডিজিটাল সার্ভিস',
-          amount: price,
-          deliveryDays: srv?.delivery_days || 3,
-          actionUrl: `${window.location.origin}/dashboard/orders/${orderId}`,
-        },
-        eventKey: `order_created_${orderId}`,
-      });
-    } catch (err) {
-      console.warn('Order created notification failed:', err);
-    }
+    // Non-blocking background notification
+    Promise.resolve().then(async () => {
+      try {
+        const userProf = await this.getUserProfile(userId);
+        const srv = await this.getServiceById(serviceId);
+        const price = srv ? (srv.promotional_price ?? srv.price) : 0;
+        await communicationService.notifyAndEmail({
+          userId: userId,
+          recipientEmail: userProf?.email,
+          recipientName: userProf?.full_name,
+          title: 'অর্ডার নিশ্চিত হয়েছে',
+          message: `আপনার অর্ডার #${orderNumber} (${srv?.title_bn || srv?.title || 'ডিজিটাল সার্ভিস'}) নিশ্চিত হয়েছে। কাজ প্রক্রিয়াধীন রয়েছে।`,
+          link: `/dashboard/orders/${orderId}`,
+          category: 'orders',
+          templateType: 'order_created',
+          templateData: {
+            orderNumber: orderNumber,
+            serviceTitle: srv?.title_bn || srv?.title || 'ডিজিটাল সার্ভিস',
+            amount: price,
+            deliveryDays: srv?.delivery_days || 3,
+            actionUrl: `${window.location.origin}/dashboard/orders/${orderId}`,
+          },
+          eventKey: `order_created_${orderId}`,
+        });
+      } catch (err) {
+        console.warn('Order created notification failed:', err);
+      }
+    });
 
     return {
       success: true,
