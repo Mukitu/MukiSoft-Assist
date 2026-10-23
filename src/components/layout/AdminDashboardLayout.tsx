@@ -115,6 +115,7 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
         badge: pendingClaimCount,
         highlight: pendingClaimCount > 0,
       },
+      { label: 'লাইভ সাপোর্ট চ্যাট', path: '/admin/live-chat', icon: MessageCircle },
       { label: 'আমার অর্ডারের কাজ ও চ্যাট', path: '/admin/orders', icon: ShoppingBag },
       { label: 'আমার উপার্জন ও উত্তোলন', path: '/admin/my-withdraw', icon: DollarSign },
     ];
@@ -128,6 +129,7 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
         badge: pendingClaimCount,
         highlight: pendingClaimCount > 0,
       },
+      { label: 'লাইভ সাপোর্ট চ্যাট', path: '/admin/live-chat', icon: MessageCircle },
       { label: 'অর্ডার ও বার্তা চ্যাট', path: '/admin/orders', icon: ShoppingBag },
       { label: 'সহায়তা ডেস্ক ও টিকিট', path: '/admin/tickets', icon: HelpCircle },
       { label: 'সেবা সমূহ', path: '/admin/services', icon: Layers },
