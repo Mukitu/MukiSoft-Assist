@@ -1729,13 +1729,6 @@ export const api = {
       console.warn('Claim notification failed:', err);
     }
 
-    // ওয়ার্কার বা অ্যাডমিন কাজটি এক্সেপ্ট করলেই কমিশনের হিসাব ওয়ালেটে ক্রেডিট করা
-    try {
-      await this.distributeOrderCommission(updatedOrder);
-    } catch (e) {
-      console.warn('Commission distribution on claim warning:', e);
-    }
-
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('order_claimed', { detail: { orderId, order: updatedOrder } }));
       window.dispatchEvent(new CustomEvent('orders_updated'));

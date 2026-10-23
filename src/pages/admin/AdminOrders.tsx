@@ -48,6 +48,7 @@ export const AdminOrders: React.FC = () => {
 
   // বিস্তারিত দেখার জন্য সিলেক্টেড অর্ডার
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [claimingOrderId, setClaimingOrderId] = useState<string | null>(null);
   const [modalTab, setModalTab] = useState<'brief' | 'chat' | 'deliverables' | 'reviews'>('brief');
 
   // অর্ডার চ্যাট হুক
@@ -147,10 +148,32 @@ export const AdminOrders: React.FC = () => {
     prevOrderMsgCountRef.current = orderMessages.length;
   }, [orderMessages, modalTab]);
 
-  // ১. কাজ নিজের দায়িত্বে ক্লেইম করা (Claim Order)
   const handleClaimOrder = async (targetOrder: Order) => {
-    if (!user) return;
+    if (!user || claimingOrderId === targetOrder.id) return;
+    setClaimingOrderId(targetOrder.id);
     const adminName = profile?.full_name || user.email?.split('@')[0] || 'স্পেশালিস্ট অ্যাডমিন';
+    const now = new Date().toISOString();
+
+    const optimisticUpdated: Order = {
+      ...targetOrder,
+      assigned_admin: user.id,
+      assigned_admin_name: adminName,
+      assigned_admin_email: user.email || null,
+      claimed_at: now,
+      status: 'in_progress',
+      updated_at: now,
+    };
+
+    setOrders((prev) => prev.map((o) => (o.id === targetOrder.id ? optimisticUpdated : o)));
+    if (selectedOrder && selectedOrder.id === targetOrder.id) {
+      setSelectedOrder(optimisticUpdated);
+    }
+
+    showToast({
+      type: 'success',
+      title: 'কাজটি সফলভাবে গ্রহণ করা হয়েছে! 🎯',
+      message: `অর্ডার #${targetOrder.order_number} এখন আপনার দায়িত্বে অ্যাসাইন করা হয়েছে। আপনি এখন ক্লায়েন্টের একমাত্র দায়িত্বপ্রাপ্ত অ্যাডমিন।`,
+    });
 
     try {
       const updated = await api.claimOrder(targetOrder.id, user.id, adminName, user.email || '');
@@ -158,14 +181,12 @@ export const AdminOrders: React.FC = () => {
       if (selectedOrder && selectedOrder.id === targetOrder.id) {
         setSelectedOrder(updated);
       }
-      showToast({
-        type: 'success',
-        title: 'কাজটি সফলভাবে গ্রহণ করা হয়েছে! 🎯',
-        message: `অর্ডার #${targetOrder.order_number} এখন আপনার দায়িত্বে অ্যাসাইন করা হয়েছে। আপনি এখন ক্লায়েন্টের একমাত্র দায়িত্বপ্রাপ্ত অ্যাডমিন।`,
-      });
     } catch (err: unknown) {
+      setOrders((prev) => prev.map((o) => (o.id === targetOrder.id ? targetOrder : o)));
       const msg = err instanceof Error ? err.message : 'কাজটি গ্রহণ করা সম্ভব হয়নি';
       showToast({ type: 'error', title: 'ক্লেইম ব্যর্থ', message: msg });
+    } finally {
+      setClaimingOrderId(null);
     }
   };
 

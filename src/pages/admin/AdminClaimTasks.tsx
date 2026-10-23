@@ -51,6 +51,7 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'pending_queue' | 'my_claimed' | 'my_delivered' | 'super_audit'>('pending_queue');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [claimingOrderId, setClaimingOrderId] = useState<string | null>(null);
 
   // লাইভ চ্যাট হুক
   const { messages: chatMessages, sending: sendingChat, sendMessage: sendClaimMessageViaHook } = useMessages(selectedOrderId);
@@ -197,25 +198,41 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
   const selectedOrder = orders.find((o) => o.id === selectedOrderId) || null;
 
   // ১. কাজ ক্লেইম করা (Claim Task)
-  // কাজ নেওয়ার পর এটি পেন্ডিং কিউ এবং অন্যান্য অ্যাডমিনদের দৃষ্টিসীমার বাইরে চলে যাবে!
   const handleClaim = async (targetOrder: Order) => {
-    if (!user) return;
+    if (!user || claimingOrderId === targetOrder.id) return;
+    setClaimingOrderId(targetOrder.id);
     const adminName = profile?.full_name || user.email?.split('@')[0] || 'স্পেশালিস্ট অ্যাডমিন';
+    const now = new Date().toISOString();
+
+    const optimisticOrder: Order = {
+      ...targetOrder,
+      assigned_admin: user.id,
+      assigned_admin_name: adminName,
+      assigned_admin_email: user.email || null,
+      claimed_at: now,
+      status: 'in_progress',
+      updated_at: now,
+    };
+
+    setOrders((prev) => prev.map((o) => (o.id === targetOrder.id ? optimisticOrder : o)));
+    setSelectedOrderId(targetOrder.id);
+    setActiveTab('my_claimed');
+
+    showToast({
+      type: 'success',
+      title: 'কাজটি সফলভাবে ক্লেইম করা হয়েছে! 🎯',
+      message: `অর্ডার #${targetOrder.order_number} এখন আপনার দায়িত্বে অ্যাসাইন হয়েছে। এটি অন্য অ্যাডমিনদের দৃষ্টিসীমার বাইরে চলে গেছে এবং গ্রাহকের সাথে সরাসরি লাইভ চ্যাট সক্রিয় হয়েছে।`,
+    });
 
     try {
       const updated = await api.claimOrder(targetOrder.id, user.id, adminName, user.email || '');
       setOrders((prev) => prev.map((o) => (o.id === targetOrder.id ? updated : o)));
-      setSelectedOrderId(updated.id);
-      setActiveTab('my_claimed');
-
-      showToast({
-        type: 'success',
-        title: 'কাজটি সফলভাবে ক্লেইম করা হয়েছে! 🎯',
-        message: `অর্ডার #${targetOrder.order_number} এখন আপনার দায়িত্বে অ্যাসাইন হয়েছে। এটি অন্য অ্যাডমিনদের দৃষ্টিসীমার বাইরে চলে গেছে এবং গ্রাহকের সাথে সরাসরি লাইভ চ্যাট সক্রিয় হয়েছে।`,
-      });
     } catch (err: unknown) {
+      setOrders((prev) => prev.map((o) => (o.id === targetOrder.id ? targetOrder : o)));
       const msg = err instanceof Error ? err.message : 'কাজটি গ্রহণ করা সম্ভব হয়নি';
       showToast({ type: 'error', title: 'ক্লেইম ব্যর্থ', message: msg });
+    } finally {
+      setClaimingOrderId(null);
     }
   };
 
@@ -586,10 +603,11 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
 
                     <button
                       onClick={() => handleClaim(ord)}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 active:scale-95 text-white font-bold rounded-xl text-xs shadow-md transition-transform"
+                      disabled={claimingOrderId === ord.id}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 active:scale-95 text-white font-bold rounded-xl text-xs shadow-md transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <UserCheck className="w-4 h-4" />
-                      <span>আমি দায়িত্ব নিচ্ছি (Claim)</span>
+                      <span>{claimingOrderId === ord.id ? 'দায়িত্ব নেওয়া হচ্ছে...' : 'আমি দায়িত্ব নিচ্ছি (Claim)'}</span>
                     </button>
                   </div>
                 </div>
