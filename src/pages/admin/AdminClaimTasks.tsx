@@ -904,7 +904,7 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {myDeliveredOrders.map((ord) => {
-                const commission = Math.round(ord.amount * 0.75); // আনুমানিক ৭৫% ওয়ার্কার কমিশন
+                const commission = Math.round((ord.amount * 80) / 100); // ৮০% উপার্জিত কমিশন
                 return (
                   <div
                     key={ord.id}

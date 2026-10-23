@@ -1201,57 +1201,124 @@ export const api = {
     const profilesMap = new Map<string, Profile>();
     const deliverablesMap = new Map<string, OrderDeliverable[]>();
     const eventsMap = new Map<string, OrderEvent[]>();
-
     const refundedOrderIds = new Set<string>();
+    const completedByProfitOrderIds = new Set<string>();
 
     if (isSupabaseConfigured && supabase) {
       try {
-        if (serviceIds.length > 0) {
-          const { data: srvs } = await supabase.from('services').select('*').in('id', serviceIds);
-          if (srvs) srvs.forEach((s: ServiceItem) => servicesMap.set(s.id, s));
-        }
-        if (userIds.length > 0) {
-          const { data: profs } = await supabase.from('profiles').select('*').in('id', userIds);
-          if (profs) profs.forEach((p: Profile) => profilesMap.set(p.id, p));
-        }
-        if (orderIds.length > 0) {
-          const { data: delivs } = await supabase.from('order_deliverables').select('*').in('order_id', orderIds);
-          if (delivs) {
-            delivs.forEach((d: OrderDeliverable) => {
-              const list = deliverablesMap.get(d.order_id) || [];
-              list.push(d);
-              deliverablesMap.set(d.order_id, list);
-            });
-          }
-          const { data: evts } = await supabase.from('order_events').select('*').in('order_id', orderIds);
-          if (evts) {
-            evts.forEach((e: OrderEvent) => {
-              const list = eventsMap.get(e.order_id) || [];
-              list.push(e);
-              eventsMap.set(e.order_id, list);
-            });
-          }
+        const promises: Promise<any>[] = [];
 
-          // লেজারে ইতিমধ্যে রিফান্ড হয়ে যাওয়া সকল অর্ডার আইডি বের করা
-          const { data: refTxs } = await supabase
-            .from('wallet_transactions')
-            .select('reference_id')
-            .in('reference_id', orderIds)
-            .eq('type', 'refund');
-          if (refTxs) {
-            refTxs.forEach((t: { reference_id: string }) => {
-              if (t.reference_id) refundedOrderIds.add(t.reference_id);
-            });
-          }
+        if (serviceIds.length > 0) {
+          promises.push(
+            (async () => {
+              try {
+                const { data } = await supabase.from('services').select('*').in('id', serviceIds);
+                if (data) data.forEach((s: ServiceItem) => servicesMap.set(s.id, s));
+              } catch {}
+            })()
+          );
         }
+
+        if (userIds.length > 0) {
+          promises.push(
+            (async () => {
+              try {
+                const { data } = await supabase.from('profiles').select('*').in('id', userIds);
+                if (data) data.forEach((p: Profile) => profilesMap.set(p.id, p));
+              } catch {}
+            })()
+          );
+        }
+
+        if (orderIds.length > 0) {
+          promises.push(
+            (async () => {
+              try {
+                const { data } = await supabase.from('order_deliverables').select('*').in('order_id', orderIds);
+                if (data) {
+                  data.forEach((d: OrderDeliverable) => {
+                    const list = deliverablesMap.get(d.order_id) || [];
+                    list.push(d);
+                    deliverablesMap.set(d.order_id, list);
+                  });
+                }
+              } catch {}
+            })()
+          );
+
+          promises.push(
+            (async () => {
+              try {
+                const { data } = await supabase.from('order_events').select('*').in('order_id', orderIds);
+                if (data) {
+                  data.forEach((e: OrderEvent) => {
+                    const list = eventsMap.get(e.order_id) || [];
+                    list.push(e);
+                    eventsMap.set(e.order_id, list);
+                  });
+                }
+              } catch {}
+            })()
+          );
+
+          promises.push(
+            (async () => {
+              try {
+                const { data } = await supabase
+                  .from('wallet_transactions')
+                  .select('reference_id')
+                  .in('reference_id', orderIds)
+                  .eq('type', 'refund');
+                if (data) {
+                  data.forEach((t: { reference_id: string }) => {
+                    if (t.reference_id) refundedOrderIds.add(t.reference_id);
+                  });
+                }
+              } catch {}
+            })()
+          );
+
+          promises.push(
+            (async () => {
+              try {
+                const { data } = await supabase
+                  .from('company_profit_records')
+                  .select('order_id')
+                  .in('order_id', orderIds);
+                if (data) {
+                  data.forEach((p: { order_id: string }) => {
+                    if (p.order_id) completedByProfitOrderIds.add(p.order_id);
+                  });
+                }
+              } catch {}
+            })()
+          );
+        }
+
+        await Promise.all(promises);
       } catch (err) {
-        console.warn('enrichOrders warning:', err);
+        console.warn('enrichOrders parallel fetch warning:', err);
       }
     }
+
+    const localOrders = getLS<Order[]>('orders', []);
+    const localCompletedSet = new Set(localOrders.filter((o) => o.status === 'completed').map((o) => o.id));
 
     return rawOrders.map((o) => {
       let status = o.status;
       const deliverablesList = deliverablesMap.get(o.id) || o.deliverables || [];
+      const evts = eventsMap.get(o.id) || o.events || [];
+      const hasCompletedEvent = evts.some((e: OrderEvent) => e.event_type === 'ORDER_COMPLETED');
+      const hasProfitRecord = completedByProfitOrderIds.has(o.id);
+      const isLocalCompleted = localCompletedSet.has(o.id);
+
+      const isCompleted =
+        status === 'completed' ||
+        hasCompletedEvent ||
+        hasProfitRecord ||
+        isLocalCompleted ||
+        Boolean(o.completed_at);
+
       const isRefundedOrCancelled =
         refundedOrderIds.has(o.id) ||
         (o.refund_amount && Number(o.refund_amount) > 0) ||
@@ -1259,9 +1326,22 @@ export const api = {
         o.status === 'cancelled' ||
         o.status === 'refunded';
 
-      if (isRefundedOrCancelled) {
+      if (isCompleted) {
+        status = 'completed';
+        if (isSupabaseConfigured && supabase && o.status !== 'completed') {
+          Promise.resolve(
+            supabase
+              .from('orders')
+              .update({
+                status: 'completed',
+                completed_at: o.completed_at || new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', o.id)
+          ).catch(() => {});
+        }
+      } else if (isRefundedOrCancelled) {
         status = 'refunded';
-        // যদি Supabase-এ স্ট্যাটাস এখনও cancelled হিসেবে সিঙ্ক না হয়ে থাকে, তবে ব্যাকগ্রাউন্ডে স্বয়ংক্রিয়ভাবে সিঙ্ক সম্পন্ন করা
         if (isSupabaseConfigured && supabase && o.status !== 'cancelled') {
           Promise.resolve(
             supabase
@@ -1288,7 +1368,7 @@ export const api = {
         service: servicesMap.get(o.service_id) || o.service || undefined,
         customer: profilesMap.get(o.user_id) || o.customer || undefined,
         deliverables: deliverablesList,
-        events: eventsMap.get(o.id) || o.events || [],
+        events: evts,
       };
     }) as Order[];
   },
