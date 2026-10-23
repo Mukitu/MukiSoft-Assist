@@ -55,6 +55,8 @@ import { useAuth } from './context/AuthContext';
 import { ResetPassword } from './pages/public/ResetPassword';
 import { LiveChatWidget } from './components/chat/LiveChatWidget';
 
+import { api } from './services/api';
+
 function AppRouter() {
   const { role } = useAuth();
   const [currentUrl, setCurrentUrl] = useState<string>(() => {
@@ -70,11 +72,19 @@ function AppRouter() {
   };
 
   useEffect(() => {
+    api.checkAndAutoCompleteOrders();
+    const interval = setInterval(() => {
+      api.checkAndAutoCompleteOrders();
+    }, 10000);
+
     const handlePopState = () => {
       setCurrentUrl((window.location.pathname || '/') + (window.location.search || ''));
     };
     window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      clearInterval(interval);
+    };
   }, []);
 
   // Determine layout wrapper based on route prefix
