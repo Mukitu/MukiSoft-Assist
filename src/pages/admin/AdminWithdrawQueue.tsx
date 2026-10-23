@@ -36,6 +36,20 @@ export const AdminWithdrawQueue: React.FC = () => {
 
   useEffect(() => {
     loadRequests();
+
+    const handleUpdate = () => {
+      loadRequests();
+    };
+
+    window.addEventListener('wallet_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    window.addEventListener('orders_updated', handleUpdate);
+
+    return () => {
+      window.removeEventListener('wallet_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+      window.removeEventListener('orders_updated', handleUpdate);
+    };
   }, []);
 
   const handleConfirmAction = async () => {
@@ -68,15 +82,26 @@ export const AdminWithdrawQueue: React.FC = () => {
   };
 
   const filteredRequests = requests.filter((r) => {
+    if (!r) return false;
     const matchesFilter = filter === 'all' || r.status === filter;
+    const searchLower = (searchTerm || '').trim().toLowerCase();
+    if (!searchLower) return matchesFilter;
+
+    const userName = (r.user_name || '').toLowerCase();
+    const userEmail = (r.user_email || '').toLowerCase();
+    const accountNum = (r.payout_account?.account_number || '').toLowerCase();
+    const method = (r.payout_account?.method || '').toLowerCase();
+
     const matchesSearch =
-      r.user_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      r.user_email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      r.payout_account?.account_number.includes(searchTerm);
+      userName.includes(searchLower) ||
+      userEmail.includes(searchLower) ||
+      accountNum.includes(searchLower) ||
+      method.includes(searchLower);
+
     return matchesFilter && matchesSearch;
   });
 
-  const pendingCount = requests.filter((r) => r.status === 'pending').length;
+  const pendingCount = requests.filter((r) => r?.status === 'pending').length;
 
   return (
     <div className="space-y-6">

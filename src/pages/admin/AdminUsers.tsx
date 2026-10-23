@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Lock } from 'lucide-react';
+import { Lock, Search, Filter, RefreshCw, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { toBengaliDate } from '../../lib/i18n';
+import { toBengaliDate, toBengaliDigits } from '../../lib/i18n';
 import { useNotification } from '../../context/NotificationContext';
 import { api } from '../../services/api';
 import { Profile, UserRole } from '../../types/database';
@@ -12,14 +12,23 @@ export const AdminUsers: React.FC = () => {
   const { showToast } = useNotification();
   const [users, setUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [roleFilter, setRoleFilter] = useState<'all' | UserRole>('all');
 
-  useEffect(() => {
-    async function load() {
+  const loadUsers = async () => {
+    setLoading(true);
+    try {
       const data = await api.getUsers();
       setUsers(data);
+    } catch (err) {
+      console.warn('Load users error:', err);
+    } finally {
       setLoading(false);
     }
-    load();
+  };
+
+  useEffect(() => {
+    loadUsers();
   }, []);
 
   const [pendingDemote, setPendingDemote] = useState<{ targetUser: Profile; newRole: UserRole } | null>(null);
@@ -61,6 +70,18 @@ export const AdminUsers: React.FC = () => {
     await applyRoleUpdate(targetUser, newRole);
   };
 
+  const filteredUsers = users.filter((u) => {
+    const matchesRole = roleFilter === 'all' || u.role === roleFilter;
+    const query = searchTerm.trim().toLowerCase();
+    if (!query) return matchesRole;
+
+    const matchesEmail = (u.email || '').toLowerCase().includes(query);
+    const matchesName = (u.full_name || '').toLowerCase().includes(query);
+    const matchesRoleName = (u.role || '').toLowerCase().includes(query);
+
+    return matchesRole && (matchesEmail || matchesName || matchesRoleName);
+  });
+
   return (
     <div className="space-y-6">
       <div className="border-b border-slate-200 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -70,7 +91,7 @@ export const AdminUsers: React.FC = () => {
           </span>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">ব্যবহারকারী ও ভূমিকা ব্যবস্থাপনা</h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            সুপার অ্যাডমিন, অ্যাডমিন এবং সাধারণ গ্রাহক অ্যাকাউন্টের অ্যাক্সেস নিয়ন্ত্রণ।
+            সুপার অ্যাডমিন, অ্যাডমিন, স্পেশালিস্ট ওয়ার্কার এবং সাধারণ গ্রাহক অ্যাকাউন্টের অ্যাক্সেস নিয়ন্ত্রণ।
           </p>
         </div>
 
@@ -82,15 +103,54 @@ export const AdminUsers: React.FC = () => {
         )}
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      {/* জিমেইল / ইমেইল সার্চ ও ফিল্টার বার */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-2xs">
+        <div className="relative w-full sm:w-80">
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="জিমেইল / ইমেইল বা নাম দিয়ে খুঁজুন..."
+            className="w-full pl-9 pr-3 py-2 text-xs font-mono bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+          />
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+        </div>
+
+        <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+          <div className="flex items-center gap-2">
+            <Filter className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <select
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value as any)}
+              className="px-3 py-2 text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-hidden"
+            >
+              <option value="all">সকল ভূমিকা ({toBengaliDigits(users.length)})</option>
+              <option value="super_admin">সুপার অ্যাডমিন</option>
+              <option value="admin">অ্যাডমিন</option>
+              <option value="worker">স্পেশালিস্ট ওয়ার্কার</option>
+              <option value="user">সাধারণ গ্রাহক</option>
+            </select>
+          </div>
+
+          <span className="text-xs font-bold text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 whitespace-nowrap">
+            মোট: {toBengaliDigits(filteredUsers.length)} জন
+          </span>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
         {loading ? (
-          <div className="p-8 text-center text-xs text-slate-500">অ্যাকাউন্ট তালিকা লোড হচ্ছে...</div>
+          <div className="p-12 text-center text-xs text-slate-500">অ্যাকাউন্ট তালিকা লোড হচ্ছে...</div>
+        ) : filteredUsers.length === 0 ? (
+          <div className="p-12 text-center text-xs text-slate-500">
+            '{searchTerm}' অনুসন্ধানে কোনো ব্যবহারকারী অ্যাকাউন্ট পাওয়া যায়নি।
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs text-left">
               <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
                 <tr>
-                  <th className="py-3 px-4 font-medium">ইমেইল ঠিকানা</th>
+                  <th className="py-3 px-4 font-medium">ইমেইল / জিমেইল ঠিকানা</th>
                   <th className="py-3 px-4 font-medium">নাম</th>
                   <th className="py-3 px-4 font-medium">বর্তমান ভূমিকা</th>
                   <th className="py-3 px-4 font-medium">নিবন্ধনের তারিখ</th>
@@ -98,7 +158,7 @@ export const AdminUsers: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
-                {users.map((u) => {
+                {filteredUsers.map((u) => {
                   const canEdit = isSuperAdmin;
 
                   return (

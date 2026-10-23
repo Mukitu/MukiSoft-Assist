@@ -4615,7 +4615,7 @@ export const api = {
           .from('withdrawal_requests')
           .select('*')
           .order('created_at', { ascending: false });
-        if (!error && data) remoteReqs = data as WithdrawalRequest[];
+        if (!error && data && Array.isArray(data)) remoteReqs = data as WithdrawalRequest[];
       } catch {
         // fallback
       }
@@ -4623,11 +4623,39 @@ export const api = {
     const localReqs = getLS<WithdrawalRequest[]>('withdrawal_requests', []);
 
     const mergedMap = new Map<string, WithdrawalRequest>();
-    remoteReqs.forEach((r) => mergedMap.set(r.id, r));
-    localReqs.forEach((r) => mergedMap.set(r.id, r));
+
+    // 1. Populate remote
+    remoteReqs.forEach((r) => {
+      if (r && r.id) {
+        let accountObj = r.payout_account;
+        if (typeof accountObj === 'string') {
+          try { accountObj = JSON.parse(accountObj); } catch {}
+        }
+        mergedMap.set(r.id, {
+          ...r,
+          payout_account: accountObj || { user_id: r.user_id, method: 'bkash', account_number: '', updated_at: r.created_at },
+        });
+      }
+    });
+
+    // 2. Always merge local requests
+    localReqs.forEach((r) => {
+      if (r && r.id) {
+        let accountObj = r.payout_account;
+        if (typeof accountObj === 'string') {
+          try { accountObj = JSON.parse(accountObj); } catch {}
+        }
+        const existing = mergedMap.get(r.id);
+        mergedMap.set(r.id, {
+          ...(existing || {}),
+          ...r,
+          payout_account: accountObj || existing?.payout_account || { user_id: r.user_id, method: 'bkash', account_number: '', updated_at: r.created_at },
+        });
+      }
+    });
 
     return Array.from(mergedMap.values()).sort(
-      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
     );
   },
 
