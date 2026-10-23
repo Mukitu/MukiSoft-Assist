@@ -373,45 +373,65 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
       })()}
 
       {/* ডেলিভারি অনুমোদন ও সম্পন্ন করার বড় হাইলাইট ব্যানার (যদি status === 'delivered' হয়) */}
-      {order.status === 'delivered' && (
-        <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-lg space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/20 text-white text-[11px] font-bold uppercase tracking-wider">
-                <Sparkles className="w-3.5 h-3.5 text-yellow-300" /> কাজ ডেলিভারি সম্পন্ন হয়েছে
-              </div>
-              <h3 className="text-lg font-bold">কাজটি যাচাই করুন এবং ডেলিভারি গ্রহণ নিশ্চিত করুন</h3>
-              <p className="text-xs text-emerald-100 leading-relaxed max-w-2xl">
-                আপনার দায়িত্বপ্রাপ্ত কর্মকর্তা প্রজেক্টের ফাইল ডেলিভারি করেছেন। ফাইলগুলো ডাউনলোড করে দেখে নিন। সবকিছু ঠিক থাকলে &quot;ডেলিভারি গ্রহণ ও সম্পন্ন করুন&quot; বাটনে ক্লিক করে অর্ডারটি সফলভাবে সম্পন্ন করুন। কোনো পরিবর্তন দরকার হলে রিভিশন চাইতে পারেন।
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
-              <button
-                onClick={() => setRevisionModalOpen(true)}
-                className="px-4 py-2 text-xs font-semibold bg-white/10 hover:bg-white/20 text-white border border-white/30 rounded-xl transition-colors flex items-center gap-1.5"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>রিভিশনের অনুরোধ</span>
-              </button>
-              <button
-                onClick={handleConfirmCompletion}
-                disabled={isConfirmingCompletion}
-                className="px-5 py-2.5 text-xs font-bold bg-white text-emerald-900 hover:bg-emerald-50 rounded-xl shadow-md transition-transform active:scale-95 flex items-center gap-2"
-              >
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                <span>{isConfirmingCompletion ? 'সম্পন্ন হচ্ছে...' : 'ডেলিভারি গ্রহণ ও সম্পন্ন করুন'}</span>
-              </button>
-            </div>
-          </div>
+      {order.status === 'delivered' && (() => {
+        const timeStr = order.delivered_at || order.deliverables?.[0]?.created_at || order.updated_at;
+        let remainingText = '৪৮ ঘণ্টা ০০ মিনিট';
+        if (timeStr) {
+          const deliveredMs = new Date(timeStr).getTime();
+          if (!isNaN(deliveredMs)) {
+            const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
+            const remainingMs = deliveredMs + FORTY_EIGHT_HOURS_MS - Date.now();
+            if (remainingMs <= 0) {
+              remainingText = '০ মিনিট (স্বয়ংক্রিয়ভাবে সম্পন্ন হচ্ছে)';
+            } else {
+              const totalMins = Math.floor(remainingMs / (1000 * 60));
+              const hrs = Math.floor(totalMins / 60);
+              const mins = totalMins % 60;
+              remainingText = `${toBengaliDigits(hrs)} ঘণ্টা ${toBengaliDigits(mins)} মিনিট`;
+            }
+          }
+        }
 
-          <div className="pt-3 border-t border-emerald-500/40 flex items-center gap-2 text-xs text-emerald-100 bg-emerald-800/40 px-3.5 py-2.5 rounded-xl">
-            <Clock className="w-4 h-4 text-amber-300 shrink-0" />
-            <span>
-              <strong className="text-white font-medium">⏰ ৪৮ ঘণ্টার স্বয়ংক্রিয় সমাপ্তি নীতি:</strong> ডেলিভারি পাওয়ার ৪৮ ঘণ্টার মধ্যে আপনি ডেলিভারি গ্রহণ বা কোনো রিভিশনের আবেদন না জানালে, সিস্টেম অর্ডারটি স্বয়ংক্রিয়ভাবে সফল ঘোষণা করবে এবং কর্মকর্তা/অ্যাডমিনকে কাজের অর্থ ছাড় করবে।
-            </span>
+        return (
+          <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-lg space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/20 text-white text-[11px] font-bold uppercase tracking-wider">
+                  <Sparkles className="w-3.5 h-3.5 text-yellow-300" /> কাজ ডেলিভারি সম্পন্ন হয়েছে
+                </div>
+                <h3 className="text-lg font-bold">কাজটি যাচাই করুন এবং ডেলিভারি গ্রহণ নিশ্চিত করুন</h3>
+                <p className="text-xs text-emerald-100 leading-relaxed max-w-2xl">
+                  আপনার দায়িত্বপ্রাপ্ত কর্মকর্তা প্রজেক্টের ফাইল ডেলিভারি করেছেন। ফাইলগুলো ডাউনলোড করে দেখে নিন। সবকিছু ঠিক থাকলে &quot;ডেলিভারি গ্রহণ ও সম্পন্ন করুন&quot; বাটনে ক্লিক করে অর্ডারটি সফলভাবে সম্পন্ন করুন। কোনো পরিবর্তন দরকার হলে রিভিশন চাইতে পারেন।
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  onClick={() => setRevisionModalOpen(true)}
+                  className="px-4 py-2 text-xs font-semibold bg-white/10 hover:bg-white/20 text-white border border-white/30 rounded-xl transition-colors flex items-center gap-1.5"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>রিভিশন / পুনরায় চেকের জন্য পাঠান</span>
+                </button>
+                <button
+                  onClick={handleConfirmCompletion}
+                  disabled={isConfirmingCompletion}
+                  className="px-5 py-2.5 text-xs font-bold bg-white text-emerald-900 hover:bg-emerald-50 rounded-xl shadow-md transition-transform active:scale-95 flex items-center gap-2"
+                >
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>{isConfirmingCompletion ? 'সম্পন্ন হচ্ছে...' : 'কাজটি গ্রহণ ও কনফার্ম করুন'}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-emerald-500/40 flex items-center gap-2 text-xs text-emerald-100 bg-emerald-800/40 px-3.5 py-2.5 rounded-xl">
+              <Clock className="w-4 h-4 text-amber-300 shrink-0" />
+              <span>
+                <strong className="text-white font-medium">⏰ ৪৮ ঘণ্টার স্বয়ংক্রিয় সমাপ্তি (অবশিষ্ট সময়: {remainingText}):</strong> ডেলিভারি পাওয়ার ৪৮ ঘণ্টার মধ্যে আপনি ডেলিভারি গ্রহণ বা কোনো রিভিশনের আবেদন না জানালে, সিস্টেম অর্ডারটি স্বয়ংক্রিয়ভাবে সফল ঘোষণা করবে এবং কর্মকর্তা/অ্যাডমিনকে কাজের অর্থ ছাড় করবে।
+              </span>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* সম্পন্ন অর্ডার নিশ্চিতকরণ ব্যানার (কোনো রিভিউ ছাড়া) */}
       {order.status === 'completed' && (

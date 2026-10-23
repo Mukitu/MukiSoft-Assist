@@ -838,34 +838,36 @@ export const api = {
   // -------------------------------------------------------------
   // PAYMENT METHOD CONFIGURATIONS (SUPER ADMIN ONLY)
   // -------------------------------------------------------------
+  // PAYMENT METHOD CONFIGURATIONS (SUPER ADMIN ONLY)
+  // -------------------------------------------------------------
   async getPaymentMethodConfigs(): Promise<PaymentMethodConfig[]> {
     const DEFAULT_PAYMENT_METHODS: PaymentMethodConfig[] = [
       {
         id: 'bkash',
-        name: 'বিকাশ (bKash)',
+        name: 'bKash Send Money',
         type: 'mobile_banking',
-        number_or_account: '01700-000000',
-        account_type_label: 'মার্চেন্ট নম্বর (Make Payment)',
-        instructions: '১. bKash App অথবা *247# ডায়াল করে "Make Payment" অপশনে যান।\n২. মার্চেন্ট নম্বর 01700-000000 লিখুন।\n৩. আপনার জমার পরিমাণ দিন।\n৪. রেফারেন্সে আপনার ইমেইল বা ফোন নম্বর দিন।\n৫. পিন চেপে পেমেন্ট সম্পন্ন করে TrxID সংরক্ষণ করুন।',
+        number_or_account: '01303595062',
+        account_type_label: 'পার্সোনাল নম্বর (Send Money)',
+        instructions: '১. বিকাশ অ্যাপ বা *247# এ যান\n২. Send Money নির্বাচন করুন\n৩. রেফারেন্সে আপনার ইমেইল বা ইউজার আইডি লিখুন\n৪. পিন চেপে পেমেন্ট সম্পন্ন করে TrxID সংরক্ষণ করুন।',
         is_active: true,
       },
       {
         id: 'nagad',
         name: 'নগদ (Nagad)',
         type: 'mobile_banking',
-        number_or_account: '01800-000000',
+        number_or_account: '01800000000',
         account_type_label: 'মার্চেন্ট নম্বর (Merchant Pay)',
-        instructions: '১. Nagad App অথবা *167# ডায়াল করে "Merchant Pay" নির্বাচন করুন।\n২. মার্চেন্ট নম্বর 01800-000000 দিন।\n৩. আপনার জমার পরিমাণ ও রেফারেন্স টাইপ করুন।\n৪. পিন কোড দিয়ে সাবমিট করে TrxID সংরক্ষণ করুন।',
-        is_active: true,
+        instructions: '১. Nagad App অথবা *167# ডায়াল করে "Merchant Pay" নির্বাচন করুন।\n২. পেমেন্ট সম্পন্ন করে TrxID সংরক্ষণ করুন।',
+        is_active: false,
       },
       {
         id: 'rocket',
         name: 'রকেট (Rocket)',
         type: 'mobile_banking',
-        number_or_account: '01900-000000',
+        number_or_account: '01900000000',
         account_type_label: 'পার্সোনাল নম্বর (Send Money)',
-        instructions: '১. Rocket App অথবা *322# ডায়াল করে "Send Money" নির্বাচন করুন।\n২. রকেট নম্বর 01900-000000 দিন।\n৩. সফল পেমেন্টের পর TrxID সংগ্রহ করে ইনপুট দিন।',
-        is_active: true,
+        instructions: '১. Rocket App অথবা *322# ডায়াল করে "Send Money" নির্বাচন করুন।\n২. সফল পেমেন্টের পর TrxID সংগ্রহ করে ইনপুট দিন।',
+        is_active: false,
       },
       {
         id: 'bank',
@@ -874,7 +876,7 @@ export const api = {
         number_or_account: '11002233445566',
         account_type_label: 'The City Bank PLC (MukiSoft Technology Ltd.)',
         instructions: 'ব্যাংকের নাম: The City Bank PLC\nঅ্যাকাউন্টের নাম: MukiSoft Technology Ltd.\nঅ্যাকাউন্ট নম্বর: 11002233445566\nরাউটিং নম্বর: 085272183\nশাখা: গুলশান এভিনিউ, ঢাকা।\nNPSB / BEFTN বা ডিপোজিট স্লিপের ছবি ও তথ্য জমা দিন।',
-        is_active: true,
+        is_active: false,
       },
     ];
 
@@ -882,27 +884,32 @@ export const api = {
       try {
         const { data, error } = await supabase
           .from('payment_method_configs')
-          .select('*')
-          .order('created_at', { ascending: true });
+          .select('*');
 
         if (!error && data && data.length > 0) {
-          setLS('payment_method_configs', data);
-          return data as PaymentMethodConfig[];
+          const mapped: PaymentMethodConfig[] = data.map((row: any) => ({
+            id: String(row.id),
+            name: String(row.name || row.id),
+            type: row.type === 'bank_transfer' ? 'bank_transfer' : 'mobile_banking',
+            number_or_account: String(row.number || row.number_or_account || ''),
+            account_type_label: String(row.account_type_label || (row.type === 'Personal' ? 'পার্সোনাল নম্বর (Send Money)' : row.type === 'Merchant' ? 'মার্চেন্ট নম্বর (Make Payment)' : (row.type || ''))),
+            instructions: String(row.instructions || row.instruction || ''),
+            is_active: Boolean(row.is_active),
+          }));
+
+          // Guarantee default standard templates exist as inactive if not in DB
+          for (const d of DEFAULT_PAYMENT_METHODS) {
+            if (!mapped.some((m) => m.id === d.id)) {
+              mapped.push({ ...d, is_active: false });
+            }
+          }
+
+          setLS('payment_method_configs', mapped);
+          return mapped;
         }
 
         if (error) {
           console.warn('getPaymentMethodConfigs Supabase error, falling back to cache:', error.message);
-          return getLS<PaymentMethodConfig[]>('payment_method_configs', DEFAULT_PAYMENT_METHODS);
-        }
-
-        if (data && data.length === 0) {
-          // Auto-seed default payment methods to Supabase table
-          try {
-            await supabase.from('payment_method_configs').upsert(DEFAULT_PAYMENT_METHODS);
-          } catch (seedErr) {
-            console.warn('Auto-seeding default payment methods failed:', seedErr);
-          }
-          return DEFAULT_PAYMENT_METHODS;
         }
       } catch (err) {
         console.error('getPaymentMethodConfigs exception:', err);
@@ -919,19 +926,34 @@ export const api = {
 
     if (isSupabaseConfigured && supabase) {
       try {
-        const { error } = await supabase.from('payment_method_configs').upsert(configs, { onConflict: 'id' });
-        if (error) {
-          console.warn('Supabase payment method configs save error, retrying without optional column:', error.message);
-          // If account_type_label column is missing in Supabase schema, retry upsert without account_type_label column
-          const sanitizedConfigs = configs.map((c) => {
-            const copy = { ...c };
-            delete (copy as any).account_type_label;
-            return copy;
-          });
-          const { error: retryError } = await supabase.from('payment_method_configs').upsert(sanitizedConfigs, { onConflict: 'id' });
-          if (retryError) {
-            console.warn('Retry updating payment_method_configs failed:', retryError.message);
+        for (const c of configs) {
+          const dbRow = {
+            id: c.id,
+            name: c.name,
+            number: c.number_or_account,
+            type: c.type === 'bank_transfer' ? 'bank_transfer' : (c.account_type_label?.includes('Merchant') ? 'Merchant' : 'Personal'),
+            account_type_label: c.account_type_label,
+            instructions: c.instructions,
+            is_active: Boolean(c.is_active),
+            updated_at: new Date().toISOString(),
+          };
+
+          const { error } = await supabase.from('payment_method_configs').upsert(dbRow, { onConflict: 'id' });
+          if (error) {
+            console.warn(`Supabase payment_method_configs upsert error for ${c.id}:`, error.message);
           }
+        }
+
+        // Also save to platform_settings if possible
+        try {
+          await supabase.from('platform_settings').upsert({
+            key: 'payment_method_configs',
+            value: configs,
+            description: 'Payment method configurations and activation status',
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'key' });
+        } catch {
+          // ignore RLS error if platform_settings protected
         }
       } catch (err: any) {
         console.warn('Failed to update payment_method_configs in Supabase:', err);
