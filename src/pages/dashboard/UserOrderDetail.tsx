@@ -127,11 +127,11 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
   }
 
   const hasDeliverables = Boolean((order?.deliverables && order.deliverables.length > 0) || order?.delivered_at);
-  const isDeliveredOrder = Boolean(order && (order.status === 'delivered' || hasDeliverables));
+  const isDeliveredOrder = Boolean(order && (order.status === 'delivered' || (hasDeliverables && order.status !== 'revision_requested')));
   const showDeliveryConfirmationBox = Boolean(
     order &&
-    order.assigned_admin &&
-    !['completed', 'cancelled', 'refunded'].includes(order.status)
+    isDeliveredOrder &&
+    !['completed', 'cancelled', 'refunded', 'revision_requested'].includes(order.status)
   );
 
   const handleRequestRevision = async (e: React.FormEvent) => {
@@ -400,18 +400,16 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
           }
         }
 
-        const isDelivered = order.status === 'delivered' || hasDeliverables;
-
         return (
           <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-teal-700 text-white shadow-lg space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-1">
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/20 text-white text-[11px] font-bold uppercase tracking-wider">
-                  <Sparkles className="w-3.5 h-3.5 text-yellow-300" /> {isDelivered ? 'কাজ ডেলিভারি সম্পন্ন হয়েছে' : 'কাজ চলমান ও ডেলিভারি এক্সেপ্টেন্স'}
+                  <Sparkles className="w-3.5 h-3.5 text-yellow-300" /> প্রজেক্ট ফাইল ডেলিভারি করা হয়েছে
                 </div>
                 <h3 className="text-lg font-bold">কাজটি যাচাই করুন এবং ডেলিভারি গ্রহণ নিশ্চিত করুন</h3>
                 <p className="text-xs text-emerald-100 leading-relaxed max-w-2xl">
-                  আপনার দায়িত্বপ্রাপ্ত কর্মকর্তা প্রজেক্ট পরিচালনা করছেন। চ্যাট বা ফাইল সেকশনে কাজের আপডেট দেখে নিন। সন্তুষ্ট হলে <strong>&quot;কাজটি গ্রহণ ও কনফার্ম করুন&quot;</strong> বাটনে ক্লিক করে অর্ডারটি সম্পন্ন করুন, অথবা পরিবর্তন দরকার হলে <strong>&quot;রিভিশন পাঠান&quot;</strong>।
+                  আপনার দায়িত্বপ্রাপ্ত কর্মকর্তা প্রজেক্টের ফাইল ডেলিভারি করেছেন। চ্যাট বা ফাইল সেকশনে ডেলিভারি দেখে সন্তুষ্ট হলে <strong>&quot;কাজটি গ্রহণ ও কনফার্ম করুন&quot;</strong> বাটনে ক্লিক করে প্রজেক্ট সম্পন্ন করুন, অথবা প্রয়োজনে <strong>&quot;রিভিশন পাঠান&quot;</strong>।
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -436,7 +434,7 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
             <div className="pt-3 border-t border-emerald-500/40 flex items-center gap-2 text-xs text-emerald-100 bg-emerald-800/40 px-3.5 py-2.5 rounded-xl">
               <Clock className="w-4 h-4 text-amber-300 shrink-0" />
               <span>
-                <strong className="text-white font-medium">⏰ ৪৮ ঘণ্টার স্বয়ংক্রিয় সমাপ্তি (অবশিষ্ট সময়: {remainingText}):</strong> ডেলিভারি সাবমিট হওয়া বা কাজ শুরুর ৪৮ ঘণ্টার মধ্যে আপনি ডেলিভারি গ্রহণ বা কোনো রিভিশনের আবেদন না জানালে, সিস্টেম অর্ডারটি স্বয়ংক্রিয়ভাবে সফল ঘোষণা করবে এবং কর্মকর্তা/অ্যাডমিনকে কাজের অর্থ ছাড় করবে।
+                <strong className="text-white font-medium">⏰ ৪৮ ঘণ্টার স্বয়ংক্রিয় সমাপ্তি (অবশিষ্ট সময়: {remainingText}):</strong> ফাইল ডেলিভারি পাওয়ার ৪৮ ঘণ্টার মধ্যে আপনি ডেলিভারি গ্রহণ বা কোনো রিভিশনের আবেদন না জানালে, সিস্টেম অর্ডারটি স্বয়ংক্রিয়ভাবে সফল ঘোষণা করবে এবং কর্মকর্তা/অ্যাডমিনকে কাজের অর্থ ছাড় করবে।
               </span>
             </div>
           </div>
