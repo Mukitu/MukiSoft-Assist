@@ -1646,9 +1646,17 @@ export const api = {
       console.warn('Claim notification failed:', err);
     }
 
+    // ওয়ার্কার বা অ্যাডমিন কাজটি এক্সেপ্ট করলেই কমিশনের হিসাব ওয়ালেটে ক্রেডিট করা
+    try {
+      await this.distributeOrderCommission(updatedOrder);
+    } catch (e) {
+      console.warn('Commission distribution on claim warning:', e);
+    }
+
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('order_claimed', { detail: { orderId, order: updatedOrder } }));
       window.dispatchEvent(new CustomEvent('orders_updated'));
+      window.dispatchEvent(new CustomEvent('wallet_updated'));
     }
 
     return updatedOrder;
@@ -4336,27 +4344,42 @@ export const api = {
         this.getWithdrawalRequests(),
       ]);
 
-      const myCompleted = allOrders.filter((o) => {
+      const normEmail = userEmail?.trim().toLowerCase();
+      const normId = userId?.trim().toLowerCase();
+
+      // ওয়ার্কার বা অ্যাডমিন যেসব কাজ এক্সেপ্ট (Claim / Start / Deliver / Complete) করেছেন
+      const myAccepted = allOrders.filter((o) => {
+        const oAdminId = o.assigned_admin?.trim().toLowerCase();
+        const oAdminEmail = o.assigned_admin_email?.trim().toLowerCase();
         const isAssigned =
-          o.assigned_admin === userId ||
-          (userEmail && o.assigned_admin === userEmail) ||
-          (o.assigned_admin_email && (o.assigned_admin_email === userId || (userEmail && o.assigned_admin_email === userEmail)));
-        return isAssigned && o.status === 'completed';
+          (oAdminId && (oAdminId === normId || (normEmail && oAdminId === normEmail))) ||
+          (oAdminEmail && ((normEmail && oAdminEmail === normEmail) || oAdminEmail === normId));
+
+        // বাতিল বা রিফান্ড ছাড়া যেকোনো গৃহীত বা সম্পন্ন কাজ
+        const isActiveOrDone = !['cancelled', 'refunded', 'pending'].includes(o.status);
+        return isAssigned && isActiveOrDone;
       });
 
       const rate = commSettings.worker_commission_percentage || 80;
-      const totalEarned = myCompleted.reduce((sum, o) => {
+      const totalEarned = myAccepted.reduce((sum, o) => {
         return sum + Math.round((o.amount * rate) / 100);
       }, 0);
 
       const totalWithdrawn = withdrawals
-        .filter((w) => (w.user_id === userId || (userEmail && w.user_email === userEmail)) && (w.status === 'approved' || w.status === 'pending'))
+        .filter((w) => {
+          const wEmail = w.user_email?.trim().toLowerCase();
+          const wId = w.user_id?.trim().toLowerCase();
+          const isMyWithdraw =
+            (wId && (wId === normId || (normEmail && wId === normEmail))) ||
+            (wEmail && (wEmail === normEmail || wEmail === normId));
+          return isMyWithdraw && (w.status === 'approved' || w.status === 'pending');
+        })
         .reduce((sum, w) => sum + w.amount, 0);
 
       const calculated = Math.max(0, totalEarned - totalWithdrawn);
       const effective = Math.max(currentExplicit, calculated);
 
-      if (effective !== currentExplicit) {
+      if (effective !== currentExplicit || balances[userId] !== effective) {
         balances[userId] = effective;
         if (userEmail) balances[userEmail] = effective;
         setLS('worker_withdrawable_balances', balances);
@@ -4367,7 +4390,10 @@ export const api = {
     }
   },
 
-  async getWorkerCompletedOrders(userId: string, userEmail?: string): Promise<{ order: Order; commission: number; rate: number }[]> {
+  async getWorkerCompletedOrders(
+    userId: string,
+    userEmail?: string
+  ): Promise<{ order: Order; commission: number; rate: number; companyShare: number; companyRate: number }[]> {
     await this.checkAndAutoCompleteOrders();
     try {
       const [allOrders, commSettings] = await Promise.all([
@@ -4375,18 +4401,33 @@ export const api = {
         this.getCommissionSettings(),
       ]);
       const rate = commSettings.worker_commission_percentage || 80;
-      const myCompleted = allOrders.filter((o) => {
+      const companyRate = 100 - rate;
+
+      const normEmail = userEmail?.trim().toLowerCase();
+      const normId = userId?.trim().toLowerCase();
+
+      const myAccepted = allOrders.filter((o) => {
+        const oAdminId = o.assigned_admin?.trim().toLowerCase();
+        const oAdminEmail = o.assigned_admin_email?.trim().toLowerCase();
         const isAssigned =
-          o.assigned_admin === userId ||
-          (userEmail && o.assigned_admin === userEmail) ||
-          (o.assigned_admin_email && (o.assigned_admin_email === userId || (userEmail && o.assigned_admin_email === userEmail)));
-        return isAssigned && o.status === 'completed';
+          (oAdminId && (oAdminId === normId || (normEmail && oAdminId === normEmail))) ||
+          (oAdminEmail && ((normEmail && oAdminEmail === normEmail) || oAdminEmail === normId));
+
+        const isActiveOrDone = !['cancelled', 'refunded', 'pending'].includes(o.status);
+        return isAssigned && isActiveOrDone;
       });
-      return myCompleted.map((o) => ({
-        order: o,
-        commission: Math.round((o.amount * rate) / 100),
-        rate,
-      }));
+
+      return myAccepted.map((o) => {
+        const commission = Math.round((o.amount * rate) / 100);
+        const companyShare = o.amount - commission;
+        return {
+          order: o,
+          commission,
+          rate,
+          companyShare,
+          companyRate,
+        };
+      });
     } catch {
       return [];
     }

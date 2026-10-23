@@ -19,7 +19,9 @@ export const WorkerWithdraw: React.FC = () => {
     updated_at: new Date().toISOString(),
   });
   const [withdrawHistory, setWithdrawHistory] = useState<WithdrawalRequest[]>([]);
-  const [completedOrders, setCompletedOrders] = useState<{ order: any; commission: number; rate: number }[]>([]);
+  const [completedOrders, setCompletedOrders] = useState<
+    { order: any; commission: number; rate: number; companyShare?: number; companyRate?: number }[]
+  >([]);
   const [withdrawAmount, setWithdrawAmount] = useState<string>('');
 
   const [savingAccount, setSavingAccount] = useState(false);
@@ -178,7 +180,7 @@ export const WorkerWithdraw: React.FC = () => {
             {toBengaliCurrency(totalEarnedCommission || balance)}
           </div>
           <p className="text-[11px] text-slate-500">
-            মোট {toBengaliDigits(completedOrders.length)}টি সফলভাবে সম্পন্ন অর্ডারের কমিশন।
+            মোট {toBengaliDigits(completedOrders.length)}টি গৃহীত ও সম্পন্ন কাজের কমিশন।
           </p>
         </div>
 
@@ -322,21 +324,22 @@ export const WorkerWithdraw: React.FC = () => {
         </form>
       </div>
 
-      {/* আমার সম্পন্নকৃত কাজ ও কমিশন বিবরণ */}
+      {/* আমার গৃহীত ও সম্পন্নকৃত কাজ এবং উপার্জিত কমিশন বিবরণ */}
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden space-y-4">
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+        <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
-            <h3 className="text-sm font-bold text-slate-900">আমার সম্পন্নকৃত কাজ ও উপার্জিত কমিশন বিবরণ</h3>
-            <p className="text-[11px] text-slate-500">গ্রাহক অনুমোদিত প্রতিটি অর্ডারের আপনার ৭০%-৮০% নিট কাজের কমিশন</p>
+            <h3 className="text-sm font-bold text-slate-900">আমার গৃহীত ও সম্পন্নকৃত কাজ এবং উপার্জিত কমিশন বিবরণ</h3>
+            <p className="text-[11px] text-slate-500">কোম্পানির কমিশন অংশ বাদ দিয়ে প্রতিটি অর্ডারের আপনার নিট কমিশন সরাসরি ব্যালেন্সে যুক্ত হয়</p>
           </div>
-          <span className="text-xs font-mono font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200">
-            মোট সম্পন্ন: {toBengaliDigits(completedOrders.length)}টি কাজ
+          <span className="text-xs font-mono font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200 self-start sm:self-auto">
+            মোট কাজ: {toBengaliDigits(completedOrders.length)}টি
           </span>
         </div>
 
         {completedOrders.length === 0 ? (
-          <div className="p-8 text-center text-xs text-slate-500">
-            এখন পর্যন্ত আপনার কোনো সম্পন্নকৃত কাজের রেকর্ড নেই। কাজ সম্পন্ন হওয়ার সাথে সাথে এখানে স্বয়ংক্রিয়ভাবে কমিশন যুক্ত হবে।
+          <div className="p-8 text-center text-xs text-slate-500 space-y-1">
+            <p className="font-semibold text-slate-700">এখন পর্যন্ত কোনো কাজের রেকর্ড নেই</p>
+            <p>পেন্ডিং কিউ থেকে যেকোনো কাজ গ্রহণ (এক্সেপ্ট) করলেই তার নির্ধারিত নিট কমিশন আপনার ব্যালেন্সে যোগ হবে এবং এখানে বিস্তারিত দেখা যাবে।</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -346,40 +349,57 @@ export const WorkerWithdraw: React.FC = () => {
                   <th className="py-3 px-4 font-medium">অর্ডার নম্বর</th>
                   <th className="py-3 px-4 font-medium">সার্ভিস নাম</th>
                   <th className="py-3 px-4 font-medium">মোট বাজেট</th>
-                  <th className="py-3 px-4 font-medium">কমিশন রেট</th>
-                  <th className="py-3 px-4 font-medium">উপার্জিত কমিশন</th>
-                  <th className="py-3 px-4 font-medium">তারিখ</th>
-                  <th className="py-3 px-4 font-medium">স্ট্যাটাস</th>
+                  <th className="py-3 px-4 font-medium">কোম্পানির অংশ (বাদ)</th>
+                  <th className="py-3 px-4 font-medium">আপনার নিট উপার্জন</th>
+                  <th className="py-3 px-4 font-medium">কাজের অবস্থা</th>
+                  <th className="py-3 px-4 font-medium">ব্যালেন্স অবস্থা</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
-                {completedOrders.map(({ order, commission, rate }) => (
-                  <tr key={order.id} className="hover:bg-slate-50/50">
-                    <td className="py-3 px-4 font-mono font-bold text-slate-900">
-                      #{order.order_number}
-                    </td>
-                    <td className="py-3 px-4 font-medium text-slate-800">
-                      {order.service?.title_bn || order.service?.title || 'ডিজিটাল সার্ভিস'}
-                    </td>
-                    <td className="py-3 px-4 font-mono font-bold text-slate-700">
-                      {toBengaliCurrency(order.amount)}
-                    </td>
-                    <td className="py-3 px-4 font-mono text-indigo-600 font-bold">
-                      {toBengaliDigits(rate)}%
-                    </td>
-                    <td className="py-3 px-4 font-mono font-extrabold text-emerald-600 text-sm">
-                      +{toBengaliCurrency(commission)}
-                    </td>
-                    <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
-                      {toBengaliDate(order.completed_at || order.updated_at || order.created_at)}
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> সম্পন্ন ও ক্রেডিট
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {completedOrders.map((item) => {
+                  const ord = item.order;
+                  const cShare = item.companyShare ?? (ord.amount - item.commission);
+                  const cRate = item.companyRate ?? (100 - item.rate);
+                  return (
+                    <tr key={ord.id} className="hover:bg-slate-50/50">
+                      <td className="py-3 px-4 font-mono font-bold text-slate-900">
+                        #{ord.order_number}
+                      </td>
+                      <td className="py-3 px-4 font-medium text-slate-800">
+                        {ord.service?.title_bn || ord.service?.title || 'সার্ভিস অর্ডার'}
+                      </td>
+                      <td className="py-3 px-4 font-mono font-bold text-slate-700">
+                        {toBengaliCurrency(ord.amount)}
+                      </td>
+                      <td className="py-3 px-4 font-mono text-rose-600 font-medium">
+                        -{toBengaliCurrency(cShare)} ({toBengaliDigits(cRate)}%)
+                      </td>
+                      <td className="py-3 px-4 font-mono font-black text-emerald-600 text-sm">
+                        +{toBengaliCurrency(item.commission)} ({toBengaliDigits(item.rate)}%)
+                      </td>
+                      <td className="py-3 px-4">
+                        {ord.status === 'completed' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" /> সম্পন্ন
+                          </span>
+                        ) : ord.status === 'delivered' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-100 text-cyan-800">
+                            <Clock className="w-3 h-3 text-cyan-600" /> ডেলিভারিকৃত
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                            <Clock className="w-3 h-3 text-amber-600" /> গৃহীত ও চলমান
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" /> ব্যালেন্সে যুক্ত
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

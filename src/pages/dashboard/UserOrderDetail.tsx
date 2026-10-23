@@ -40,7 +40,7 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
   const [loading, setLoading] = useState(true);
 
   // ট্যাব স্টেট
-  const [activeTab, setActiveTab] = useState<'deliverables' | 'chat' | 'reviews'>('deliverables');
+  const [activeTab, setActiveTab] = useState<'deliverables' | 'chat'>('deliverables');
 
   // ইন্টারঅ্যাকশন স্টেট
   const [revisionModalOpen, setRevisionModalOpen] = useState(false);
@@ -60,12 +60,6 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
   const { messages, sending: sendingChat, sendMessage: sendOrderMessageViaHook } = useMessages(orderId);
   const [chatInput, setChatInput] = useState('');
   const chatContainerRef = useRef<HTMLDivElement>(null);
-
-  // ক্লায়েন্ট রিভিউ স্টেট
-  const [customerRating, setCustomerRating] = useState<number>(5);
-  const [hoverRating, setHoverRating] = useState<number>(0);
-  const [customerComment, setCustomerComment] = useState('');
-  const [submittingReview, setSubmittingReview] = useState(false);
 
   const loadData = async () => {
     if (!user) return;
@@ -172,9 +166,9 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
       showToast({
         type: 'success',
         title: 'অর্ডার সফলভাবে সম্পন্ন হয়েছে! 🎉',
-        message: 'কাজটি সফলভাবে সম্পন্ন হিসেবে চিহ্নিত করা হয়েছে। আপনার অভিজ্ঞতা শেয়ার করতে একটি রিভিউ দিন।',
+        message: 'কাজটি সফলভাবে সম্পন্ন হয়েছে এবং কাজের নির্ধারিত অর্থ ছাড় করা হয়েছে।',
       });
-      setActiveTab('reviews');
+      setActiveTab('deliverables');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'অর্ডার সম্পন্নকরণ ব্যর্থ হয়েছে';
       showToast({ type: 'error', title: 'ত্রুটি', message: msg });
@@ -198,39 +192,7 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
     }
   };
 
-  const handleSubmitCustomerReview = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user || !order) return;
-    if (!customerComment.trim()) {
-      showToast({ type: 'error', title: 'মন্তব্য আবশ্যক', message: 'দয়া করে আপনার কাজের অভিজ্ঞতা বা মন্তব্য লিখুন।' });
-      return;
-    }
 
-    setSubmittingReview(true);
-    try {
-      const reviewerName = profile?.full_name || user.email?.split('@')[0] || 'গ্রাহক';
-      await api.submitOrderReview(
-        order.id,
-        user.id,
-        reviewerName,
-        'customer',
-        customerRating,
-        customerComment.trim()
-      );
-      showToast({
-        type: 'success',
-        title: 'রিভিউ সফলভাবে জমা হয়েছে! ⭐',
-        message: 'আপনার মূল্যবান মূল্যায়নের জন্য ধন্যবাদ।',
-      });
-      setCustomerComment('');
-      await loadData();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'রিভিউ সাবমিট ব্যর্থ হয়েছে';
-      showToast({ type: 'error', title: 'ত্রুটি', message: msg });
-    } finally {
-      setSubmittingReview(false);
-    }
-  };
 
   const handleSendClarification = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -451,25 +413,26 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
         </div>
       )}
 
-      {/* সম্পন্ন অর্ডার ও রিভিউ আমন্ত্রণ ব্যানার */}
-      {order.status === 'completed' && !order.customer_review && (
-        <div className="p-4 rounded-xl bg-indigo-50 border border-indigo-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      {/* সম্পন্ন অর্ডার নিশ্চিতকরণ ব্যানার (কোনো রিভিউ ছাড়া) */}
+      {order.status === 'completed' && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
-              <Star className="w-4 h-4 fill-white" />
+            <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <CheckCircle2 className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h4 className="font-bold text-xs text-indigo-950">কাজটি সফলভাবে সম্পন্ন হয়েছে!</h4>
-              <p className="text-xs text-indigo-700 mt-0.5">
-                দায়িত্বপ্রাপ্ত অ্যাডমিনের কাজের মান ও অভিজ্ঞতা সম্পর্কে একটি রেটিং ও রিভিউ প্রদান করুন।
+              <h4 className="font-bold text-sm text-emerald-950">কাজটি সফলভাবে সম্পন্ন হয়েছে! 🎉</h4>
+              <p className="text-xs text-emerald-700 mt-0.5">
+                আপনার অর্ডারের ডেলিভারিকৃত সকল ফাইল ড্যাশবোর্ডে নিরাপদে সংরক্ষিত রয়েছে। যেকোনো সময় ফাইল ডাউনলোড করতে পারবেন।
               </p>
             </div>
           </div>
           <button
-            onClick={() => setActiveTab('reviews')}
-            className="px-4 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-2xs transition-colors shrink-0"
+            onClick={() => setActiveTab('deliverables')}
+            className="px-4 py-2 text-xs font-bold text-emerald-900 bg-white hover:bg-emerald-100 border border-emerald-200 rounded-xl shadow-2xs transition-colors shrink-0 flex items-center gap-1.5"
           >
-            রিভিউ লিখুন
+            <Download className="w-3.5 h-3.5 text-emerald-700" />
+            <span>ফাইলসমূহ দেখুন</span>
           </button>
         </div>
       )}
@@ -557,20 +520,7 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
           )}
         </button>
 
-        <button
-          onClick={() => setActiveTab('reviews')}
-          className={`pb-3 px-3 text-xs font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${
-            activeTab === 'reviews'
-              ? 'border-indigo-600 text-indigo-600'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Star className="w-3.5 h-3.5" />
-          <span>মিউচুয়াল রিভিউ ও রেটিং</span>
-          {(order.customer_review || order.admin_review) && (
-            <span className="w-2 h-2 rounded-full bg-amber-500" />
-          )}
-        </button>
+
       </div>
 
       {/* ট্যাব ১: ফাইল ও কাজের বিবরণ */}
@@ -844,154 +794,7 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
         </div>
       )}
 
-      {/* ট্যাব ৩: মিউচুয়াল রিভিউ ও রেটিং */}
-      {activeTab === 'reviews' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* ক্লায়েন্ট কর্তৃক রিভিউ বক্স */}
-          <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
-            <div className="flex items-center gap-2">
-              <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
-              <h3 className="font-bold text-sm text-slate-900">আপনার রিভিউ ও কাজের রেটিং</h3>
-            </div>
 
-            {order.customer_review ? (
-              <div className="p-4 rounded-xl bg-amber-50/60 border border-amber-200 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <Star
-                        key={star}
-                        className={`w-4 h-4 ${
-                          star <= (order.customer_review?.rating || 5)
-                            ? 'text-amber-500 fill-amber-500'
-                            : 'text-slate-300'
-                        }`}
-                      />
-                    ))}
-                    <span className="text-xs font-bold text-amber-900 ml-1.5">
-                      {toBengaliDigits(order.customer_review.rating)} / ৫
-                    </span>
-                  </div>
-                  <span className="text-[10px] text-slate-500">
-                    {toBengaliDate(order.customer_review.created_at)}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-800 leading-relaxed italic">
-                  &quot;{order.customer_review.comment}&quot;
-                </p>
-                <div className="text-[10px] text-slate-500 pt-1">
-                  মূল্যায়নকারী: {order.customer_review.reviewer_name}
-                </div>
-              </div>
-            ) : order.status === 'completed' ? (
-              <form onSubmit={handleSubmitCustomerReview} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    কাজের মান রেটিং দিন:
-                  </label>
-                  <div className="flex items-center gap-1.5">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <button
-                        key={star}
-                        type="button"
-                        onClick={() => setCustomerRating(star)}
-                        onMouseEnter={() => setHoverRating(star)}
-                        onMouseLeave={() => setHoverRating(0)}
-                        className="p-1 hover:scale-110 transition-transform"
-                      >
-                        <Star
-                          className={`w-6 h-6 ${
-                            star <= (hoverRating || customerRating)
-                              ? 'text-amber-500 fill-amber-500'
-                              : 'text-slate-300'
-                          }`}
-                        />
-                      </button>
-                    ))}
-                    <span className="text-xs font-bold text-slate-700 ml-2">
-                      {toBengaliDigits(hoverRating || customerRating)} স্টার
-                    </span>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    আপনার মন্তব্য লিখুন <span className="text-rose-500">*</span>
-                  </label>
-                  <textarea
-                    rows={3}
-                    required
-                    value={customerComment}
-                    onChange={(e) => setCustomerComment(e.target.value)}
-                    placeholder="কাজের মান, নিয়মানুবর্তিতা এবং স্পেশালিস্টের আচরণ সম্পর্কে লিখুন..."
-                    className="w-full p-3 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={submittingReview}
-                  className="px-5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-colors flex items-center gap-1.5"
-                >
-                  <Star className="w-3.5 h-3.5 fill-white" />
-                  <span>{submittingReview ? 'জমা হচ্ছে...' : 'রিভিউ জমা দিন'}</span>
-                </button>
-              </form>
-            ) : (
-              <div className="p-6 text-center text-xs text-slate-400 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
-                <Lock className="w-5 h-5 mx-auto text-slate-400" />
-                <p className="font-semibold text-slate-700">কাজটি এখনও সম্পন্ন হয়নি</p>
-                <p>কাজ ডেলিভারি হওয়ার পর আপনি ডেলিভারি নিশ্চিত করলেই এখানে রিভিউ দিতে পারবেন।</p>
-              </div>
-            )}
-          </div>
-
-          {/* দায়িত্বপ্রাপ্ত অ্যাডমিনের রিভিউ বক্স (গ্রাহকের ওপর মূল্যায়ন) */}
-          <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
-            <div className="flex items-center gap-2">
-              <UserCheck className="w-4 h-4 text-emerald-600" />
-              <h3 className="font-bold text-sm text-slate-900">স্পেশালিস্ট অ্যাডমিনের মূল্যায়ন</h3>
-            </div>
-
-            {order.admin_review ? (
-              <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <Star
-                        key={star}
-                        className={`w-4 h-4 ${
-                          star <= (order.admin_review?.rating || 5)
-                            ? 'text-emerald-600 fill-emerald-600'
-                            : 'text-slate-300'
-                        }`}
-                      />
-                    ))}
-                    <span className="text-xs font-bold text-emerald-900 ml-1.5">
-                      {toBengaliDigits(order.admin_review.rating)} / ৫
-                    </span>
-                  </div>
-                  <span className="text-[10px] text-slate-500">
-                    {toBengaliDate(order.admin_review.created_at)}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-800 leading-relaxed italic">
-                  &quot;{order.admin_review.comment}&quot;
-                </p>
-                <div className="text-[10px] text-emerald-800 font-semibold pt-1">
-                  মূল্যায়নকারী: {order.admin_review.reviewer_name} (দায়িত্বপ্রাপ্ত স্পেশালিস্ট)
-                </div>
-              </div>
-            ) : (
-              <div className="p-6 text-center text-xs text-slate-400 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
-                <Clock className="w-5 h-5 mx-auto text-slate-400" />
-                <p className="font-semibold text-slate-700">অ্যাডমিনের রিভিউয়ের অপেক্ষায়</p>
-                <p>কাজ সম্পন্ন হওয়ার পর অ্যাডমিন আপনার সাথে যোগাযোগের ভিত্তিতে মূল্যায়ন প্রদান করবেন।</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* রিভিশন রিকোয়েস্ট মডাল */}
       {revisionModalOpen && (
