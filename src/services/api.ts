@@ -4638,8 +4638,8 @@ export const api = {
 
     const mergedMap = new Map<string, WithdrawalRequest>();
 
-    // 1. Populate remote
-    remoteReqs.forEach((r) => {
+    // ১. প্রথমে লোকাল স্টোরেজ থেকে ডেটা ম্যাপে প্রবেশ করানো
+    localReqs.forEach((r) => {
       if (r && r.id) {
         let accountObj = r.payout_account;
         if (typeof accountObj === 'string') {
@@ -4652,18 +4652,18 @@ export const api = {
       }
     });
 
-    // 2. Always merge local requests
-    localReqs.forEach((r) => {
+    // ২. সুপাবেজ (Remote Supabase) ডেটা ম্যাপে প্রসেস করা — সুপাবেজের অনুমোদিত/প্রত্যাখ্যাত স্ট্যাটাস সব সময় প্রাধান্য পাবে
+    remoteReqs.forEach((r) => {
       if (r && r.id) {
         let accountObj = r.payout_account;
         if (typeof accountObj === 'string') {
           try { accountObj = JSON.parse(accountObj); } catch {}
         }
-        const existing = mergedMap.get(r.id);
+        const local = mergedMap.get(r.id);
         mergedMap.set(r.id, {
-          ...(existing || {}),
-          ...r,
-          payout_account: accountObj || existing?.payout_account || { user_id: r.user_id, method: 'bkash', account_number: '', updated_at: r.created_at },
+          ...(local || {}),
+          ...r, // Remote Supabase values (especially status: 'approved' | 'rejected') overwrite local state
+          payout_account: accountObj || local?.payout_account || { user_id: r.user_id, method: 'bkash', account_number: '', updated_at: r.created_at },
         });
       }
     });
@@ -4673,10 +4673,10 @@ export const api = {
     );
     setLS('withdrawal_requests', finalResult);
 
-    // 3. Auto-sync local requests to Supabase if missing in remote database
+    // ৩. সুপাবেজে নতুন লোকাল রিকোয়েস্ট সিঙ্ক করা (শুধুমাত্র পেন্ডিং অবস্থায় থাকলে)
     if (isSupabaseConfigured && supabase && localReqs.length > 0) {
       const remoteIds = new Set(remoteReqs.map((r) => r.id));
-      const missingInRemote = localReqs.filter((r) => r && r.id && !remoteIds.has(r.id));
+      const missingInRemote = localReqs.filter((r) => r && r.id && !remoteIds.has(r.id) && r.status === 'pending');
       if (missingInRemote.length > 0) {
         Promise.all(
           missingInRemote.map((r) =>

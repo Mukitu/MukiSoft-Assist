@@ -40,13 +40,27 @@ export const WorkerWithdraw: React.FC = () => {
       updated_at: new Date().toISOString(),
     };
   });
+  const filterMyRequests = (reqs: WithdrawalRequest[]): WithdrawalRequest[] => {
+    if (!user) return [];
+    const normUserId = user.id?.trim().toLowerCase();
+    const normUserEmail = user.email?.trim().toLowerCase();
+    return reqs.filter((r) => {
+      const rId = r.user_id?.trim().toLowerCase();
+      const rEmail = r.user_email?.trim().toLowerCase();
+      return (
+        (rId && (rId === normUserId || (normUserEmail && rId === normUserEmail))) ||
+        (rEmail && (rEmail === normUserEmail || rEmail === normUserId))
+      );
+    });
+  };
+
   const [withdrawHistory, setWithdrawHistory] = useState<WithdrawalRequest[]>(() => {
     if (!user) return [];
     try {
       const raw = localStorage.getItem('mukisoft_demo_withdrawal_requests');
       if (raw) {
         const parsed: WithdrawalRequest[] = JSON.parse(raw);
-        return parsed.filter((r) => r.user_id === user.id);
+        return filterMyRequests(parsed);
       }
     } catch {}
     return [];
@@ -72,7 +86,7 @@ export const WorkerWithdraw: React.FC = () => {
 
       setBalance(bal);
       if (acc) setPayoutAccount(acc);
-      setWithdrawHistory(reqs.filter((r) => r.user_id === user.id));
+      setWithdrawHistory(filterMyRequests(reqs));
       setCompletedOrders(doneOrders);
     } catch (err) {
       console.warn('Load withdraw page error:', err);
@@ -90,11 +104,13 @@ export const WorkerWithdraw: React.FC = () => {
 
     window.addEventListener('orders_updated', handleUpdate);
     window.addEventListener('wallet_updated', handleUpdate);
+    window.addEventListener('withdrawal_requests_updated', handleUpdate);
     window.addEventListener('storage', handleUpdate);
 
     return () => {
       window.removeEventListener('orders_updated', handleUpdate);
       window.removeEventListener('wallet_updated', handleUpdate);
+      window.removeEventListener('withdrawal_requests_updated', handleUpdate);
       window.removeEventListener('storage', handleUpdate);
     };
   }, [user]);
