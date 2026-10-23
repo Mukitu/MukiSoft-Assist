@@ -1180,6 +1180,8 @@ export const api = {
     const deliverablesMap = new Map<string, OrderDeliverable[]>();
     const eventsMap = new Map<string, OrderEvent[]>();
 
+    const refundedOrderIds = new Set<string>();
+
     if (isSupabaseConfigured && supabase) {
       try {
         if (serviceIds.length > 0) {
@@ -1207,19 +1209,55 @@ export const api = {
               eventsMap.set(e.order_id, list);
             });
           }
+
+          // লেজারে ইতিমধ্যে রিফান্ড হয়ে যাওয়া সকল অর্ডার আইডি বের করা
+          const { data: refTxs } = await supabase
+            .from('wallet_transactions')
+            .select('reference_id')
+            .in('reference_id', orderIds)
+            .eq('type', 'refund');
+          if (refTxs) {
+            refTxs.forEach((t: { reference_id: string }) => {
+              if (t.reference_id) refundedOrderIds.add(t.reference_id);
+            });
+          }
         }
       } catch (err) {
         console.warn('enrichOrders warning:', err);
       }
     }
 
-    return rawOrders.map((o) => ({
-      ...o,
-      service: servicesMap.get(o.service_id) || o.service || undefined,
-      customer: profilesMap.get(o.user_id) || o.customer || undefined,
-      deliverables: deliverablesMap.get(o.id) || o.deliverables || [],
-      events: eventsMap.get(o.id) || o.events || [],
-    })) as Order[];
+    return rawOrders.map((o) => {
+      let status = o.status;
+      const isRefundedOrCancelled =
+        refundedOrderIds.has(o.id) ||
+        (o.refund_amount && Number(o.refund_amount) > 0) ||
+        Boolean(o.cancellation_reason) ||
+        o.status === 'cancelled' ||
+        o.status === 'refunded';
+
+      if (isRefundedOrCancelled) {
+        status = 'refunded';
+        // যদি Supabase-এ স্ট্যাটাস এখনও cancelled হিসেবে সিঙ্ক না হয়ে থাকে, তবে ব্যাকগ্রাউন্ডে স্বয়ংক্রিয়ভাবে সিঙ্ক সম্পন্ন করা
+        if (isSupabaseConfigured && supabase && o.status !== 'cancelled') {
+          Promise.resolve(
+            supabase
+              .from('orders')
+              .update({ status: 'cancelled', refund_amount: o.amount })
+              .eq('id', o.id)
+          ).catch(() => {});
+        }
+      }
+
+      return {
+        ...o,
+        status,
+        service: servicesMap.get(o.service_id) || o.service || undefined,
+        customer: profilesMap.get(o.user_id) || o.customer || undefined,
+        deliverables: deliverablesMap.get(o.id) || o.deliverables || [],
+        events: eventsMap.get(o.id) || o.events || [],
+      };
+    }) as Order[];
   },
 
   async getUserOrders(userId: string): Promise<Order[]> {
@@ -2344,7 +2382,7 @@ export const api = {
       if (existingTx) {
         // লেজারে ইতিমধ্যে রিফান্ড সম্পন্ন হয়ে আছে
         await supabase.from('orders').update({
-          status: 'refunded',
+          status: 'cancelled',
           cancellation_reason: refundReason,
           refund_amount: orderAmount,
           updated_at: now,
@@ -2369,7 +2407,7 @@ export const api = {
 
         if (!rpcSucceeded) {
           await supabase.from('orders').update({
-            status: 'refunded',
+            status: 'cancelled',
             cancellation_reason: refundReason,
             refund_amount: orderAmount,
             updated_at: now,
@@ -2559,7 +2597,7 @@ export const api = {
         await supabase
           .from('orders')
           .update({
-            status: 'refunded',
+            status: 'cancelled',
             cancellation_reason: cleanReason,
             refund_amount: orderAmount,
             updated_at: now,
@@ -2585,7 +2623,7 @@ export const api = {
           await supabase
             .from('orders')
             .update({
-              status: 'refunded',
+              status: 'cancelled',
               cancellation_reason: cleanReason,
               refund_amount: orderAmount,
               updated_at: now,

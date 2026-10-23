@@ -318,9 +318,9 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
           <span className="text-2xl font-bold font-mono text-slate-900">
             {toBengaliCurrency(order.amount)}
           </span>
-          {order.status === 'refunded' && (
+          {(order.status === 'refunded' || order.status === 'cancelled' || (order.refund_amount && order.refund_amount > 0)) && (
             <span className="block text-xs text-cyan-700 font-semibold mt-0.5">
-              (৳ {toBengaliDigits(order.amount)} ওয়ালেটে ফেরত দেওয়া হয়েছে)
+              (৳ {toBengaliDigits(order.refund_amount || order.amount)} ওয়ালেটে ফেরত দেওয়া হয়েছে)
             </span>
           )}
           <div className="flex flex-wrap items-center gap-2 mt-1 self-start sm:self-auto">
