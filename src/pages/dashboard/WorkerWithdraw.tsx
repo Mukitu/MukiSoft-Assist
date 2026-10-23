@@ -168,6 +168,8 @@ export const WorkerWithdraw: React.FC = () => {
 
   const totalEarnedCommission = completedOrders.reduce((sum, item) => sum + item.commission, 0);
   const totalWithdrawnAmount = withdrawHistory.filter((w) => w.status === 'approved').reduce((sum, w) => sum + w.amount, 0);
+  const pendingRequest = withdrawHistory.find((w) => w.status === 'pending');
+  const hasPendingRequest = !!pendingRequest;
 
   return (
     <div className="space-y-6">
@@ -240,6 +242,15 @@ export const WorkerWithdraw: React.FC = () => {
             <span>টাকা উত্তোলনের অনুরোধ জমা দিন</span>
           </h3>
 
+          {hasPendingRequest && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>
+                আপনার <strong>{toBengaliCurrency(pendingRequest.amount)}</strong> উত্তোলনের একটি আবেদন ইতিমধ্যেই প্রসেসিং অপেক্ষমাণ রয়েছে। এডমিন কর্তৃক সেটি অনুমোদিত বা রিভিউ হওয়ার পূর্বে নতুন আবেদন করা যাবে না।
+              </span>
+            </div>
+          )}
+
           <form onSubmit={handleSubmitWithdraw} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -252,13 +263,15 @@ export const WorkerWithdraw: React.FC = () => {
                   value={withdrawAmount}
                   onChange={(e) => setWithdrawAmount(e.target.value)}
                   placeholder="যেমন: 500"
-                  className="w-full px-3.5 py-2.5 text-sm font-mono bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                  disabled={hasPendingRequest}
+                  className="w-full px-3.5 py-2.5 text-sm font-mono bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500 disabled:opacity-60"
                   required
                 />
                 <button
                   type="button"
+                  disabled={hasPendingRequest}
                   onClick={() => setWithdrawAmount(String(balance))}
-                  className="absolute right-2 top-2 px-2.5 py-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100"
+                  className="absolute right-2 top-2 px-2.5 py-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 disabled:opacity-50"
                 >
                   সর্বোচ্চ (All)
                 </button>
@@ -267,10 +280,14 @@ export const WorkerWithdraw: React.FC = () => {
 
             <button
               type="submit"
-              disabled={submittingWithdraw || balance <= 0}
+              disabled={submittingWithdraw || balance <= 0 || hasPendingRequest}
               className="w-full py-2.5 px-4 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all shadow-sm active:scale-98 disabled:opacity-50"
             >
-              {submittingWithdraw ? 'রিকোয়েস্ট পাঠানো হচ্ছে...' : 'উইথড্র রিকোয়েস্ট পাঠাতুন'}
+              {submittingWithdraw
+                ? 'রিকোয়েস্ট পাঠানো হচ্ছে...'
+                : hasPendingRequest
+                ? 'আগের উইথড্র আবেদন প্রসেসিংাধীন রয়েছে'
+                : 'উইথড্র রিকোয়েস্ট পাঠান'}
             </button>
           </form>
         </div>

@@ -4440,72 +4440,56 @@ export const api = {
 
   async getUserWithdrawableBalance(userId: string, userEmail?: string): Promise<number> {
     const balances = getLS<Record<string, number>>('worker_withdrawable_balances', {});
-    const explicitById = balances[userId] || 0;
-    const explicitByEmail = userEmail ? balances[userEmail] || 0 : 0;
-    const currentExplicit = Math.max(explicitById, explicitByEmail);
+    const normEmail = userEmail?.trim().toLowerCase();
+    const normId = userId?.trim().toLowerCase();
 
-    const recalculateAsync = async () => {
-      try {
-        await this.checkAndAutoCompleteOrders();
-        const [allOrders, commSettings, withdrawals] = await Promise.all([
-          this.getAllOrders(),
-          this.getCommissionSettings(),
-          this.getWithdrawalRequests(),
-        ]);
+    try {
+      await this.checkAndAutoCompleteOrders();
+      const [allOrders, commSettings, withdrawals] = await Promise.all([
+        this.getAllOrders(),
+        this.getCommissionSettings(),
+        this.getWithdrawalRequests(),
+      ]);
 
-        const normEmail = userEmail?.trim().toLowerCase();
-        const normId = userId?.trim().toLowerCase();
+      const myAccepted = allOrders.filter((o) => {
+        const oAdminId = o.assigned_admin?.trim().toLowerCase();
+        const oAdminEmail = o.assigned_admin_email?.trim().toLowerCase();
+        const isAssigned =
+          (oAdminId && (oAdminId === normId || (normEmail && oAdminId === normEmail))) ||
+          (oAdminEmail && ((normEmail && oAdminEmail === normEmail) || oAdminEmail === normId));
 
-        const myAccepted = allOrders.filter((o) => {
-          const oAdminId = o.assigned_admin?.trim().toLowerCase();
-          const oAdminEmail = o.assigned_admin_email?.trim().toLowerCase();
-          const isAssigned =
-            (oAdminId && (oAdminId === normId || (normEmail && oAdminId === normEmail))) ||
-            (oAdminEmail && ((normEmail && oAdminEmail === normEmail) || oAdminEmail === normId));
+        const isActiveOrDone = !['cancelled', 'refunded', 'pending'].includes(o.status);
+        return isAssigned && isActiveOrDone;
+      });
 
-          const isActiveOrDone = !['cancelled', 'refunded', 'pending'].includes(o.status);
-          return isAssigned && isActiveOrDone;
-        });
+      const rate = commSettings.worker_commission_percentage || 80;
+      const totalEarned = myAccepted.reduce((sum, o) => {
+        return sum + Math.round((o.amount * rate) / 100);
+      }, 0);
 
-        const rate = commSettings.worker_commission_percentage || 80;
-        const totalEarned = myAccepted.reduce((sum, o) => {
-          return sum + Math.round((o.amount * rate) / 100);
-        }, 0);
+      const totalWithdrawn = withdrawals
+        .filter((w) => {
+          const wEmail = w.user_email?.trim().toLowerCase();
+          const wId = w.user_id?.trim().toLowerCase();
+          const isMyWithdraw =
+            (wId && (wId === normId || (normEmail && wId === normEmail))) ||
+            (wEmail && (wEmail === normEmail || wEmail === normId));
+          return isMyWithdraw && (w.status === 'approved' || w.status === 'pending');
+        })
+        .reduce((sum, w) => sum + w.amount, 0);
 
-        const totalWithdrawn = withdrawals
-          .filter((w) => {
-            const wEmail = w.user_email?.trim().toLowerCase();
-            const wId = w.user_id?.trim().toLowerCase();
-            const isMyWithdraw =
-              (wId && (wId === normId || (normEmail && wId === normEmail))) ||
-              (wEmail && (wEmail === normEmail || wEmail === normId));
-            return isMyWithdraw && (w.status === 'approved' || w.status === 'pending');
-          })
-          .reduce((sum, w) => sum + w.amount, 0);
+      const calculated = Math.max(0, totalEarned - totalWithdrawn);
 
-        const calculated = Math.max(0, totalEarned - totalWithdrawn);
-        const effective = Math.max(currentExplicit, calculated);
+      balances[userId] = calculated;
+      if (userEmail) balances[userEmail] = calculated;
+      setLS('worker_withdrawable_balances', balances);
 
-        if (effective !== currentExplicit || balances[userId] !== effective) {
-          balances[userId] = effective;
-          if (userEmail) balances[userEmail] = effective;
-          setLS('worker_withdrawable_balances', balances);
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('wallet_updated'));
-          }
-        }
-      } catch (e) {
-        console.warn('recalculateAsync error:', e);
-      }
-    };
-
-    if (currentExplicit > 0) {
-      recalculateAsync().catch(() => {});
-      return currentExplicit;
-    } else {
-      await recalculateAsync();
-      const updated = getLS<Record<string, number>>('worker_withdrawable_balances', {});
-      return Math.max(updated[userId] || 0, userEmail ? updated[userEmail] || 0 : 0);
+      return calculated;
+    } catch (e) {
+      console.warn('getUserWithdrawableBalance error:', e);
+      const explicitById = balances[userId] || 0;
+      const explicitByEmail = userEmail ? balances[userEmail] || 0 : 0;
+      return Math.max(explicitById, explicitByEmail);
     }
   },
 
@@ -4560,10 +4544,28 @@ export const api = {
     amount: number,
     account: PayoutAccount
   ): Promise<WithdrawalRequest> {
-    const currentBalance = await this.getUserWithdrawableBalance(userId);
+    const normId = userId?.trim().toLowerCase();
+    const normEmail = userEmail?.trim().toLowerCase();
+
+    // 1. ডাবল উইথড্র রিকোয়েস্ট প্রিভেনশন Guard
+    const requests = await this.getWithdrawalRequests();
+    const hasPending = requests.some((r) => {
+      const rId = r.user_id?.trim().toLowerCase();
+      const rEmail = r.user_email?.trim().toLowerCase();
+      const isMyReq = (rId && (rId === normId || (normEmail && rId === normEmail))) ||
+                      (rEmail && (rEmail === normEmail || rEmail === normId));
+      return isMyReq && r.status === 'pending';
+    });
+
+    if (hasPending) {
+      throw new Error('আপনার একটি উইথড্র রিকোয়েস্ট ইতিপূর্বে পেন্ডিং রয়েছে। অনুগ্রহ করে পূর্বের আবেদনটি প্রসেস হওয়া পর্যন্ত অপেক্ষা করুন।');
+    }
+
+    // 2. ব্যালেন্স চেক
+    const currentBalance = await this.getUserWithdrawableBalance(userId, userEmail);
     if (amount <= 0) throw new Error('উত্তোলনের পরিমাণ ০ টাকার বেশি হতে হবে।');
     if (amount > currentBalance) {
-      throw new Error(`আপনার পর্যাপ্ত উপার্জিত ব্যালেন্স নেই। বর্তমান ব্যালেন্স: ৳ ${currentBalance.toLocaleString('bn-BD')}`);
+      throw new Error(`আপনার পর্যাপ্ত উত্তোলনযোগ্য ব্যালেন্স নেই। বর্তমান ব্যালেন্স: ৳ ${currentBalance.toLocaleString('bn-BD')}`);
     }
 
     const now = new Date().toISOString();
@@ -4587,9 +4589,20 @@ export const api = {
       }
     }
 
-    const requests = getLS<WithdrawalRequest[]>('withdrawal_requests', []);
-    requests.unshift(req);
-    setLS('withdrawal_requests', requests);
+    const allReqs = getLS<WithdrawalRequest[]>('withdrawal_requests', []);
+    allReqs.unshift(req);
+    setLS('withdrawal_requests', allReqs);
+
+    // 3. ব্যালেন্স তাত্ক্ষণিকভাবে কর্তন ও আপডেট
+    const remainingBalance = Math.max(0, currentBalance - amount);
+    const balances = getLS<Record<string, number>>('worker_withdrawable_balances', {});
+    balances[userId] = remainingBalance;
+    if (userEmail) balances[userEmail] = remainingBalance;
+    setLS('worker_withdrawable_balances', balances);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('wallet_updated'));
+    }
 
     return req;
   },
@@ -4635,14 +4648,6 @@ export const api = {
     target.processed_at = now;
     target.processed_by = adminId;
 
-    if (status === 'approved') {
-      // ইউজারের উইথড্রএবল ব্যালেন্স থেকে কর্তন করা
-      const balances = getLS<Record<string, number>>('worker_withdrawable_balances', {});
-      const current = balances[target.user_id] || 0;
-      balances[target.user_id] = Math.max(0, current - target.amount);
-      setLS('worker_withdrawable_balances', balances);
-    }
-
     if (isSupabaseConfigured && supabase) {
       try {
         await supabase
@@ -4664,6 +4669,13 @@ export const api = {
     if (idx >= 0) {
       localRequests[idx] = target;
       setLS('withdrawal_requests', localRequests);
+    }
+
+    // ব্যালেন্স রিক্যালকুলেট ও রিফ্রেশ (বাতিল হলে টাকা রিফান্ড হবে, এপ্রুভ হলে কনফার্ম থাকবে)
+    await this.getUserWithdrawableBalance(target.user_id, target.user_email);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('wallet_updated'));
     }
 
     // নোটিফিকেশন পাঠানো
