@@ -4583,9 +4583,22 @@ export const api = {
 
     if (isSupabaseConfigured && supabase) {
       try {
-        await supabase.from('withdrawal_requests').insert(req);
+        const { error } = await supabase.from('withdrawal_requests').upsert({
+          id: req.id,
+          user_id: req.user_id,
+          user_name: req.user_name,
+          user_email: req.user_email,
+          role: req.role,
+          amount: req.amount,
+          payout_account: req.payout_account,
+          status: req.status,
+          created_at: req.created_at,
+        });
+        if (error) {
+          console.warn('Supabase withdrawal insert error:', error.message);
+        }
       } catch (err) {
-        console.warn('Supabase withdrawal request insert error:', err);
+        console.warn('Supabase withdrawal request insert exception:', err);
       }
     }
 
@@ -4602,6 +4615,7 @@ export const api = {
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('wallet_updated'));
+      window.dispatchEvent(new CustomEvent('withdrawal_requests_updated'));
     }
 
     return req;
@@ -4654,9 +4668,11 @@ export const api = {
       }
     });
 
-    return Array.from(mergedMap.values()).sort(
+    const finalResult = Array.from(mergedMap.values()).sort(
       (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
     );
+    setLS('withdrawal_requests', finalResult);
+    return finalResult;
   },
 
   async processWithdrawalRequest(

@@ -158,6 +158,16 @@ if (isSupabaseConfigured && supabase) {
           }
         }
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'withdrawal_requests' },
+        (payload) => {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('wallet_updated', { detail: payload }));
+            window.dispatchEvent(new CustomEvent('withdrawal_requests_updated', { detail: payload }));
+          }
+        }
+      )
       .subscribe();
   } catch (err) {
     console.warn('Supabase Realtime subscription error:', err);

@@ -137,11 +137,13 @@ export const AdminCommissionWithdrawals: React.FC = () => {
     };
 
     window.addEventListener('wallet_updated', handleUpdate);
+    window.addEventListener('withdrawal_requests_updated', handleUpdate);
     window.addEventListener('storage', handleUpdate);
     window.addEventListener('orders_updated', handleUpdate);
 
     return () => {
       window.removeEventListener('wallet_updated', handleUpdate);
+      window.removeEventListener('withdrawal_requests_updated', handleUpdate);
       window.removeEventListener('storage', handleUpdate);
       window.removeEventListener('orders_updated', handleUpdate);
     };
