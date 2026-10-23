@@ -4771,6 +4771,9 @@ export const api = {
     const requests = await this.getWithdrawalRequests();
     const target = requests.find((r) => r.id === requestId);
     if (!target) throw new Error('উইথড্র রিকোয়েস্ট পাওয়া যায়নি।');
+    if (target.status !== 'pending') {
+      throw new Error('শুধুমাত্র অপেক্ষমাণ (Pending) উইথড্র রিকোয়েস্ট বাতিল করা সম্ভব। অনুমোদিত বা পরিশোধিত রিকোয়েস্ট আর কোনো অবস্থাতেই বাতিল করা সম্ভব নয়।');
+    }
 
     const now = new Date().toISOString();
     target.status = 'rejected';
