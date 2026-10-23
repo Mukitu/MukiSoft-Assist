@@ -1251,6 +1251,7 @@ export const api = {
 
     return rawOrders.map((o) => {
       let status = o.status;
+      const deliverablesList = deliverablesMap.get(o.id) || o.deliverables || [];
       const isRefundedOrCancelled =
         refundedOrderIds.has(o.id) ||
         (o.refund_amount && Number(o.refund_amount) > 0) ||
@@ -1269,6 +1270,16 @@ export const api = {
               .eq('id', o.id)
           ).catch(() => {});
         }
+      } else if (deliverablesList.length > 0 && !['completed', 'cancelled', 'refunded', 'revision_requested'].includes(status)) {
+        status = 'delivered';
+        if (isSupabaseConfigured && supabase && o.status !== 'delivered') {
+          Promise.resolve(
+            supabase
+              .from('orders')
+              .update({ status: 'delivered', updated_at: new Date().toISOString() })
+              .eq('id', o.id)
+          ).catch(() => {});
+        }
       }
 
       return {
@@ -1276,7 +1287,7 @@ export const api = {
         status,
         service: servicesMap.get(o.service_id) || o.service || undefined,
         customer: profilesMap.get(o.user_id) || o.customer || undefined,
-        deliverables: deliverablesMap.get(o.id) || o.deliverables || [],
+        deliverables: deliverablesList,
         events: eventsMap.get(o.id) || o.events || [],
       };
     }) as Order[];

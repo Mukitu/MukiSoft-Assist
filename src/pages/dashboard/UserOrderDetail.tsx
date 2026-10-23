@@ -126,6 +126,10 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
     );
   }
 
+  const hasDeliverables = Boolean(order?.deliverables && order.deliverables.length > 0);
+  const isTerminalOrRevision = order ? ['completed', 'cancelled', 'refunded', 'revision_requested'].includes(order.status) : false;
+  const isDeliveredOrder = Boolean(order && (order.status === 'delivered' || (hasDeliverables && !isTerminalOrRevision)));
+
   const handleRequestRevision = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !revisionNotes.trim()) return;
@@ -265,7 +269,7 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
         <div>
           <div className="flex items-center gap-3">
             <span className="text-xs font-mono font-bold text-slate-500">{order.order_number}</span>
-            <StatusBadge status={order.status} assignedAdmin={order.assigned_admin} />
+            <StatusBadge status={isDeliveredOrder ? 'delivered' : order.status} assignedAdmin={order.assigned_admin} />
           </div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">
             {order.service?.title_bn || order.service?.title}
@@ -372,8 +376,8 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
         );
       })()}
 
-      {/* ডেলিভারি অনুমোদন ও সম্পন্ন করার বড় হাইলাইট ব্যানার (যদি status === 'delivered' হয়) */}
-      {order.status === 'delivered' && (() => {
+      {/* ডেলিভারি অনুমোদন ও সম্পন্ন করার বড় হাইলাইট ব্যানার (যদি status === 'delivered' বা ফাইল ডেলিভারি যুক্ত থাকে) */}
+      {isDeliveredOrder && (() => {
         const timeStr = order.delivered_at || order.deliverables?.[0]?.created_at || order.updated_at;
         let remainingText = '৪৮ ঘণ্টা ০০ মিনিট';
         if (timeStr) {
