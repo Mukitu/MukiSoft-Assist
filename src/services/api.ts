@@ -4672,6 +4672,31 @@ export const api = {
       (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
     );
     setLS('withdrawal_requests', finalResult);
+
+    // 3. Auto-sync local requests to Supabase if missing in remote database
+    if (isSupabaseConfigured && supabase && localReqs.length > 0) {
+      const remoteIds = new Set(remoteReqs.map((r) => r.id));
+      const missingInRemote = localReqs.filter((r) => r && r.id && !remoteIds.has(r.id));
+      if (missingInRemote.length > 0) {
+        Promise.all(
+          missingInRemote.map((r) =>
+            supabase!.from('withdrawal_requests').upsert({
+              id: r.id,
+              user_id: r.user_id,
+              user_name: r.user_name,
+              user_email: r.user_email,
+              role: r.role,
+              amount: r.amount,
+              payout_account: r.payout_account,
+              status: r.status,
+              admin_notes: r.admin_notes,
+              created_at: r.created_at,
+            })
+          )
+        ).catch((err) => console.warn('Auto-sync withdrawal requests error:', err));
+      }
+    }
+
     return finalResult;
   },
 
@@ -4720,6 +4745,7 @@ export const api = {
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('wallet_updated'));
+      window.dispatchEvent(new CustomEvent('withdrawal_requests_updated'));
     }
 
     // নোটিফিকেশন পাঠানো
@@ -4736,6 +4762,51 @@ export const api = {
       });
     } catch {
       // ignore
+    }
+
+    return target;
+  },
+
+  async cancelWithdrawalRequest(requestId: string, userId: string): Promise<WithdrawalRequest> {
+    const requests = await this.getWithdrawalRequests();
+    const target = requests.find((r) => r.id === requestId);
+    if (!target) throw new Error('উইথড্র রিকোয়েস্ট পাওয়া যায়নি।');
+
+    const now = new Date().toISOString();
+    target.status = 'rejected';
+    target.admin_notes = 'ব্যবহারকারী কর্তৃক উইথড্র আবেদন বাতিল করা হয়েছে';
+    target.processed_at = now;
+    target.processed_by = userId;
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase
+          .from('withdrawal_requests')
+          .update({
+            status: 'rejected',
+            admin_notes: 'ব্যবহারকারী কর্তৃক উইথড্র আবেদন বাতিল করা হয়েছে',
+            processed_at: now,
+            processed_by: userId,
+          })
+          .eq('id', requestId);
+      } catch (err) {
+        console.warn('Supabase cancel withdrawal request error:', err);
+      }
+    }
+
+    const localRequests = getLS<WithdrawalRequest[]>('withdrawal_requests', []);
+    const idx = localRequests.findIndex((r) => r.id === requestId);
+    if (idx >= 0) {
+      localRequests[idx] = target;
+      setLS('withdrawal_requests', localRequests);
+    }
+
+    // ব্যালেন্স রিক্যালকুলেট ও রিফ্রেশ (বাতিল হওয়ায় টাকা ফেরত আসবে)
+    await this.getUserWithdrawableBalance(target.user_id, target.user_email);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('wallet_updated'));
+      window.dispatchEvent(new CustomEvent('withdrawal_requests_updated'));
     }
 
     return target;

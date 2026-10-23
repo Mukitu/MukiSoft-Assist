@@ -166,6 +166,27 @@ export const WorkerWithdraw: React.FC = () => {
     }
   };
 
+  const [cancellingRequest, setCancellingRequest] = useState(false);
+
+  const handleCancelPendingRequest = async (reqId: string) => {
+    if (!user) return;
+    setCancellingRequest(true);
+    try {
+      await api.cancelWithdrawalRequest(reqId, user.id);
+      showToast({
+        type: 'success',
+        title: 'আবেদন বাতিল করা হয়েছে',
+        message: 'উইথড্র রিকোয়েস্টটি সফলভাবে বাতিল করা হয়েছে এবং টাকা আপনার ব্যালেন্সে ফিরিয়ে দেওয়া হয়েছে।',
+      });
+      await loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'আবেদন বাতিল করতে ব্যর্থ';
+      showToast({ type: 'error', title: 'ত্রুটি', message: msg });
+    } finally {
+      setCancellingRequest(false);
+    }
+  };
+
   const totalEarnedCommission = completedOrders.reduce((sum, item) => sum + item.commission, 0);
   const totalWithdrawnAmount = withdrawHistory.filter((w) => w.status === 'approved').reduce((sum, w) => sum + w.amount, 0);
   const pendingRequest = withdrawHistory.find((w) => w.status === 'pending');
@@ -243,11 +264,22 @@ export const WorkerWithdraw: React.FC = () => {
           </h3>
 
           {hasPendingRequest && (
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-center gap-2">
-              <Clock className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>
-                আপনার <strong>{toBengaliCurrency(pendingRequest.amount)}</strong> উত্তোলনের একটি আবেদন ইতিমধ্যেই প্রসেসিং অপেক্ষমাণ রয়েছে। এডমিন কর্তৃক সেটি অনুমোদিত বা রিভিউ হওয়ার পূর্বে নতুন আবেদন করা যাবে না।
-              </span>
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>
+                  আপনার <strong>{toBengaliCurrency(pendingRequest.amount)}</strong> উত্তোলনের একটি আবেদন ইতিমধ্যেই প্রসেসিং অপেক্ষমাণ রয়েছে।
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => handleCancelPendingRequest(pendingRequest.id)}
+                disabled={cancellingRequest}
+                className="px-3 py-1.5 text-xs font-bold text-rose-700 bg-rose-100 hover:bg-rose-200 rounded-lg transition-colors shrink-0"
+              >
+                {cancellingRequest ? 'বাতিল হচ্ছে...' : 'আবেদন বাতিল করুন ও টাকা ফেরত নিন'}
+              </button>
             </div>
           )}
 
@@ -475,6 +507,7 @@ export const WorkerWithdraw: React.FC = () => {
                   <th className="py-3 px-4 font-medium">তারিখ</th>
                   <th className="py-3 px-4 font-medium">স্ট্যাটাস</th>
                   <th className="py-3 px-4 font-medium">নোট</th>
+                  <th className="py-3 px-4 font-medium text-right">অ্যাকশন</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -495,6 +528,18 @@ export const WorkerWithdraw: React.FC = () => {
                     </td>
                     <td className="py-3 px-4 text-slate-500 text-[11px]">
                       {w.admin_notes || 'প্রসেসিং অপেক্ষমাণ'}
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      {w.status === 'pending' && (
+                        <button
+                          type="button"
+                          onClick={() => handleCancelPendingRequest(w.id)}
+                          disabled={cancellingRequest}
+                          className="px-2.5 py-1 text-[11px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors border border-rose-200"
+                        >
+                          বাতিল করুন
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
