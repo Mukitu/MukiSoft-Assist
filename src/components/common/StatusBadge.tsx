@@ -15,10 +15,10 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, assignedAdmin,
   let label = statusLabels[status] || status;
 
   if (isUnassignedOrder) {
-    label = 'অপেক্ষমাণ (অনুগ্রহ করে অপেক্ষা করুন)';
+    label = 'অপেক্ষমাণ (অ্যাডমিন ক্লেইমের অপেক্ষায়)';
   } else if (variant === 'admin') {
     if (status === 'completed') {
-      label = 'অর্ডার ডেলিভারি সম্পন্ন হয়েছে';
+      label = 'অর্ডার ডেলিভারি সম্পন্ন হয়েছে';
     } else if (status === 'revision_requested') {
       label = 'অর্ডারটি রিভিশনের জন্য পাঠানো হয়েছে';
     } else if (status === 'delivered') {
@@ -29,13 +29,13 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, assignedAdmin,
   } else {
     // User view default
     if (status === 'completed') {
-      label = 'অর্ডারটি গ্রহণ করা হয়েছে';
+      label = 'কাজ সম্পন্ন ও গৃহীত';
     } else if (status === 'revision_requested') {
       label = 'রিভিশনে পাঠানো হয়েছে';
     } else if (status === 'delivered') {
       label = 'ডেলিভারি করা হয়েছে (এক্সেপ্ট করুন)';
     } else if (status === 'in_progress' || (status === 'accepted' && assignedAdmin)) {
-      label = 'কাজ চলছে';
+      label = 'অর্ডারটি গ্রহণ করা হয়েছে (কাজ চলছে)';
     }
   }
 

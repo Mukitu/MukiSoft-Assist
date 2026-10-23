@@ -1282,12 +1282,14 @@ export const api = {
       const hasProfitRecord = completedByProfitOrderIds.has(o.id);
       const isLocalCompleted = localCompletedSet.has(o.id);
 
+      const hasDeliverables = deliverablesList.length > 0;
       const isCompleted =
-        status === 'completed' ||
-        hasCompletedEvent ||
-        hasProfitRecord ||
-        isLocalCompleted ||
-        Boolean(o.completed_at);
+        (status === 'completed' ||
+          hasCompletedEvent ||
+          hasProfitRecord ||
+          isLocalCompleted ||
+          Boolean(o.completed_at)) &&
+        (hasDeliverables || Boolean(o.completed_at));
 
       const isRefundedOrCancelled =
         refundedOrderIds.has(o.id) ||
@@ -1320,13 +1322,23 @@ export const api = {
               .eq('id', o.id)
           ).catch(() => {});
         }
-      } else if (deliverablesList.length > 0 && !['completed', 'cancelled', 'refunded', 'revision_requested'].includes(status)) {
+      } else if (hasDeliverables && !['completed', 'cancelled', 'refunded', 'revision_requested'].includes(status)) {
         status = 'delivered';
         if (isSupabaseConfigured && supabase && o.status !== 'delivered') {
           Promise.resolve(
             supabase
               .from('orders')
               .update({ status: 'delivered', updated_at: new Date().toISOString() })
+              .eq('id', o.id)
+          ).catch(() => {});
+        }
+      } else if (o.assigned_admin && (status === 'completed' || status === 'accepted' || status === 'pending')) {
+        status = 'in_progress';
+        if (isSupabaseConfigured && supabase && o.status !== 'in_progress') {
+          Promise.resolve(
+            supabase
+              .from('orders')
+              .update({ status: 'in_progress', updated_at: new Date().toISOString() })
               .eq('id', o.id)
           ).catch(() => {});
         }
@@ -1369,12 +1381,17 @@ export const api = {
       } else {
         const remote = map.get(o.id)!;
         let finalStatus = remote.status;
+        const hasDelivs = Boolean((remote.deliverables && remote.deliverables.length > 0) || (o.deliverables && o.deliverables.length > 0));
+        const isGenuinelyCompleted = (remote.status === 'completed' || o.status === 'completed') && (hasDelivs || Boolean(remote.completed_at || o.completed_at));
+
         if (remote.status === 'refunded' || o.status === 'refunded') {
           finalStatus = 'refunded';
         } else if (remote.status === 'cancelled' || o.status === 'cancelled') {
           finalStatus = 'cancelled';
-        } else if (remote.status === 'completed' || o.status === 'completed') {
+        } else if (isGenuinelyCompleted) {
           finalStatus = 'completed';
+        } else if ((o.assigned_admin || remote.assigned_admin) && (finalStatus === 'completed' || finalStatus === 'accepted' || finalStatus === 'pending')) {
+          finalStatus = 'in_progress';
         }
         map.set(o.id, {
           ...remote,
@@ -1420,14 +1437,17 @@ export const api = {
         const remote = map.get(o.id)!;
         // টার্মিনাল স্ট্যাটাস অগ্রাধিকার: একবার কোনো অর্ডার বাতিল, রিফান্ড বা সমাপ্ত হলে তা আর রিভার্ট হবে না
         let finalStatus = remote.status;
+        const hasDelivs = Boolean((remote.deliverables && remote.deliverables.length > 0) || (o.deliverables && o.deliverables.length > 0));
+        const isGenuinelyCompleted = (remote.status === 'completed' || o.status === 'completed') && (hasDelivs || Boolean(remote.completed_at || o.completed_at));
+
         if (remote.status === 'refunded' || o.status === 'refunded') {
           finalStatus = 'refunded';
         } else if (remote.status === 'cancelled' || o.status === 'cancelled') {
           finalStatus = 'cancelled';
-        } else if (remote.status === 'completed' || o.status === 'completed') {
+        } else if (isGenuinelyCompleted) {
           finalStatus = 'completed';
-        } else if (o.assigned_admin && !remote.assigned_admin) {
-          finalStatus = o.status === 'pending' ? 'in_progress' : o.status;
+        } else if ((o.assigned_admin || remote.assigned_admin) && (finalStatus === 'completed' || finalStatus === 'accepted' || finalStatus === 'pending')) {
+          finalStatus = 'in_progress';
         }
 
         map.set(o.id, {
@@ -1476,15 +1496,27 @@ export const api = {
 
     if (!resultOrder) {
       resultOrder = localFound || null;
+      if (resultOrder && resultOrder.assigned_admin && (!resultOrder.deliverables || resultOrder.deliverables.length === 0) && !resultOrder.completed_at) {
+        if (['completed', 'accepted', 'pending'].includes(resultOrder.status)) {
+          resultOrder.status = 'in_progress';
+        }
+      }
     } else if (localFound) {
-      // লোকাল স্টোরেজে টার্মিনাল স্ট্যাটাস (যেমন completed, refunded, cancelled) থাকলে তা অগ্রাধিকার পাবে
+      const mergedDeliverables = (resultOrder.deliverables && resultOrder.deliverables.length > 0)
+        ? resultOrder.deliverables
+        : (localFound.deliverables || []);
+      const hasDelivs = mergedDeliverables.length > 0;
+      const isGenuinelyCompleted = (localFound.status === 'completed' || resultOrder.status === 'completed') && (hasDelivs || Boolean(localFound.completed_at || resultOrder.completed_at));
+
       let finalStatus = resultOrder.status;
-      if (localFound.status === 'completed' || resultOrder.status === 'completed') {
-        finalStatus = 'completed';
-      } else if (localFound.status === 'refunded' || resultOrder.status === 'refunded') {
+      if (localFound.status === 'refunded' || resultOrder.status === 'refunded') {
         finalStatus = 'refunded';
       } else if (localFound.status === 'cancelled' || resultOrder.status === 'cancelled') {
         finalStatus = 'cancelled';
+      } else if (isGenuinelyCompleted) {
+        finalStatus = 'completed';
+      } else if ((resultOrder.assigned_admin || localFound.assigned_admin) && (finalStatus === 'completed' || finalStatus === 'accepted' || finalStatus === 'pending')) {
+        finalStatus = 'in_progress';
       }
 
       resultOrder = {
@@ -1495,9 +1527,7 @@ export const api = {
         auto_completed_after_48h: localFound.auto_completed_after_48h ?? resultOrder.auto_completed_after_48h,
         cancellation_reason: localFound.cancellation_reason || resultOrder.cancellation_reason,
         refund_amount: localFound.refund_amount || resultOrder.refund_amount,
-        deliverables: (resultOrder.deliverables && resultOrder.deliverables.length > 0)
-          ? resultOrder.deliverables
-          : (localFound.deliverables || []),
+        deliverables: mergedDeliverables,
       };
     }
 
