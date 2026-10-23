@@ -41,8 +41,14 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
   const { user, profile, isSuperAdmin } = useAuth();
   const { showToast } = useNotification();
 
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [orders, setOrders] = useState<Order[]>(() => {
+    try {
+      const raw = localStorage.getItem('mukisoft_demo_orders');
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return [];
+  });
+  const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'pending_queue' | 'my_claimed' | 'my_delivered' | 'super_audit'>('pending_queue');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
 

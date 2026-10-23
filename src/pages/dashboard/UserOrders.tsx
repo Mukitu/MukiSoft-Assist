@@ -12,10 +12,20 @@ interface UserOrdersProps {
 
 export const UserOrders: React.FC<UserOrdersProps> = ({ onNavigate }) => {
   const { user } = useAuth();
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<Order[]>(() => {
+    if (!user) return [];
+    try {
+      const raw = localStorage.getItem('mukisoft_demo_orders');
+      if (raw) {
+        const parsed: Order[] = JSON.parse(raw);
+        return parsed.filter((o) => o.user_id === user.id);
+      }
+    } catch {}
+    return [];
+  });
   const [filter, setFilter] = useState<string>('all');
   const [search, setSearch] = useState<string>('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     async function load() {

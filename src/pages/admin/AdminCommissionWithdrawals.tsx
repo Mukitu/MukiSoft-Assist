@@ -33,18 +33,61 @@ export const AdminCommissionWithdrawals: React.FC = () => {
   const { showToast } = useNotification();
 
   const [activeTab, setActiveTab] = useState<'applications' | 'commission' | 'withdrawals' | 'analytics'>('applications');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   // States
-  const [applications, setApplications] = useState<WorkerApplication[]>([]);
-  const [commissionSettings, setCommissionSettings] = useState<CommissionSettings | null>(null);
-  const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
-  const [profitRecords, setProfitRecords] = useState<CompanyProfitRecord[]>([]);
-  const [profitSummary, setProfitSummary] = useState({
-    totalRevenue: 0,
-    totalWorkerPayouts: 0,
-    totalCompanyProfit: 0,
-    completedOrdersCount: 0,
+  const [applications, setApplications] = useState<WorkerApplication[]>(() => {
+    try {
+      const raw = localStorage.getItem('mukisoft_demo_worker_applications');
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return [];
+  });
+  const [commissionSettings, setCommissionSettings] = useState<CommissionSettings | null>(() => {
+    try {
+      const raw = localStorage.getItem('mukisoft_demo_commission_settings');
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return {
+      id: 'comm_default',
+      worker_commission_percentage: 80,
+      admin_commission_percentage: 70,
+      updated_at: new Date().toISOString(),
+    };
+  });
+  const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>(() => {
+    try {
+      const raw = localStorage.getItem('mukisoft_demo_withdrawal_requests');
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return [];
+  });
+  const [profitRecords, setProfitRecords] = useState<CompanyProfitRecord[]>(() => {
+    try {
+      const raw = localStorage.getItem('mukisoft_demo_company_profit_records');
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return [];
+  });
+  const [profitSummary, setProfitSummary] = useState(() => {
+    try {
+      const raw = localStorage.getItem('mukisoft_demo_company_profit_records');
+      if (raw) {
+        const records: CompanyProfitRecord[] = JSON.parse(raw);
+        return {
+          totalRevenue: records.reduce((sum, r) => sum + (r.total_order_amount || 0), 0),
+          totalWorkerPayouts: records.reduce((sum, r) => sum + (r.worker_or_admin_payout || 0), 0),
+          totalCompanyProfit: records.reduce((sum, r) => sum + (r.company_profit_amount || 0), 0),
+          completedOrdersCount: records.length,
+        };
+      }
+    } catch {}
+    return {
+      totalRevenue: 0,
+      totalWorkerPayouts: 0,
+      totalCompanyProfit: 0,
+      completedOrdersCount: 0,
+    };
   });
 
   // Commission Edit Inputs

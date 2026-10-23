@@ -286,73 +286,43 @@ export const api = {
   // WALLET & TRANSACTIONS
   // -------------------------------------------------------------
   async getWallet(userId: string): Promise<Wallet> {
+    const wallets = getLS<Record<string, Wallet>>('wallets', {});
+    const localWallet = wallets[userId];
+
     if (isSupabaseConfigured && supabase) {
-      try {
-        const { data, error } = await supabase.from('wallets').select('*').eq('user_id', userId).single();
-        if (!error && data) {
-          const wallet = data as Wallet;
-          // Reconcile any uncredited refunded orders for this user
-          try {
-            const { data: refundedOrders } = await supabase
-              .from('orders')
-              .select('id, order_number, amount, status')
-              .eq('user_id', userId)
-              .eq('status', 'refunded');
+      const fetchRemoteWallet = async () => {
+        try {
+          if (!supabase) return;
+          const { data, error } = await supabase.from('wallets').select('*').eq('user_id', userId).single();
+          if (!error && data) {
+            const remoteWallet = data as Wallet;
+            const currentWallets = getLS<Record<string, Wallet>>('wallets', {});
+            const oldWallet = currentWallets[userId];
+            currentWallets[userId] = remoteWallet;
+            setLS('wallets', currentWallets);
 
-            if (refundedOrders && refundedOrders.length > 0) {
-              const { data: existingTxs } = await supabase
-                .from('wallet_transactions')
-                .select('reference_id')
-                .eq('user_id', userId)
-                .eq('type', 'refund');
-
-              const creditedIds = new Set((existingTxs || []).map((t: any) => String(t.reference_id)));
-              const uncredited = refundedOrders.filter((ord: any) => !creditedIds.has(String(ord.id)));
-
-              if (uncredited.length > 0) {
-                const addAmount = uncredited.reduce((sum: number, o: any) => sum + (Number(o.amount) || 0), 0);
-                const updatedBalance = Number(wallet.balance || 0) + addAmount;
-                const newTotalSpent = Math.max(0, Number(wallet.total_spent || 0) - addAmount);
-
-                await supabase
-                  .from('wallets')
-                  .update({
-                    balance: updatedBalance,
-                    total_spent: newTotalSpent,
-                    updated_at: new Date().toISOString(),
-                  })
-                  .eq('id', wallet.id);
-
-                for (const un of uncredited) {
-                  await supabase.from('wallet_transactions').insert({
-                    wallet_id: wallet.id,
-                    user_id: userId,
-                    type: 'refund',
-                    amount: Number(un.amount) || 0,
-                    balance_after: updatedBalance,
-                    status: 'completed',
-                    reference_id: String(un.id),
-                    reference_type: 'order',
-                    description: `অর্ডার রিফান্ড সমন্বয়: #${un.order_number}`,
-                    created_at: new Date().toISOString(),
-                  });
-                }
-
-                wallet.balance = updatedBalance;
-                wallet.total_spent = newTotalSpent;
+            if (!oldWallet || oldWallet.balance !== remoteWallet.balance || oldWallet.pending_balance !== remoteWallet.pending_balance) {
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('wallet_updated'));
               }
             }
-          } catch (recErr) {
-            console.warn('Wallet refund reconciliation warning:', recErr);
           }
-
-          return wallet;
+        } catch (e) {
+          console.warn('getWallet Supabase error:', e);
         }
-      } catch (e) {
-        console.warn('getWallet Supabase error:', e);
+      };
+
+      if (localWallet) {
+        // Stale-while-revalidate: return local instantly in 0ms!
+        fetchRemoteWallet().catch(() => {});
+        return localWallet;
+      } else {
+        await fetchRemoteWallet();
+        const updatedWallets = getLS<Record<string, Wallet>>('wallets', {});
+        if (updatedWallets[userId]) return updatedWallets[userId];
       }
     }
-    const wallets = getLS<Record<string, Wallet>>('wallets', {});
+
     if (!wallets[userId]) {
       const isDemoClient = userId === 'user_customer_demo';
       wallets[userId] = {
@@ -4444,62 +4414,73 @@ export const api = {
   },
 
   async getUserWithdrawableBalance(userId: string, userEmail?: string): Promise<number> {
-    await this.checkAndAutoCompleteOrders();
     const balances = getLS<Record<string, number>>('worker_withdrawable_balances', {});
     const explicitById = balances[userId] || 0;
     const explicitByEmail = userEmail ? balances[userEmail] || 0 : 0;
     const currentExplicit = Math.max(explicitById, explicitByEmail);
 
-    try {
-      const [allOrders, commSettings, withdrawals] = await Promise.all([
-        this.getAllOrders(),
-        this.getCommissionSettings(),
-        this.getWithdrawalRequests(),
-      ]);
+    const recalculateAsync = async () => {
+      try {
+        await this.checkAndAutoCompleteOrders();
+        const [allOrders, commSettings, withdrawals] = await Promise.all([
+          this.getAllOrders(),
+          this.getCommissionSettings(),
+          this.getWithdrawalRequests(),
+        ]);
 
-      const normEmail = userEmail?.trim().toLowerCase();
-      const normId = userId?.trim().toLowerCase();
+        const normEmail = userEmail?.trim().toLowerCase();
+        const normId = userId?.trim().toLowerCase();
 
-      // ওয়ার্কার বা অ্যাডমিন যেসব কাজ এক্সেপ্ট (Claim / Start / Deliver / Complete) করেছেন
-      const myAccepted = allOrders.filter((o) => {
-        const oAdminId = o.assigned_admin?.trim().toLowerCase();
-        const oAdminEmail = o.assigned_admin_email?.trim().toLowerCase();
-        const isAssigned =
-          (oAdminId && (oAdminId === normId || (normEmail && oAdminId === normEmail))) ||
-          (oAdminEmail && ((normEmail && oAdminEmail === normEmail) || oAdminEmail === normId));
+        const myAccepted = allOrders.filter((o) => {
+          const oAdminId = o.assigned_admin?.trim().toLowerCase();
+          const oAdminEmail = o.assigned_admin_email?.trim().toLowerCase();
+          const isAssigned =
+            (oAdminId && (oAdminId === normId || (normEmail && oAdminId === normEmail))) ||
+            (oAdminEmail && ((normEmail && oAdminEmail === normEmail) || oAdminEmail === normId));
 
-        // বাতিল বা রিফান্ড ছাড়া যেকোনো গৃহীত বা সম্পন্ন কাজ
-        const isActiveOrDone = !['cancelled', 'refunded', 'pending'].includes(o.status);
-        return isAssigned && isActiveOrDone;
-      });
+          const isActiveOrDone = !['cancelled', 'refunded', 'pending'].includes(o.status);
+          return isAssigned && isActiveOrDone;
+        });
 
-      const rate = commSettings.worker_commission_percentage || 80;
-      const totalEarned = myAccepted.reduce((sum, o) => {
-        return sum + Math.round((o.amount * rate) / 100);
-      }, 0);
+        const rate = commSettings.worker_commission_percentage || 80;
+        const totalEarned = myAccepted.reduce((sum, o) => {
+          return sum + Math.round((o.amount * rate) / 100);
+        }, 0);
 
-      const totalWithdrawn = withdrawals
-        .filter((w) => {
-          const wEmail = w.user_email?.trim().toLowerCase();
-          const wId = w.user_id?.trim().toLowerCase();
-          const isMyWithdraw =
-            (wId && (wId === normId || (normEmail && wId === normEmail))) ||
-            (wEmail && (wEmail === normEmail || wEmail === normId));
-          return isMyWithdraw && (w.status === 'approved' || w.status === 'pending');
-        })
-        .reduce((sum, w) => sum + w.amount, 0);
+        const totalWithdrawn = withdrawals
+          .filter((w) => {
+            const wEmail = w.user_email?.trim().toLowerCase();
+            const wId = w.user_id?.trim().toLowerCase();
+            const isMyWithdraw =
+              (wId && (wId === normId || (normEmail && wId === normEmail))) ||
+              (wEmail && (wEmail === normEmail || wEmail === normId));
+            return isMyWithdraw && (w.status === 'approved' || w.status === 'pending');
+          })
+          .reduce((sum, w) => sum + w.amount, 0);
 
-      const calculated = Math.max(0, totalEarned - totalWithdrawn);
-      const effective = Math.max(currentExplicit, calculated);
+        const calculated = Math.max(0, totalEarned - totalWithdrawn);
+        const effective = Math.max(currentExplicit, calculated);
 
-      if (effective !== currentExplicit || balances[userId] !== effective) {
-        balances[userId] = effective;
-        if (userEmail) balances[userEmail] = effective;
-        setLS('worker_withdrawable_balances', balances);
+        if (effective !== currentExplicit || balances[userId] !== effective) {
+          balances[userId] = effective;
+          if (userEmail) balances[userEmail] = effective;
+          setLS('worker_withdrawable_balances', balances);
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('wallet_updated'));
+          }
+        }
+      } catch (e) {
+        console.warn('recalculateAsync error:', e);
       }
-      return effective;
-    } catch {
+    };
+
+    if (currentExplicit > 0) {
+      recalculateAsync().catch(() => {});
       return currentExplicit;
+    } else {
+      await recalculateAsync();
+      const updated = getLS<Record<string, number>>('worker_withdrawable_balances', {});
+      return Math.max(updated[userId] || 0, userEmail ? updated[userEmail] || 0 : 0);
     }
   },
 

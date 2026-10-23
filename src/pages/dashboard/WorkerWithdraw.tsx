@@ -11,14 +11,46 @@ export const WorkerWithdraw: React.FC = () => {
   const { user, profile } = useAuth();
   const { showToast } = useNotification();
 
-  const [balance, setBalance] = useState<number>(0);
-  const [payoutAccount, setPayoutAccount] = useState<PayoutAccount>({
-    user_id: user?.id || '',
-    method: 'bkash',
-    account_number: '',
-    updated_at: new Date().toISOString(),
+  const [balance, setBalance] = useState<number>(() => {
+    if (!user) return 0;
+    try {
+      const raw = localStorage.getItem('mukisoft_demo_worker_withdrawable_balances');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const b = parsed[user.id] || (user.email ? parsed[user.email] : 0) || 0;
+        return Number(b) || 0;
+      }
+    } catch {}
+    return 0;
   });
-  const [withdrawHistory, setWithdrawHistory] = useState<WithdrawalRequest[]>([]);
+  const [payoutAccount, setPayoutAccount] = useState<PayoutAccount>(() => {
+    if (user) {
+      try {
+        const raw = localStorage.getItem('mukisoft_demo_payout_accounts');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed[user.id]) return parsed[user.id];
+        }
+      } catch {}
+    }
+    return {
+      user_id: user?.id || '',
+      method: 'bkash',
+      account_number: '',
+      updated_at: new Date().toISOString(),
+    };
+  });
+  const [withdrawHistory, setWithdrawHistory] = useState<WithdrawalRequest[]>(() => {
+    if (!user) return [];
+    try {
+      const raw = localStorage.getItem('mukisoft_demo_withdrawal_requests');
+      if (raw) {
+        const parsed: WithdrawalRequest[] = JSON.parse(raw);
+        return parsed.filter((r) => r.user_id === user.id);
+      }
+    } catch {}
+    return [];
+  });
   const [completedOrders, setCompletedOrders] = useState<
     { order: any; commission: number; rate: number; companyShare?: number; companyRate?: number }[]
   >([]);
@@ -26,7 +58,7 @@ export const WorkerWithdraw: React.FC = () => {
 
   const [savingAccount, setSavingAccount] = useState(false);
   const [submittingWithdraw, setSubmittingWithdraw] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   const loadData = async () => {
     if (!user) return;

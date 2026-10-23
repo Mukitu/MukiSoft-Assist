@@ -31,13 +31,30 @@ export const UserDashboardLayout: React.FC<UserDashboardLayoutProps> = ({
   children,
 }) => {
   const { user, profile, logout } = useAuth();
-  const [wallet, setWallet] = useState<Wallet | null>(null);
+  const [wallet, setWallet] = useState<Wallet | null>(() => {
+    if (!user) return null;
+    try {
+      const raw = localStorage.getItem('mukisoft_demo_wallets');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return parsed[user.id] || null;
+      }
+    } catch {}
+    return null;
+  });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     if (user) {
       api.getWallet(user.id).then(setWallet);
     }
+    const handleWalletUpdated = () => {
+      if (user) {
+        api.getWallet(user.id).then(setWallet);
+      }
+    };
+    window.addEventListener('wallet_updated', handleWalletUpdated);
+    return () => window.removeEventListener('wallet_updated', handleWalletUpdated);
   }, [user, currentPath]);
 
   const navItems = [

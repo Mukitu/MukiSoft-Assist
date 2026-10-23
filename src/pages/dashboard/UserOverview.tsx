@@ -18,10 +18,40 @@ interface UserOverviewProps {
 
 export const UserOverview: React.FC<UserOverviewProps> = ({ onNavigate }) => {
   const { user, profile } = useAuth();
-  const [wallet, setWallet] = useState<Wallet | null>(null);
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [wallet, setWallet] = useState<Wallet | null>(() => {
+    if (!user) return null;
+    try {
+      const raw = localStorage.getItem('mukisoft_demo_wallets');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return parsed[user.id] || null;
+      }
+    } catch {}
+    return null;
+  });
+  const [orders, setOrders] = useState<Order[]>(() => {
+    if (!user) return [];
+    try {
+      const raw = localStorage.getItem('mukisoft_demo_orders');
+      if (raw) {
+        const parsed: Order[] = JSON.parse(raw);
+        return parsed.filter((o) => o.user_id === user.id);
+      }
+    } catch {}
+    return [];
+  });
+  const [transactions, setTransactions] = useState<WalletTransaction[]>(() => {
+    if (!user) return [];
+    try {
+      const raw = localStorage.getItem('mukisoft_demo_transactions');
+      if (raw) {
+        const parsed: WalletTransaction[] = JSON.parse(raw);
+        return parsed.filter((t) => t.user_id === user.id).slice(0, 5);
+      }
+    } catch {}
+    return [];
+  });
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     async function load() {

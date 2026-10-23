@@ -20,11 +20,57 @@ export const UserWallet: React.FC = () => {
   const { user } = useAuth();
   const { showToast } = useNotification();
 
-  const [wallet, setWallet] = useState<Wallet | null>(null);
-  const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
-  const [depositRequests, setDepositRequests] = useState<DepositRequest[]>([]);
-  const [paymentConfigs, setPaymentConfigs] = useState<PaymentMethodConfig[]>([]);
-  const [selectedMethodId, setSelectedMethodId] = useState<string>('');
+  const [wallet, setWallet] = useState<Wallet | null>(() => {
+    if (!user) return null;
+    try {
+      const raw = localStorage.getItem('mukisoft_demo_wallets');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return parsed[user.id] || null;
+      }
+    } catch {}
+    return null;
+  });
+  const [transactions, setTransactions] = useState<WalletTransaction[]>(() => {
+    if (!user) return [];
+    try {
+      const raw = localStorage.getItem('mukisoft_demo_transactions');
+      if (raw) {
+        const parsed: WalletTransaction[] = JSON.parse(raw);
+        return parsed.filter((t) => t.user_id === user.id);
+      }
+    } catch {}
+    return [];
+  });
+  const [depositRequests, setDepositRequests] = useState<DepositRequest[]>(() => {
+    if (!user) return [];
+    try {
+      const raw = localStorage.getItem('mukisoft_demo_deposit_requests');
+      if (raw) {
+        const parsed: DepositRequest[] = JSON.parse(raw);
+        return parsed.filter((d) => d.user_id === user.id);
+      }
+    } catch {}
+    return [];
+  });
+  const [paymentConfigs, setPaymentConfigs] = useState<PaymentMethodConfig[]>(() => {
+    try {
+      const raw = localStorage.getItem('mukisoft_demo_payment_method_configs');
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return [];
+  });
+  const [selectedMethodId, setSelectedMethodId] = useState<string>(() => {
+    try {
+      const raw = localStorage.getItem('mukisoft_demo_payment_method_configs');
+      if (raw) {
+        const parsed: PaymentMethodConfig[] = JSON.parse(raw);
+        const active = parsed.filter((c) => c.is_active);
+        if (active.length > 0) return active[0].id;
+      }
+    } catch {}
+    return '';
+  });
 
   // ফর্ম স্টেট
   const [amount, setAmount] = useState<number | ''>('');

@@ -35,8 +35,14 @@ import { useMessages } from '../../hooks/useMessages';
 export const AdminOrders: React.FC = () => {
   const { user, profile, isSuperAdmin } = useAuth();
   const { showToast } = useNotification();
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [orders, setOrders] = useState<Order[]>(() => {
+    try {
+      const raw = localStorage.getItem('mukisoft_demo_orders');
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return [];
+  });
+  const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'unassigned' | 'my_orders' | 'other_orders' | 'delivered' | 'completed' | 'refunded'>('all');
 
