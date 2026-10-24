@@ -143,9 +143,10 @@ export const liveChatService = {
   },
 
   /**
-   * সেশনের মেসেজসমূহ সংগ্রহ
+   * সেশনের মেসেজসমূহ সংগ্রহ (Supabase + LocalStorage মার্জ)
    */
   async getMessages(sessionId: string): Promise<LiveChatMessage[]> {
+    let remoteMsgs: LiveChatMessage[] = [];
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase
@@ -153,18 +154,30 @@ export const liveChatService = {
           .select('*')
           .eq('session_id', sessionId)
           .order('created_at', { ascending: true });
-        if (!error && data && data.length > 0) return data as LiveChatMessage[];
+        if (!error && data && data.length > 0) {
+          remoteMsgs = data as LiveChatMessage[];
+        }
       } catch {
         // fallback
       }
     }
 
+    let localMsgs: LiveChatMessage[] = [];
     try {
       const raw = localStorage.getItem(STORAGE_KEY_MESSAGES + sessionId);
-      return raw ? JSON.parse(raw) : [];
+      localMsgs = raw ? JSON.parse(raw) : [];
     } catch {
-      return [];
+      // ignore
     }
+
+    // Map deduplication by ID
+    const map = new Map<string, LiveChatMessage>();
+    localMsgs.forEach((m) => map.set(m.id, m));
+    remoteMsgs.forEach((m) => map.set(m.id, m));
+
+    return Array.from(map.values()).sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
   },
 
   /**
@@ -336,21 +349,46 @@ export const liveChatService = {
   },
 
   /**
-   * সকল সক্রিয় ও অপেক্ষমান সেশন তালিকা (অ্যাডমিন প্যানেলের জন্য)
+   * সকল সক্রিয় ও অপেক্ষমান সেশন তালিকা (অ্যাডমিন প্যানেলের জন্য - Supabase + LocalStorage মার্জ)
    */
   async getAllSessions(): Promise<LiveChatSession[]> {
+    let remoteSessions: LiveChatSession[] = [];
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase
           .from('live_chat_sessions')
           .select('*')
           .order('updated_at', { ascending: false });
-        if (!error && data) return data as LiveChatSession[];
+        if (!error && data) {
+          remoteSessions = data as LiveChatSession[];
+        }
       } catch {
         // fallback
       }
     }
-    return this.getLocalSessions();
+
+    const localSessions = this.getLocalSessions();
+    const map = new Map<string, LiveChatSession>();
+
+    localSessions.forEach((s) => map.set(s.id, s));
+    remoteSessions.forEach((r) => {
+      const existing = map.get(r.id);
+      if (!existing) {
+        map.set(r.id, r);
+      } else {
+        const remoteTime = new Date(r.updated_at).getTime();
+        const localTime = new Date(existing.updated_at).getTime();
+        if (remoteTime >= localTime) {
+          map.set(r.id, r);
+        } else {
+          map.set(r.id, { ...r, ...existing });
+        }
+      }
+    });
+
+    return Array.from(map.values()).sort(
+      (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+    );
   },
 
   // -------------------------------------------------------------
