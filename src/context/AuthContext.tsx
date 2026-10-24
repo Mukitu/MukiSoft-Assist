@@ -221,6 +221,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         if (error) return { success: false, error: error.message };
         if (data.user) {
+          const isSuperAdminEmail = email.trim().toLowerCase() === 'mukituislamnishat@gmail.com';
+          const assignedRole = isSuperAdminEmail ? 'super_admin' : 'user';
+          try {
+            await supabase.from('profiles').upsert({
+              id: data.user.id,
+              email: data.user.email || email,
+              full_name: fullName || 'MukiSoft User',
+              role: assignedRole,
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'id' });
+          } catch (profErr) {
+            console.warn('Client profile upsert warning:', profErr);
+          }
+
           setUser({
             id: data.user.id,
             email: data.user.email || '',
