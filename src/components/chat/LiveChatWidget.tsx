@@ -76,7 +76,7 @@ export const LiveChatWidget: React.FC<LiveChatWidgetProps> = ({ onNavigate }) =>
     }
   }, [profile, name, phone]);
 
-  // সেশন রিস্টোর (SessionStorage এর মাধ্যমে, যা রিলোড দিলে থাকে কিন্তু ব্রাউজার ক্লোজ করলে ডিলিট হয়)
+  // সেশন রিস্টোর ও পোলিং সিঙ্ক
   useEffect(() => {
     const savedSessionId = sessionStorage.getItem(SESSION_STORAGE_KEY);
     if (savedSessionId) {
@@ -89,6 +89,20 @@ export const LiveChatWidget: React.FC<LiveChatWidgetProps> = ({ onNavigate }) =>
         }
       });
     }
+
+    const interval = setInterval(() => {
+      const activeId = sessionStorage.getItem(SESSION_STORAGE_KEY);
+      if (activeId) {
+        liveChatService.getSession(activeId).then((s) => {
+          if (s && s.status !== 'closed') {
+            setSession(s);
+            liveChatService.getMessages(s.id).then(setMessages);
+          }
+        });
+      }
+    }, 3500);
+
+    return () => clearInterval(interval);
   }, []);
 
   // রিয়েল-টাইম ইভেন্ট সাবস্ক্রিপশন

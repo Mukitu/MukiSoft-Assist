@@ -73,6 +73,10 @@ export const AdminLiveChat: React.FC = () => {
 
   useEffect(() => {
     loadSessions();
+    const interval = setInterval(() => {
+      loadSessions();
+    }, 4000);
+    return () => clearInterval(interval);
   }, []);
 
   // নির্বাচিত সেশনের মেসেজ লোড
