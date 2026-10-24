@@ -89,8 +89,16 @@ export const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
       {/* হিরো সেকশন */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center max-w-3xl mx-auto space-y-6">
-          <div className="text-xs sm:text-sm font-semibold uppercase tracking-wider text-indigo-600">
-            {t.parentCompany} · {t.tagline}
+          <div className="text-xs sm:text-sm font-semibold uppercase tracking-wider">
+            <a
+              href="https://mukisoft.tech/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-indigo-600 hover:text-indigo-800 hover:underline decoration-indigo-300 transition-colors inline-flex items-center gap-1.5"
+            >
+              <span>{t.parentCompany} · {t.tagline}</span>
+              <span className="text-[11px] font-mono lowercase tracking-normal text-slate-400 font-normal">mukisoft.tech</span>
+            </a>
           </div>
 
           <h1 className="text-3xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-slate-900 leading-tight">

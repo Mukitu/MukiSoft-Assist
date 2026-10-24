@@ -4983,6 +4983,17 @@ export const api = {
       }
     }
 
+    // Server-side persistent storage sync for OpenGraph
+    try {
+      fetch('/api/blog-posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newPost),
+      }).catch(() => {});
+    } catch {
+      // ignore
+    }
+
     const local = getLS<BlogPost[]>('blog_posts', INITIAL_BLOG_POSTS);
     local.unshift(newPost);
     setLS('blog_posts', local);
@@ -5022,6 +5033,17 @@ export const api = {
       }
     }
 
+    // Server-side sync for OpenGraph
+    try {
+      fetch('/api/blog-posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedPost),
+      }).catch(() => {});
+    } catch {
+      // ignore
+    }
+
     if (idx >= 0) {
       local[idx] = updatedPost;
     } else {
@@ -5043,6 +5065,12 @@ export const api = {
       } catch (err) {
         console.warn('Supabase delete blog post error:', err);
       }
+    }
+
+    try {
+      fetch(`/api/blog-posts/${id}`, { method: 'DELETE' }).catch(() => {});
+    } catch {
+      // ignore
     }
 
     const local = getLS<BlogPost[]>('blog_posts', INITIAL_BLOG_POSTS);

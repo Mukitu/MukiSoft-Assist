@@ -465,34 +465,151 @@ STRICT INSTRUCTIONS:
 });
 
 // ----------------------------------------------------------------------
+// BLOG POST SERVER PERSISTENCE & SYNC (Ensures OpenGraph cards work 100%)
+// ----------------------------------------------------------------------
+const BLOG_POSTS_FILE = path.resolve(__dirname, '.blog_posts.json');
+
+function getStoredBlogPosts(): any[] {
+  try {
+    if (fs.existsSync(BLOG_POSTS_FILE)) {
+      const raw = fs.readFileSync(BLOG_POSTS_FILE, 'utf-8');
+      const list = JSON.parse(raw);
+      if (Array.isArray(list)) return list;
+    }
+  } catch (err) {
+    console.warn('Error reading .blog_posts.json:', err);
+  }
+  return [];
+}
+
+function saveStoredBlogPost(post: any) {
+  try {
+    const list = getStoredBlogPosts();
+    const idx = list.findIndex((p: any) => p.id === post.id || p.slug === post.slug);
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], ...post, updated_at: new Date().toISOString() };
+    } else {
+      list.unshift(post);
+    }
+    fs.writeFileSync(BLOG_POSTS_FILE, JSON.stringify(list, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('Error saving to .blog_posts.json:', err);
+  }
+}
+
+// Blog Posts API Endpoints
+app.get('/api/blog-posts', (_req, res) => {
+  const posts = getStoredBlogPosts();
+  res.json(posts);
+});
+
+app.post('/api/blog-posts', (req, res) => {
+  const post = req.body;
+  if (!post || (!post.title && !post.title_bn)) {
+    return res.status(400).json({ error: 'Post title is required' });
+  }
+  saveStoredBlogPost(post);
+  return res.json({ success: true, post });
+});
+
+app.delete('/api/blog-posts/:id', (req, res) => {
+  const id = req.params.id;
+  try {
+    const list = getStoredBlogPosts().filter((p: any) => p.id !== id && p.slug !== id);
+    fs.writeFileSync(BLOG_POSTS_FILE, JSON.stringify(list, null, 2), 'utf-8');
+    return res.json({ success: true });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error deleting';
+    return res.status(500).json({ error: msg });
+  }
+});
+
+// ----------------------------------------------------------------------
 // FACEBOOK & SOCIAL MEDIA OPENGRAPH INTERCEPTOR FOR BLOGS
 // ----------------------------------------------------------------------
+function injectOpenGraphTags(
+  html: string,
+  meta: { title: string; description: string; image: string; url: string }
+): string {
+  // 1. Remove all old titles
+  let cleaned = html.replace(/<title[\s\S]*?<\/title>/gi, '');
+  // 2. Remove all old description meta tags
+  cleaned = cleaned.replace(/<meta\s+name=["']description["'][^>]*>/gi, '');
+  // 3. Remove all old OpenGraph meta tags
+  cleaned = cleaned.replace(/<meta\s+property=["']og:[^"']+["'][^>]*>/gi, '');
+  // 4. Remove all old Twitter meta tags
+  cleaned = cleaned.replace(/<meta\s+name=["']twitter:[^"']+["'][^>]*>/gi, '');
+
+  const cleanTitle = meta.title.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const cleanDesc = meta.description.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const cleanImage = meta.image;
+  const cleanUrl = meta.url;
+
+  const newMetaBlock = `
+    <title>${cleanTitle} | MukiSoft Assist</title>
+    <meta name="description" content="${cleanDesc}" />
+
+    <!-- Open Graph / Facebook / LinkedIn / WhatsApp Social Share -->
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="MukiSoft Assist" />
+    <meta property="og:url" content="${cleanUrl}" />
+    <meta property="og:title" content="${cleanTitle}" />
+    <meta property="og:description" content="${cleanDesc}" />
+    <meta property="og:image" content="${cleanImage}" />
+    <meta property="og:image:secure_url" content="${cleanImage}" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="${cleanTitle}" />
+
+    <!-- Twitter / X Card Tags -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@MukiSoft" />
+    <meta name="twitter:url" content="${cleanUrl}" />
+    <meta name="twitter:title" content="${cleanTitle}" />
+    <meta name="twitter:description" content="${cleanDesc}" />
+    <meta name="twitter:image" content="${cleanImage}" />
+    <meta name="twitter:image:alt" content="${cleanTitle}" />
+  `;
+
+  if (cleaned.includes('<head>')) {
+    return cleaned.replace('<head>', `<head>${newMetaBlock}`);
+  }
+  return `${newMetaBlock}\n${cleaned}`;
+}
+
 app.get('/blog/:slug', async (req, res, next) => {
   const slug = req.params.slug;
   if (!slug) return next();
 
   try {
-    let post: any = null;
-    const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-    const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+    // 1. Look in server storage first
+    const storedPosts = getStoredBlogPosts();
+    let post = storedPosts.find((p: any) => p.slug === slug || p.id === slug) || null;
 
-    if (supabaseUrl && supabaseAnonKey) {
-      try {
-        const queryUrl = `${supabaseUrl}/rest/v1/blog_posts?or=(slug.eq.${encodeURIComponent(slug)},id.eq.${encodeURIComponent(slug)})&select=*`;
-        const sbRes = await fetch(queryUrl, {
-          headers: {
-            apikey: supabaseAnonKey,
-            Authorization: `Bearer ${supabaseAnonKey}`,
-          },
-        });
-        if (sbRes.ok) {
-          const sbData = await sbRes.json();
-          if (Array.isArray(sbData) && sbData.length > 0) {
-            post = sbData[0];
+    // 2. If not found in server storage, query Supabase
+    if (!post) {
+      const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+      const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+
+      if (supabaseUrl && supabaseAnonKey) {
+        try {
+          const queryUrl = `${supabaseUrl}/rest/v1/blog_posts?or=(slug.eq.${encodeURIComponent(slug)},id.eq.${encodeURIComponent(slug)})&select=*`;
+          const sbRes = await fetch(queryUrl, {
+            headers: {
+              apikey: supabaseAnonKey,
+              Authorization: `Bearer ${supabaseAnonKey}`,
+            },
+          });
+          if (sbRes.ok) {
+            const sbData = await sbRes.json();
+            if (Array.isArray(sbData) && sbData.length > 0) {
+              post = sbData[0];
+            }
           }
+        } catch (err) {
+          console.warn('Supabase fetch for OG tags error:', err);
         }
-      } catch (err) {
-        console.warn('Supabase fetch for OG tags error:', err);
       }
     }
 
@@ -504,18 +621,23 @@ app.get('/blog/:slug', async (req, res, next) => {
       return next();
     }
 
-    let html = fs.readFileSync(indexPath, 'utf-8');
+    const html = fs.readFileSync(indexPath, 'utf-8');
 
     let ogTitle = 'MukiSoft Digital Services';
     let ogDesc = 'মুকিসফট টেকনোলজি পরিচালিত এআই-চালিত প্রিমিয়াম ডিজিটাল সেবা প্ল্যাটফর্ম।';
-    let ogImage = 'https://service.mukisoft.tech/logo.png';
+    let ogImage = 'https://service.mukisoft.tech/assets/aistudio/Screenshot_2026-10-24_at_11.15.02_PM_8d53cab9.png';
     const ogUrl = `https://service.mukisoft.tech/blog/${slug}`;
 
     if (post) {
-      ogTitle = post.title_bn || post.title || ogTitle;
+      ogTitle = post.title_bn || post.title || post.meta_title || ogTitle;
       const rawDesc = post.excerpt_bn || post.excerpt || post.content_bn || post.content || post.title_bn || post.title;
       if (rawDesc) {
-        ogDesc = rawDesc.replace(/<[^>]*>/g, '').replace(/"/g, '&quot;').replace(/\n/g, ' ').slice(0, 220).trim();
+        ogDesc = rawDesc
+          .replace(/<[^>]*>/g, '')
+          .replace(/[#*>_`]/g, '')
+          .replace(/\n+/g, ' ')
+          .slice(0, 240)
+          .trim();
       }
       if (post.cover_image && typeof post.cover_image === 'string') {
         const img = post.cover_image.trim();
@@ -530,39 +652,19 @@ app.get('/blog/:slug', async (req, res, next) => {
         .split('-')
         .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
         .join(' ');
-      ogTitle = `${formattedSlugTitle} | MukiSoft Assist`;
+      ogTitle = `${formattedSlugTitle}`;
+      ogDesc = `${formattedSlugTitle} — মুকিসফট টেকনোলজি পরিচালিত অফিশিয়াল ব্লগ ও প্রযুক্তি সেবা পোর্টাল।`;
     }
 
-    const cleanTitle = ogTitle.replace(/"/g, '&quot;');
-    const cleanDesc = ogDesc.replace(/"/g, '&quot;');
-
-    // Complete OpenGraph & Twitter Cards Meta Tags Block
-    const metaBlock = `
-    <title>${cleanTitle} | MukiSoft Assist</title>
-    <meta name="description" content="${cleanDesc}" />
-    <meta property="og:site_name" content="MukiSoft Assist" />
-    <meta property="og:type" content="article" />
-    <meta property="og:title" content="${cleanTitle}" />
-    <meta property="og:description" content="${cleanDesc}" />
-    <meta property="og:image" content="${ogImage}" />
-    <meta property="og:image:secure_url" content="${ogImage}" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
-    <meta property="og:url" content="${ogUrl}" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="${cleanTitle}" />
-    <meta name="twitter:description" content="${cleanDesc}" />
-    <meta name="twitter:image" content="${ogImage}" />`;
-
-    // Inject into index.html head
-    if (html.includes('<!-- OpenGraph Facebook / Social Share Tags -->')) {
-      html = html.replace(/<title>.*?<\/title>[\s\S]*?(?=<link rel="preconnect")/gi, `${metaBlock}\n    `);
-    } else {
-      html = html.replace('</head>', `${metaBlock}\n</head>`);
-    }
+    const finalHtml = injectOpenGraphTags(html, {
+      title: ogTitle,
+      description: ogDesc,
+      image: ogImage,
+      url: ogUrl,
+    });
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    return res.send(html);
+    return res.send(finalHtml);
   } catch (err) {
     console.error('OG Handler error:', err);
     return next();
