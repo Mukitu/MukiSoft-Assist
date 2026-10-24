@@ -21,6 +21,7 @@ import { api } from '../../services/api';
 import { DepositRequest, PaymentMethodConfig } from '../../types/database';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { Pagination } from '../../components/common/Pagination';
+import { FilePreviewModal } from '../../components/common/FilePreviewModal';
 
 export const AdminDeposits: React.FC = () => {
   const { user, isSuperAdmin, role } = useAuth();
@@ -32,6 +33,10 @@ export const AdminDeposits: React.FC = () => {
   const [paymentConfigs, setPaymentConfigs] = useState<PaymentMethodConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
+
+  // ফাইল প্রিভিউ মোডাল
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [previewFile, setPreviewFile] = useState<{ url: string; name: string; notes?: string }>({ url: '', name: '' });
 
   // জমার পরিমাণ ম্যানুয়ালি এডিট করে অনুমোদনের মডাল স্টেট
   const [approveModalDeposit, setApproveModalDeposit] = useState<DepositRequest | null>(null);
@@ -320,14 +325,20 @@ export const AdminDeposits: React.FC = () => {
                       <td className="py-3 px-4 font-mono font-bold text-slate-900">
                         <div>{req.transaction_reference}</div>
                         {req.slip_url ? (
-                          <a
-                            href={req.slip_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-block mt-0.5 text-[10px] font-sans text-indigo-600 hover:underline font-normal"
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPreviewFile({
+                                url: req.slip_url!,
+                                name: `deposit_slip_${req.transaction_reference}.pdf`,
+                                notes: `ডিপোজিট রেফারেন্স: ${req.transaction_reference}`,
+                              });
+                              setPreviewModalOpen(true);
+                            }}
+                            className="inline-block mt-0.5 text-[10px] font-sans text-indigo-600 hover:underline font-normal cursor-pointer"
                           >
                             📄 স্লিপ দেখুন
-                          </a>
+                          </button>
                         ) : (
                           <span className="text-[10px] text-slate-400 font-sans font-normal block mt-0.5">স্লিপ ছাড়া</span>
                         )}
@@ -769,6 +780,15 @@ export const AdminDeposits: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ফাইল প্রিভিউ মোডাল */}
+      <FilePreviewModal
+        isOpen={previewModalOpen}
+        onClose={() => setPreviewModalOpen(false)}
+        fileUrl={previewFile.url}
+        fileName={previewFile.name}
+        notes={previewFile.notes}
+      />
     </div>
   );
 };

@@ -16,6 +16,7 @@ import {
   RotateCcw,
   Check,
   ShieldAlert,
+  Eye,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { toBengaliCurrency, toBengaliDigits, toBengaliDate } from '../../lib/i18n';
@@ -23,6 +24,8 @@ import { useNotification } from '../../context/NotificationContext';
 import { api } from '../../services/api';
 import { Order, OrderWorkMessage, OrderDeliverable } from '../../types/database';
 import { StatusBadge } from '../../components/common/StatusBadge';
+import { FilePreviewModal } from '../../components/common/FilePreviewModal';
+import { downloadFile } from '../../utils/fileViewer';
 import { useMessages } from '../../hooks/useMessages';
 
 interface UserMessagesHubProps {
@@ -47,6 +50,10 @@ export const UserMessagesHub: React.FC<UserMessagesHubProps> = ({ onNavigate }) 
   const [chatAttachment, setChatAttachment] = useState<{ name: string; url: string } | null>(null);
   const chatFileRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // ফাইল প্রিভিউ মোডাল
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [previewFile, setPreviewFile] = useState<{ url: string; name: string; notes?: string }>({ url: '', name: '' });
 
   // Load User Orders
   const loadOrders = async () => {
@@ -333,16 +340,37 @@ export const UserMessagesHub: React.FC<UserMessagesHubProps> = ({ onNavigate }) 
                       )}
                     </div>
                   </div>
-                  <a
-                    href={selectedOrder.deliverables[0].file_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    download
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-2xs transition-colors shrink-0 self-start sm:self-auto"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>ফাইল ডাউনলোড করুন</span>
-                  </a>
+                  <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPreviewFile({
+                          url: selectedOrder.deliverables![0].file_url,
+                          name: selectedOrder.deliverables![0].title,
+                          notes: selectedOrder.deliverables![0].deliverable_notes || undefined,
+                        });
+                        setPreviewModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold bg-white text-emerald-900 border border-emerald-300 hover:bg-emerald-50 rounded-lg transition-colors"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-emerald-700" />
+                      <span>প্রিভিউ</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        downloadFile(
+                          selectedOrder.deliverables![0].file_url,
+                          selectedOrder.deliverables![0].title,
+                          selectedOrder.deliverables![0].deliverable_notes || ''
+                        )
+                      }
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-2xs transition-colors"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>ডাউনলোড</span>
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -393,22 +421,26 @@ export const UserMessagesHub: React.FC<UserMessagesHubProps> = ({ onNavigate }) 
                           {/* File Attachment if attached */}
                           {msg.attachment_url && (
                             <div className="mt-2 pt-2 border-t border-white/20">
-                              <a
-                                href={msg.attachment_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                download
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPreviewFile({
+                                    url: msg.attachment_url!,
+                                    name: msg.attachment_name || 'attachment.pdf',
+                                  });
+                                  setPreviewModalOpen(true);
+                                }}
                                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors ${
                                   isMe
                                     ? 'bg-white/20 hover:bg-white/30 text-white'
                                     : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-800'
                                 }`}
                               >
-                                <Download className="w-3 h-3" />
+                                <Paperclip className="w-3 h-3" />
                                 <span className="truncate max-w-[200px]">
-                                  {msg.attachment_name || 'ডাউনলোড ফাইল'}
+                                  {msg.attachment_name || 'সংযুক্ত ফাইল দেখুন / ডাউনলোড'}
                                 </span>
-                              </a>
+                              </button>
                             </div>
                           )}
                         </div>
@@ -482,6 +514,14 @@ export const UserMessagesHub: React.FC<UserMessagesHubProps> = ({ onNavigate }) 
           )}
         </div>
       </div>
+      {/* ফাইল প্রিভিউ মোডাল */}
+      <FilePreviewModal
+        isOpen={previewModalOpen}
+        onClose={() => setPreviewModalOpen(false)}
+        fileUrl={previewFile.url}
+        fileName={previewFile.name}
+        notes={previewFile.notes}
+      />
     </div>
   );
 };

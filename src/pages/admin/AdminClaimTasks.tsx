@@ -33,6 +33,8 @@ import { Order, OrderStatus, OrderWorkMessage } from '../../types/database';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { Pagination } from '../../components/common/Pagination';
 import { useMessages } from '../../hooks/useMessages';
+import { FilePreviewModal } from '../../components/common/FilePreviewModal';
+import { downloadFile } from '../../utils/fileViewer';
 
 interface AdminClaimTasksProps {
   onNavigate?: (path: string) => void;
@@ -58,6 +60,10 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
   const { messages: chatMessages, sending: sendingChat, sendMessage: sendClaimMessageViaHook } = useMessages(selectedOrderId);
   const [chatInput, setChatInput] = useState('');
   const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  // ফাইল প্রিভিউ মোডাল
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [previewFile, setPreviewFile] = useState<{ url: string; name: string; notes?: string }>({ url: '', name: '' });
 
   // ফাইল ডেলিভারি মডাল
   const [deliverableModalOpen, setDeliverableModalOpen] = useState(false);
@@ -583,16 +589,29 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                       )}
                       {ord.attachment_name && (
                         ord.attachment_url ? (
-                          <a
-                            href={ord.attachment_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            download={ord.attachment_name}
-                            className="inline-flex items-center gap-1 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 font-semibold px-2 py-0.5 rounded border border-indigo-200 transition-colors"
-                          >
-                            <Paperclip className="w-3 h-3 text-indigo-600" />
-                            <span className="truncate max-w-[140px]">{ord.attachment_name} (পিডিএফ/ডাউনলোড)</span>
-                          </a>
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPreviewFile({
+                                  url: ord.attachment_url!,
+                                  name: ord.attachment_name || 'attachment.pdf',
+                                });
+                                setPreviewModalOpen(true);
+                              }}
+                              className="inline-flex items-center gap-1 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 font-semibold px-2 py-0.5 rounded border border-indigo-200 transition-colors"
+                            >
+                              <Eye className="w-3 h-3 text-indigo-600" />
+                              <span className="truncate max-w-[120px]">{ord.attachment_name}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => downloadFile(ord.attachment_url, ord.attachment_name || 'attachment.pdf')}
+                              className="text-slate-700 bg-slate-200 hover:bg-slate-300 font-semibold px-1.5 py-0.5 rounded text-[10px]"
+                            >
+                              ডাউনলোড
+                            </button>
+                          </div>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
                             <Paperclip className="w-3 h-3" />
@@ -1010,15 +1029,30 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                                 <span className="font-medium text-slate-800 truncate" title={deliv.title}>
                                   {deliv.title}
                                 </span>
-                                <a
-                                  href={deliv.file_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-indigo-600 hover:text-indigo-800 shrink-0 font-bold text-[10px] underline flex items-center gap-0.5"
-                                >
-                                  <span>ডাউনলোড</span>
-                                  <ExternalLink className="w-2.5 h-2.5" />
-                                </a>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setPreviewFile({
+                                        url: deliv.file_url,
+                                        name: deliv.title,
+                                        notes: deliv.deliverable_notes || undefined,
+                                      });
+                                      setPreviewModalOpen(true);
+                                    }}
+                                    className="text-indigo-600 hover:text-indigo-800 font-bold text-[10px] underline flex items-center gap-0.5"
+                                  >
+                                    <Eye className="w-2.5 h-2.5" />
+                                    <span>প্রিভিউ</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => downloadFile(deliv.file_url, deliv.title, deliv.deliverable_notes || '')}
+                                    className="text-slate-700 bg-slate-200 hover:bg-slate-300 font-semibold px-1.5 py-0.5 rounded text-[10px]"
+                                  >
+                                    ডাউনলোড
+                                  </button>
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -1363,6 +1397,15 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
           </div>
         </div>
       )}
+
+      {/* ফাইল প্রিভিউ মোডাল */}
+      <FilePreviewModal
+        isOpen={previewModalOpen}
+        onClose={() => setPreviewModalOpen(false)}
+        fileUrl={previewFile.url}
+        fileName={previewFile.name}
+        notes={previewFile.notes}
+      />
     </div>
   );
 };

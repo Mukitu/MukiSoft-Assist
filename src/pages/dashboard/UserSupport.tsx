@@ -23,6 +23,7 @@ import { SupportTicket, TicketMessage, Order } from '../../types/database';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { Pagination } from '../../components/common/Pagination';
 import { useNotification } from '../../context/NotificationContext';
+import { FilePreviewModal } from '../../components/common/FilePreviewModal';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 
 const TICKET_CATEGORIES = [
@@ -41,6 +42,10 @@ export const UserSupport: React.FC = () => {
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [userOrders, setUserOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // ফাইল প্রিভিউ মোডাল
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [previewFile, setPreviewFile] = useState<{ url: string; name: string; notes?: string }>({ url: '', name: '' });
 
   // নতুন টিকিট খোলার ফর্ম স্টেট
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -541,10 +546,15 @@ export const UserSupport: React.FC = () => {
 
                           {m.attachment_url && (
                             <div className="pt-2">
-                              <a
-                                href={m.attachment_url}
-                                target="_blank"
-                                rel="noreferrer"
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPreviewFile({
+                                    url: m.attachment_url!,
+                                    name: m.attachment_name || 'attachment.pdf',
+                                  });
+                                  setPreviewModalOpen(true);
+                                }}
                                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${
                                   isUserMsg
                                     ? 'bg-white/20 text-white hover:bg-white/30'
@@ -552,8 +562,8 @@ export const UserSupport: React.FC = () => {
                                 }`}
                               >
                                 <Paperclip className="w-3 h-3" />
-                                <span>{m.attachment_name || 'সংযুক্ত নথি দেখুন'}</span>
-                              </a>
+                                <span>{m.attachment_name || 'সংযুক্ত নথি দেখুন / ডাউনলোড'}</span>
+                              </button>
                             </div>
                           )}
                         </div>
@@ -798,6 +808,14 @@ export const UserSupport: React.FC = () => {
           </div>
         </div>
       )}
+      {/* ফাইল প্রিভিউ মোডাল */}
+      <FilePreviewModal
+        isOpen={previewModalOpen}
+        onClose={() => setPreviewModalOpen(false)}
+        fileUrl={previewFile.url}
+        fileName={previewFile.name}
+        notes={previewFile.notes}
+      />
     </div>
   );
 };

@@ -26,6 +26,7 @@ import { SupportTicket, TicketMessage, TicketStatus, TicketPriority, Profile } f
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { Pagination } from '../../components/common/Pagination';
 import { useNotification } from '../../context/NotificationContext';
+import { FilePreviewModal } from '../../components/common/FilePreviewModal';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 
 export const AdminTickets: React.FC = () => {
@@ -49,6 +50,10 @@ export const AdminTickets: React.FC = () => {
   const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
   const [messages, setMessages] = useState<TicketMessage[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
+
+  // ফাইল প্রিভিউ মোডাল
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [previewFile, setPreviewFile] = useState<{ url: string; name: string; notes?: string }>({ url: '', name: '' });
 
   // অ্যাডমিন রিপ্লাই ফর্ম
   const [replyText, setReplyText] = useState('');
@@ -632,10 +637,15 @@ export const AdminTickets: React.FC = () => {
 
                               {m.attachment_url && (
                                 <div className="pt-2">
-                                  <a
-                                    href={m.attachment_url}
-                                    target="_blank"
-                                    rel="noreferrer"
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setPreviewFile({
+                                        url: m.attachment_url!,
+                                        name: m.attachment_name || 'attachment.pdf',
+                                      });
+                                      setPreviewModalOpen(true);
+                                    }}
                                     className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium ${
                                       isCustomer
                                         ? 'bg-slate-100 text-slate-800 hover:bg-slate-200'
@@ -643,8 +653,8 @@ export const AdminTickets: React.FC = () => {
                                     }`}
                                   >
                                     <Paperclip className="w-3 h-3" />
-                                    <span>{m.attachment_name || 'সংযুক্ত ফাইল'}</span>
-                                  </a>
+                                    <span>{m.attachment_name || 'সংযুক্ত ফাইল দেখুন / ডাউনলোড'}</span>
+                                  </button>
                                 </div>
                               )}
                             </div>
@@ -758,6 +768,14 @@ export const AdminTickets: React.FC = () => {
           </div>
         )}
       </div>
+      {/* ফাইল প্রিভিউ মোডাল */}
+      <FilePreviewModal
+        isOpen={previewModalOpen}
+        onClose={() => setPreviewModalOpen(false)}
+        fileUrl={previewFile.url}
+        fileName={previewFile.name}
+        notes={previewFile.notes}
+      />
     </div>
   );
 };

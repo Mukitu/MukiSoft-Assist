@@ -32,6 +32,8 @@ import { Order, OrderStatus, OrderWorkMessage } from '../../types/database';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { useMessages } from '../../hooks/useMessages';
 import { Pagination } from '../../components/common/Pagination';
+import { FilePreviewModal } from '../../components/common/FilePreviewModal';
+import { downloadFile } from '../../utils/fileViewer';
 
 export const AdminOrders: React.FC = () => {
   const { user, profile, isSuperAdmin } = useAuth();
@@ -67,6 +69,10 @@ export const AdminOrders: React.FC = () => {
   const [adminRating, setAdminRating] = useState<number>(5);
   const [adminReviewComment, setAdminReviewComment] = useState('');
   const [submittingAdminReview, setSubmittingAdminReview] = useState(false);
+
+  // ফাইল প্রিভিউ মোডাল স্টেট
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [previewFile, setPreviewFile] = useState<{ url: string; name: string; notes?: string }>({ url: '', name: '' });
 
   // ফাইল ডেলিভারি ফর্ম স্টেট
   const [activeOrderForDeliverable, setActiveOrderForDeliverable] = useState<Order | null>(null);
@@ -912,16 +918,30 @@ export const AdminOrders: React.FC = () => {
                   <div className="space-y-1">
                     <span className="font-semibold text-slate-700 block mb-0.5">সংযুক্ত প্রজেক্ট ফাইল / পিডিএফ:</span>
                     {selectedOrder.attachment_url ? (
-                      <a
-                        href={selectedOrder.attachment_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        download={selectedOrder.attachment_name}
-                        className="inline-flex items-center gap-2 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg border border-indigo-200 transition-colors"
-                      >
-                        <Download className="w-4 h-4 text-indigo-600" />
-                        <span>{selectedOrder.attachment_name} (ডাউনলোড / দেখুন)</span>
-                      </a>
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPreviewFile({
+                              url: selectedOrder.attachment_url!,
+                              name: selectedOrder.attachment_name || 'attachment.pdf',
+                            });
+                            setPreviewModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg border border-indigo-200 transition-colors text-xs"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>{selectedOrder.attachment_name} (প্রিভিউ দেখুন)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => downloadFile(selectedOrder.attachment_url, selectedOrder.attachment_name || 'attachment.pdf')}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg transition-colors text-xs"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>ডাউনলোড</span>
+                        </button>
+                      </div>
                     ) : (
                       <span className="font-mono bg-slate-100 px-2.5 py-1 rounded text-slate-800">
                         {selectedOrder.attachment_name}
@@ -1027,14 +1047,31 @@ export const AdminOrders: React.FC = () => {
                           {f.deliverable_notes && <div className="text-[11px] text-slate-500">{f.deliverable_notes}</div>}
                         </div>
                       </div>
-                      <a
-                        href={f.file_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold rounded-lg text-xs"
-                      >
-                        ফাইল দেখুন
-                      </a>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPreviewFile({
+                              url: f.file_url,
+                              name: f.title,
+                              notes: f.deliverable_notes || undefined,
+                            });
+                            setPreviewModalOpen(true);
+                          }}
+                          className="px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold rounded-lg text-xs inline-flex items-center gap-1"
+                        >
+                          <Eye className="w-3 h-3" />
+                          <span>প্রিভিউ</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => downloadFile(f.file_url, f.title, f.deliverable_notes || '')}
+                          className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg text-xs inline-flex items-center gap-1"
+                        >
+                          <Download className="w-3 h-3" />
+                          <span>ডাউনলোড</span>
+                        </button>
+                      </div>
                     </div>
                   ))
                 )}
@@ -1416,6 +1453,15 @@ export const AdminOrders: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ফাইল প্রিভিউ মোডাল */}
+      <FilePreviewModal
+        isOpen={previewModalOpen}
+        onClose={() => setPreviewModalOpen(false)}
+        fileUrl={previewFile.url}
+        fileName={previewFile.name}
+        notes={previewFile.notes}
+      />
     </div>
   );
 };
