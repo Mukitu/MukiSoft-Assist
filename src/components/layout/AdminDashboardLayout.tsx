@@ -21,6 +21,7 @@ import {
   Sparkles,
   DollarSign,
   Wallet,
+  BookOpen,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { StatusBadge } from '../common/StatusBadge';
@@ -133,6 +134,7 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
       { label: 'সহায়তা ডেস্ক ও টিকিট', path: '/admin/tickets', icon: HelpCircle },
       { label: 'সেবা সমূহ', path: '/admin/services', icon: Layers },
       { label: 'সার্ভিস ক্যাটাগরি', path: '/admin/categories', icon: Tag },
+      { label: 'ব্লগ পোস্ট ম্যানেজমেন্ট', path: '/admin/blogs', icon: BookOpen },
       { label: 'আমার উপার্জন ও উত্তোলন', path: '/admin/my-withdraw', icon: DollarSign },
     ];
   } else {
@@ -149,6 +151,7 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
       { label: 'লাইভ সাপোর্ট চ্যাট', path: '/admin/live-chat', icon: MessageCircle },
       { label: 'সেবা সমূহ', path: '/admin/services', icon: Layers },
       { label: 'সার্ভিস ক্যাটাগরি', path: '/admin/categories', icon: Tag },
+      { label: 'ব্লগ পোস্ট ম্যানেজমেন্ট', path: '/admin/blogs', icon: BookOpen },
       { label: 'টাকা জমার অনুরোধ যাচাই (Super Admin)', path: '/admin/deposits', icon: CheckSquare },
       { label: 'অর্ডার ও বার্তা চ্যাট', path: '/admin/orders', icon: ShoppingBag },
       { label: 'সহায়তা ডেস্ক ও টিকিট', path: '/admin/tickets', icon: HelpCircle },
@@ -167,6 +170,7 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
     if (currentPath === '/admin/live-chat') return ['প্রশাসনিক কনসোল', 'লাইভ সাপোর্ট চ্যাট'];
     if (currentPath === '/admin/services') return ['প্রশাসনিক কনসোল', 'সেবা সমূহ'];
     if (currentPath === '/admin/categories') return ['প্রশাসনিক কনসোল', 'সার্ভিস ক্যাটাগরি'];
+    if (currentPath === '/admin/blogs') return ['প্রশাসনিক কনসোল', 'ব্লগ পোস্ট ম্যানেজমেন্ট'];
     if (currentPath === '/admin/deposits') return ['প্রশাসনিক কনসোল', 'টাকা জমার অনুরোধ যাচাই'];
     if (currentPath === '/admin/orders') return ['প্রশাসনিক কনসোল', 'অর্ডার ও ডেলিভারি'];
     if (currentPath === '/admin/tickets') return ['প্রশাসনিক কনসোল', 'সহায়তা ডেস্ক ও টিকিট'];

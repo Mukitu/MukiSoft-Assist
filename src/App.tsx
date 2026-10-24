@@ -24,6 +24,8 @@ import { ContactPage } from './pages/public/ContactPage';
 import { AuthPages } from './pages/public/AuthPages';
 import { LegalPages } from './pages/public/LegalPages';
 import { ApplyWorkerPage } from './pages/public/ApplyWorkerPage';
+import { BlogListPage } from './pages/BlogListPage';
+import { BlogPostDetailPage } from './pages/BlogPostDetailPage';
 
 // Dashboard Pages
 import { UserOverview } from './pages/dashboard/UserOverview';
@@ -51,6 +53,7 @@ import { AdminLiveChat } from './pages/admin/AdminLiveChat';
 import { AdminCommissionWithdrawals } from './pages/admin/AdminCommissionWithdrawals';
 import { AdminWithdrawQueue } from './pages/admin/AdminWithdrawQueue';
 import { AdminFlaggedChats } from './pages/admin/AdminFlaggedChats';
+import { AdminBlogManagement } from './pages/admin/AdminBlogManagement';
 import { useAuth } from './context/AuthContext';
 import { ResetPassword } from './pages/public/ResetPassword';
 import { LiveChatWidget } from './components/chat/LiveChatWidget';
@@ -58,7 +61,7 @@ import { LiveChatWidget } from './components/chat/LiveChatWidget';
 import { api } from './services/api';
 
 function AppRouter() {
-  const { role } = useAuth();
+  const { role, profile } = useAuth();
   const [currentUrl, setCurrentUrl] = useState<string>(() => {
     return (window.location.pathname || '/') + (window.location.search || '');
   });
@@ -216,6 +219,10 @@ function AppRouter() {
             <AdminDashboardLayout currentPath={pathname} onNavigate={navigate}>
               <AdminCommunication />
             </AdminDashboardLayout>
+          ) : pathname === '/admin/blogs' ? (
+            <AdminDashboardLayout currentPath={pathname} onNavigate={navigate}>
+              <AdminBlogManagement currentUser={profile || { id: 'admin_01', email: 'admin@mukisoft.com', full_name: 'Super Admin', role: 'super_admin', preferred_language: 'bn', created_at: '', updated_at: '' }} />
+            </AdminDashboardLayout>
           ) : pathname === '/admin/settings' ? (
             <AdminDashboardLayout currentPath={pathname} onNavigate={navigate}>
               <AdminSettings />
@@ -236,6 +243,10 @@ function AppRouter() {
 
     if (pathname === '/') {
       pageContent = <HomePage onNavigate={navigate} />;
+    } else if (pathname === '/blog') {
+      pageContent = <BlogListPage />;
+    } else if (pathname.startsWith('/blog/')) {
+      pageContent = <BlogPostDetailPage />;
     } else if (pathname === '/apply-worker') {
       pageContent = <ApplyWorkerPage onNavigate={navigate} />;
     } else if (pathname.startsWith('/services')) {

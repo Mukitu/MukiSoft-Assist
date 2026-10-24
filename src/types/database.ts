@@ -472,3 +472,32 @@ export interface SuspiciousChatFlag {
   created_at: string;
 }
 
+export interface BlogPost {
+  id: string;
+  title: string;
+  title_bn: string;
+  slug: string;
+  excerpt: string;
+  excerpt_bn?: string;
+  content: string;
+  content_bn?: string;
+  category: string;
+  category_bn?: string;
+  tags: string[];
+  cover_image: string;
+  author_id?: string;
+  author_name: string;
+  author_role: string;
+  author_avatar?: string;
+  meta_title?: string;
+  meta_description?: string;
+  is_published: boolean;
+  is_featured?: boolean;
+  views_count: number;
+  likes_count?: number;
+  reading_time_minutes?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+

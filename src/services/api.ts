@@ -27,8 +27,9 @@ import {
   WithdrawalRequest,
   CompanyProfitRecord,
   SuspiciousChatFlag,
+  BlogPost,
 } from '../types/database';
-import { INITIAL_CATEGORIES, INITIAL_SERVICES, INITIAL_PLATFORM_SETTINGS } from '../data/initialCatalog';
+import { INITIAL_CATEGORIES, INITIAL_SERVICES, INITIAL_PLATFORM_SETTINGS, INITIAL_BLOG_POSTS } from '../data/initialCatalog';
 import { communicationService } from './communicationService';
 
 // Local storage keys for fallback demo mode
@@ -4848,4 +4849,198 @@ export const api = {
 
     return true;
   },
+
+  // -------------------------------------------------------------
+  // BLOG POSTS
+  // -------------------------------------------------------------
+  async getBlogPosts(options?: {
+    onlyPublished?: boolean;
+    category?: string;
+    tag?: string;
+    search?: string;
+  }): Promise<BlogPost[]> {
+    let posts: BlogPost[] = [];
+    if (isSupabaseConfigured && supabase) {
+      try {
+        let query = supabase.from('blog_posts').select('*').order('created_at', { ascending: false });
+        if (options?.onlyPublished) {
+          query = query.eq('is_published', true);
+        }
+        if (options?.category && options.category !== 'all') {
+          query = query.eq('category', options.category);
+        }
+        const { data, error } = await query;
+        if (!error && data) {
+          posts = data as BlogPost[];
+          setLS('blog_posts', posts);
+        } else {
+          posts = getLS<BlogPost[]>('blog_posts', INITIAL_BLOG_POSTS);
+        }
+      } catch {
+        posts = getLS<BlogPost[]>('blog_posts', INITIAL_BLOG_POSTS);
+      }
+    } else {
+      posts = getLS<BlogPost[]>('blog_posts', INITIAL_BLOG_POSTS);
+    }
+
+    if (options?.onlyPublished) {
+      posts = posts.filter((p) => p.is_published);
+    }
+    if (options?.category && options.category !== 'all') {
+      posts = posts.filter((p) => p.category.toLowerCase() === options.category?.toLowerCase());
+    }
+    if (options?.tag && options.tag !== 'all') {
+      posts = posts.filter((p) => p.tags && p.tags.some((t) => t.toLowerCase() === options.tag?.toLowerCase()));
+    }
+    if (options?.search) {
+      const q = options.search.toLowerCase();
+      posts = posts.filter(
+        (p) =>
+          p.title.toLowerCase().includes(q) ||
+          p.title_bn?.toLowerCase().includes(q) ||
+          p.excerpt.toLowerCase().includes(q) ||
+          p.excerpt_bn?.toLowerCase().includes(q) ||
+          p.content.toLowerCase().includes(q) ||
+          p.tags.some((t) => t.toLowerCase().includes(q))
+      );
+    }
+
+    return posts;
+  },
+
+  async getBlogPostBySlug(slug: string): Promise<BlogPost | null> {
+    const posts = await this.getBlogPosts({ onlyPublished: false });
+    return posts.find((p) => p.slug === slug || p.id === slug) || null;
+  },
+
+  async createBlogPost(postData: Partial<BlogPost>): Promise<BlogPost> {
+    const now = new Date().toISOString();
+    const slug =
+      postData.slug ||
+      (postData.title || postData.title_bn || 'post')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '') ||
+      `post-${Date.now()}`;
+
+    const newPost: BlogPost = {
+      id: postData.id || `blog_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      title: postData.title || 'Untitled Post',
+      title_bn: postData.title_bn || postData.title || 'শিরোনামহীন পোস্ট',
+      slug,
+      excerpt: postData.excerpt || '',
+      excerpt_bn: postData.excerpt_bn || postData.excerpt || '',
+      content: postData.content || '',
+      content_bn: postData.content_bn || postData.content || '',
+      category: postData.category || 'General',
+      category_bn: postData.category_bn || 'সাধারণ',
+      tags: Array.isArray(postData.tags) ? postData.tags : [],
+      cover_image: postData.cover_image || 'https://images.unsplash.com/photo-1450133064473-71024230f91b?auto=format&fit=crop&w=1200&q=80',
+      author_id: postData.author_id || 'admin_super_01',
+      author_name: postData.author_name || 'Super Admin',
+      author_role: postData.author_role || 'Super Admin',
+      author_avatar: postData.author_avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+      meta_title: postData.meta_title || postData.title,
+      meta_description: postData.meta_description || postData.excerpt,
+      is_published: postData.is_published ?? true,
+      is_featured: postData.is_featured ?? false,
+      views_count: 1,
+      likes_count: 0,
+      reading_time_minutes: Math.ceil(((postData.content || '').length + 100) / 500),
+      created_at: now,
+      updated_at: now,
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('blog_posts').insert(newPost);
+      } catch (err) {
+        console.warn('Supabase create blog post error:', err);
+      }
+    }
+
+    const local = getLS<BlogPost[]>('blog_posts', INITIAL_BLOG_POSTS);
+    local.unshift(newPost);
+    setLS('blog_posts', local);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('blog_posts_updated'));
+    }
+
+    return newPost;
+  },
+
+  async updateBlogPost(id: string, updates: Partial<BlogPost>): Promise<BlogPost> {
+    const local = getLS<BlogPost[]>('blog_posts', INITIAL_BLOG_POSTS);
+    const idx = local.findIndex((p) => p.id === id);
+    let target = idx >= 0 ? { ...local[idx] } : null;
+
+    if (!target) {
+      const fetched = await this.getBlogPostBySlug(id);
+      if (fetched) target = { ...fetched };
+    }
+
+    if (!target) {
+      throw new Error('Blog post not found');
+    }
+
+    const updatedPost: BlogPost = {
+      ...target,
+      ...updates,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('blog_posts').update(updatedPost).eq('id', id);
+      } catch (err) {
+        console.warn('Supabase update blog post error:', err);
+      }
+    }
+
+    if (idx >= 0) {
+      local[idx] = updatedPost;
+    } else {
+      local.unshift(updatedPost);
+    }
+    setLS('blog_posts', local);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('blog_posts_updated'));
+    }
+
+    return updatedPost;
+  },
+
+  async deleteBlogPost(id: string): Promise<boolean> {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('blog_posts').delete().eq('id', id);
+      } catch (err) {
+        console.warn('Supabase delete blog post error:', err);
+      }
+    }
+
+    const local = getLS<BlogPost[]>('blog_posts', INITIAL_BLOG_POSTS);
+    const filtered = local.filter((p) => p.id !== id);
+    setLS('blog_posts', filtered);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('blog_posts_updated'));
+    }
+
+    return true;
+  },
+
+  async incrementBlogPostViews(id: string): Promise<number> {
+    const local = getLS<BlogPost[]>('blog_posts', INITIAL_BLOG_POSTS);
+    const idx = local.findIndex((p) => p.id === id || p.slug === id);
+    if (idx >= 0) {
+      local[idx].views_count = (local[idx].views_count || 0) + 1;
+      setLS('blog_posts', local);
+      return local[idx].views_count;
+    }
+    return 1;
+  },
 };
+

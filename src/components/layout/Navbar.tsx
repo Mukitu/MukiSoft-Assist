@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Menu, X, ArrowRight, Layers, HelpCircle, Info, Phone, LayoutDashboard, ShoppingBag, LogIn, UserPlus } from 'lucide-react';
+import { Menu, X, ArrowRight, Layers, HelpCircle, Info, Phone, LayoutDashboard, ShoppingBag, LogIn, UserPlus, BookOpen } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { t } from '../../lib/i18n';
 
@@ -39,6 +39,14 @@ export const Navbar: React.FC<NavbarProps> = ({ currentPath, onNavigate }) => {
               }`}
             >
               {t.navServices}
+            </button>
+            <button
+              onClick={() => handleNavClick('/blog')}
+              className={`whitespace-nowrap shrink-0 transition-colors hover:text-indigo-600 ${
+                currentPath.startsWith('/blog') ? 'text-indigo-600 font-semibold' : ''
+              }`}
+            >
+              ব্লগ
             </button>
             <button
               onClick={() => handleNavClick('/how-it-works')}
@@ -169,6 +177,15 @@ export const Navbar: React.FC<NavbarProps> = ({ currentPath, onNavigate }) => {
                 >
                   <Layers className="w-4 h-4 text-indigo-600" />
                   <span>{t.navServices}</span>
+                </button>
+                <button
+                  onClick={() => handleNavClick('/blog')}
+                  className={`text-left px-4 py-3 rounded-xl transition-colors flex items-center gap-3 ${
+                    currentPath.startsWith('/blog') ? 'bg-indigo-50 text-indigo-600 font-bold' : 'hover:bg-slate-50'
+                  }`}
+                >
+                  <BookOpen className="w-4 h-4 text-indigo-600" />
+                  <span>ব্লগ</span>
                 </button>
                 <button
                   onClick={() => handleNavClick('/how-it-works')}
