@@ -19,7 +19,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
               এআই-চালিত প্রিমিয়াম ডিজিটাল সেবা প্ল্যাটফর্ম। প্রাতিষ্ঠানিক কাজের নির্ভুল মান এবং দ্রুততম ডেলিভারির নিশ্চয়তা।
             </p>
             <div className="text-slate-500 text-xs pt-1">
-              পরিচালনায়: <strong className="text-slate-300 font-medium">মুকিসফট টেকনোলজি</strong>
+              পরিচালনায়: <a href="https://mukisoft.tech/" target="_blank" rel="noopener noreferrer" className="text-slate-300 hover:text-white underline decoration-slate-600 font-medium transition-colors">মুকিসফট টেকনোলজি</a>
             </div>
           </div>
 
@@ -112,7 +112,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
 
         <div className="pt-8 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-slate-500 text-xs">
           <div>
-            © {currentYear} মুকিসফট টেকনোলজি (MukiSoft Technology). সর্বস্বত্ব সংরক্ষিত।
+            © {currentYear} <a href="https://mukisoft.tech/" target="_blank" rel="noopener noreferrer" className="hover:text-slate-300 underline decoration-slate-700 transition-colors">মুকিসফট টেকনোলজি (MukiSoft Technology)</a>. সর্বস্বত্ব সংরক্ষিত।
           </div>
           <div className="flex items-center gap-4">
             <button onClick={() => onNavigate('/privacy')} className="hover:text-slate-300">

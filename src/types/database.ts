@@ -337,6 +337,7 @@ export interface PlatformSettings {
     support_phone: string;
     currency: string;
     currency_symbol: string;
+    address_bn?: string;
   };
   payment_methods: Record<string, PaymentMethodItem>;
   communication?: CommunicationSettings;

@@ -4077,6 +4077,10 @@ export const api = {
     return getLS<PlatformSettings>('platform_settings', INITIAL_PLATFORM_SETTINGS);
   },
 
+  async getPlatformSettings(): Promise<PlatformSettings> {
+    return this.getSettings();
+  },
+
   async updateSettings(newSettings: Partial<PlatformSettings>, adminId: string): Promise<PlatformSettings> {
     const current = await this.getSettings();
     const merged: PlatformSettings = {
@@ -4111,6 +4115,10 @@ export const api = {
 
     setLS('platform_settings', merged);
 
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('settings_updated', { detail: merged }));
+    }
+
     // Audit log
     const auditLogs = getLS<AuditLog[]>('audit_logs', []);
     auditLogs.unshift({
@@ -4125,6 +4133,10 @@ export const api = {
     setLS('audit_logs', auditLogs);
 
     return merged;
+  },
+
+  async updatePlatformSettings(newSettings: Partial<PlatformSettings>, adminId: string): Promise<PlatformSettings> {
+    return this.updateSettings(newSettings, adminId);
   },
 
   // -------------------------------------------------------------
@@ -4909,6 +4921,18 @@ export const api = {
   },
 
   async getBlogPostBySlug(slug: string): Promise<BlogPost | null> {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('blog_posts')
+          .select('*')
+          .or(`slug.eq.${slug},id.eq.${slug}`)
+          .maybeSingle();
+        if (!error && data) return data as BlogPost;
+      } catch {
+        // fallback to list search
+      }
+    }
     const posts = await this.getBlogPosts({ onlyPublished: false });
     return posts.find((p) => p.slug === slug || p.id === slug) || null;
   },

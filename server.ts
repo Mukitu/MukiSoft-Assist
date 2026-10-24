@@ -506,29 +506,59 @@ app.get('/blog/:slug', async (req, res, next) => {
 
     let html = fs.readFileSync(indexPath, 'utf-8');
 
+    let ogTitle = 'MukiSoft Digital Services';
+    let ogDesc = 'মুকিসফট টেকনোলজি পরিচালিত এআই-চালিত প্রিমিয়াম ডিজিটাল সেবা প্ল্যাটফর্ম।';
+    let ogImage = 'https://service.mukisoft.tech/logo.png';
+    const ogUrl = `https://service.mukisoft.tech/blog/${slug}`;
+
     if (post) {
-      const ogTitle = post.title_bn || post.title || 'MukiSoft Blog';
-      const rawDesc = post.excerpt_bn || post.excerpt || post.title_bn || post.title || 'MukiSoft Digital Services';
-      const ogDesc = rawDesc.replace(/"/g, '&quot;').replace(/\n/g, ' ');
-      const ogImage = post.cover_image || 'https://service.mukisoft.tech/logo.png';
-      const ogUrl = `https://service.mukisoft.tech/blog/${post.slug || slug}`;
+      ogTitle = post.title_bn || post.title || ogTitle;
+      const rawDesc = post.excerpt_bn || post.excerpt || post.content_bn || post.content || post.title_bn || post.title;
+      if (rawDesc) {
+        ogDesc = rawDesc.replace(/<[^>]*>/g, '').replace(/"/g, '&quot;').replace(/\n/g, ' ').slice(0, 220).trim();
+      }
+      if (post.cover_image && typeof post.cover_image === 'string') {
+        const img = post.cover_image.trim();
+        if (img.startsWith('http://') || img.startsWith('https://')) {
+          ogImage = img;
+        } else if (img.startsWith('/')) {
+          ogImage = `https://service.mukisoft.tech${img}`;
+        }
+      }
+    } else {
+      const formattedSlugTitle = slug
+        .split('-')
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+      ogTitle = `${formattedSlugTitle} | MukiSoft Assist`;
+    }
 
-      // Dynamic Title
-      html = html.replace(/<title>.*?<\/title>/gi, `<title>${ogTitle} | MukiSoft Assist</title>`);
+    const cleanTitle = ogTitle.replace(/"/g, '&quot;');
+    const cleanDesc = ogDesc.replace(/"/g, '&quot;');
 
-      // Dynamic Meta Description
-      html = html.replace(/<meta name="description" content=".*?" \/>/gi, `<meta name="description" content="${ogDesc}" />`);
+    // Complete OpenGraph & Twitter Cards Meta Tags Block
+    const metaBlock = `
+    <title>${cleanTitle} | MukiSoft Assist</title>
+    <meta name="description" content="${cleanDesc}" />
+    <meta property="og:site_name" content="MukiSoft Assist" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="${cleanTitle}" />
+    <meta property="og:description" content="${cleanDesc}" />
+    <meta property="og:image" content="${ogImage}" />
+    <meta property="og:image:secure_url" content="${ogImage}" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:url" content="${ogUrl}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="${cleanTitle}" />
+    <meta name="twitter:description" content="${cleanDesc}" />
+    <meta name="twitter:image" content="${ogImage}" />`;
 
-      // Dynamic OpenGraph Tags
-      html = html.replace(/<meta property="og:title" content=".*?" \/>/gi, `<meta property="og:title" content="${ogTitle.replace(/"/g, '&quot;')}" />`);
-      html = html.replace(/<meta property="og:description" content=".*?" \/>/gi, `<meta property="og:description" content="${ogDesc}" />`);
-      html = html.replace(/<meta property="og:image" content=".*?" \/>/gi, `<meta property="og:image" content="${ogImage}" />`);
-      html = html.replace(/<meta property="og:url" content=".*?" \/>/gi, `<meta property="og:url" content="${ogUrl}" />`);
-
-      // Dynamic Twitter Tags
-      html = html.replace(/<meta name="twitter:title" content=".*?" \/>/gi, `<meta name="twitter:title" content="${ogTitle.replace(/"/g, '&quot;')}" />`);
-      html = html.replace(/<meta name="twitter:description" content=".*?" \/>/gi, `<meta name="twitter:description" content="${ogDesc}" />`);
-      html = html.replace(/<meta name="twitter:image" content=".*?" \/>/gi, `<meta name="twitter:image" content="${ogImage}" />`);
+    // Inject into index.html head
+    if (html.includes('<!-- OpenGraph Facebook / Social Share Tags -->')) {
+      html = html.replace(/<title>.*?<\/title>[\s\S]*?(?=<link rel="preconnect")/gi, `${metaBlock}\n    `);
+    } else {
+      html = html.replace('</head>', `${metaBlock}\n</head>`);
     }
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');

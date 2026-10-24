@@ -40,28 +40,43 @@ export const BlogPostDetailPage: React.FC = () => {
   };
 
   const loadPost = async (postSlug: string) => {
-    setLoading(true);
+    // 1. Instant check in localStorage cache
+    try {
+      const raw = localStorage.getItem('mukisoft_demo_blog_posts');
+      if (raw) {
+        const cachedList: BlogPost[] = JSON.parse(raw);
+        const match = cachedList.find((p) => p.slug === postSlug || p.id === postSlug);
+        if (match) {
+          setPost(match);
+          setLoading(false);
+          document.title = `${match.meta_title || match.title_bn || match.title} | MukiSoft Digital Services`;
+          injectJsonLdSchema(match);
+        }
+      }
+    } catch {
+      // cache miss
+    }
+
     try {
       const data = await api.getBlogPostBySlug(postSlug);
       if (data) {
         setPost(data);
-        // Increment views count
-        api.incrementBlogPostViews(data.id);
-
-        // Fetch related posts
-        const allPosts = await api.getBlogPosts({ onlyPublished: true });
-        const related = allPosts.filter((p) => p.id !== data.id);
-        setRelatedPosts(related.slice(0, 3));
-
-        // Inject background JSON-LD Schema for Google Search indexing
-        injectJsonLdSchema(data);
+        setLoading(false);
         document.title = `${data.meta_title || data.title_bn || data.title} | MukiSoft Digital Services`;
+        injectJsonLdSchema(data);
+
+        // Run non-critical background jobs asynchronously
+        api.incrementBlogPostViews(data.id);
+        api.getBlogPosts({ onlyPublished: true }).then((allPosts) => {
+          const related = allPosts.filter((p) => p.id !== data.id);
+          setRelatedPosts(related.slice(0, 3));
+        });
       } else {
         setPost(null);
+        setLoading(false);
       }
     } catch (err) {
       console.error('Failed to load blog post:', err);
-    } finally {
       setLoading(false);
     }
   };

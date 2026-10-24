@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Mail, Phone, MapPin, Send, CheckCircle2 } from 'lucide-react';
 import { useNotification } from '../../context/NotificationContext';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { PlatformSettings } from '../../types/database';
 
 interface ContactPageProps {
   onNavigate: (path: string) => void;
@@ -15,6 +16,31 @@ export const ContactPage: React.FC<ContactPageProps> = () => {
   const [category, setCategory] = useState('সাধারণ জিজ্ঞাসা');
   const [message, setMessage] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [settings, setSettings] = useState<PlatformSettings | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadSettings = async () => {
+      try {
+        const s = await api.getPlatformSettings();
+        if (isMounted) setSettings(s);
+      } catch {
+        // fallback inside api
+      }
+    };
+
+    loadSettings();
+
+    const handleSettingsUpdated = () => {
+      loadSettings();
+    };
+
+    window.addEventListener('settings_updated', handleSettingsUpdated);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('settings_updated', handleSettingsUpdated);
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,6 +62,10 @@ export const ContactPage: React.FC<ContactPageProps> = () => {
       message: 'আমাদের গ্রাহক সহায়তা দল পরবর্তী ৪ কর্মঘণ্টার মধ্যে আপনার সাথে যোগাযোগ করবে।',
     });
   };
+
+  const supportEmail = settings?.general?.support_email || 'support@mukisoft.com';
+  const supportPhone = settings?.general?.support_phone || '+880 1700 000000';
+  const addressBn = settings?.general?.address_bn || 'মুকিসফট টেকনোলজি, রাজশাহী, বাংলাদেশ';
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-16 space-y-12">
@@ -60,7 +90,7 @@ export const ContactPage: React.FC<ContactPageProps> = () => {
                 <Mail className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
                 <div>
                   <div className="font-semibold text-slate-900">ইমেইল সহায়তা</div>
-                  <div className="font-mono text-slate-600">support@mukisoft.com</div>
+                  <div className="font-mono text-slate-600 select-all">{supportEmail}</div>
                 </div>
               </div>
 
@@ -68,7 +98,7 @@ export const ContactPage: React.FC<ContactPageProps> = () => {
                 <Phone className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
                 <div>
                   <div className="font-semibold text-slate-900">অপারেশনাল হেল্পলাইন</div>
-                  <div className="font-mono text-slate-600">+880 1700 000000 (সকাল ৯টা - রাত ৮টা)</div>
+                  <div className="font-mono text-slate-600 select-all">{supportPhone} (সকাল ৯টা - রাত ৮টা)</div>
                 </div>
               </div>
 
@@ -76,7 +106,7 @@ export const ContactPage: React.FC<ContactPageProps> = () => {
                 <MapPin className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
                 <div>
                   <div className="font-semibold text-slate-900">প্রধান কার্যালয়</div>
-                  <div>মুকিসফট টেকনোলজি, ঢাকা, বাংলাদেশ</div>
+                  <div className="text-slate-600">{addressBn}</div>
                 </div>
               </div>
             </div>

@@ -269,6 +269,7 @@ export const INITIAL_PLATFORM_SETTINGS: PlatformSettings = {
     support_phone: '+880 1700 000000',
     currency: 'BDT',
     currency_symbol: '৳',
+    address_bn: 'মুকিসফট টেকনোলজি, রাজশাহী, বাংলাদেশ',
   },
   payment_methods: {
     bKash: {

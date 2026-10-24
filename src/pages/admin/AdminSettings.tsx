@@ -17,6 +17,7 @@ export const AdminSettings: React.FC = () => {
   const [parentCompany, setParentCompany] = useState('');
   const [supportEmail, setSupportEmail] = useState('');
   const [supportPhone, setSupportPhone] = useState('');
+  const [addressBn, setAddressBn] = useState('');
 
   // AI ও Grok API সেটিংস
   const [grokApiKey, setGrokApiKey] = useState('');
@@ -33,6 +34,7 @@ export const AdminSettings: React.FC = () => {
         setParentCompany(s.general?.parent_company || 'MukiSoft Technology');
         setSupportEmail(s.general?.support_email || 'support@mukisoft.com');
         setSupportPhone(s.general?.support_phone || '+880 1700 000000');
+        setAddressBn(s.general?.address_bn || 'মুকিসফট টেকনোলজি, রাজশাহী, বাংলাদেশ');
       }
 
       const savedGrok = localStorage.getItem('mukisoft_grok_key') || '';
@@ -128,6 +130,7 @@ export const AdminSettings: React.FC = () => {
             parent_company: parentCompany.trim(),
             support_email: supportEmail.trim(),
             support_phone: supportPhone.trim(),
+            address_bn: addressBn.trim(),
             currency: 'BDT',
             currency_symbol: '৳',
           },
@@ -231,6 +234,22 @@ export const AdminSettings: React.FC = () => {
                     className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden focus:bg-white focus:border-indigo-500 font-medium font-mono"
                   />
                 </div>
+              </div>
+            </div>
+
+            <div className="pt-1">
+              <label className="block font-semibold text-slate-700 mb-1">
+                প্রধান কার্যালয়ের ঠিকানা <span className="text-rose-500">*</span>
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  required
+                  value={addressBn}
+                  onChange={(e) => setAddressBn(e.target.value)}
+                  placeholder="যেমন: মুকিসফট টেকনোলজি, রাজশাহী, বাংলাদেশ"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden focus:bg-white focus:border-indigo-500 font-medium"
+                />
               </div>
             </div>
           </div>
