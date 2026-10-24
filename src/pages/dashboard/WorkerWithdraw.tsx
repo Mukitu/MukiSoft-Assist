@@ -369,7 +369,7 @@ export const WorkerWithdraw: React.FC = () => {
                     const label = cfg.name || cfg.id;
                     return (
                       <option key={cfg.id} value={val}>
-                        {label} {cfg.number_or_account ? `(${cfg.number_or_account})` : ''}
+                        {label}
                       </option>
                     );
                   })
