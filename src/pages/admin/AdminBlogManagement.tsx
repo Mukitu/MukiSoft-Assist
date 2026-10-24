@@ -520,33 +520,70 @@ CREATE POLICY "Allow admin full access" ON public.blog_posts
                 </div>
               </div>
 
-              {/* Slug & Cover Image */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    ইউআরএল স্লগ (Slug):
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="my-first-blog-post"
-                    value={formData.slug}
-                    onChange={(e) => setFormData({ ...formData, slug: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-700/60 border border-slate-200 dark:border-slate-600 rounded-xl text-sm font-mono focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                  />
+              {/* Cover Image Upload & URL */}
+              <div className="space-y-3 p-4 bg-slate-50 dark:bg-slate-700/40 rounded-2xl border border-slate-200 dark:border-slate-600">
+                <label className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                  ব্লগ কভার / থাম্বনেইল ছবি যুক্ত করুন: *
+                </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Option 1: File Upload */}
+                  <div className="space-y-1">
+                    <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block">
+                      অপশন ১: কম্পিউটার বা মোবাইল থেকে ছবি আপলোড করুন
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onloadend = () => {
+                            if (typeof reader.result === 'string') {
+                              setFormData((prev) => ({ ...prev, cover_image: reader.result as string }));
+                            }
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                      className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-emerald-600 file:text-white hover:file:bg-emerald-500 cursor-pointer"
+                    />
+                  </div>
+
+                  {/* Option 2: Image URL */}
+                  <div className="space-y-1">
+                    <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block">
+                      অপশন ২: ইমেজের সরাসরি অনলাইন ইউআরএল (URL)
+                    </span>
+                    <input
+                      type="text"
+                      placeholder="https://images.unsplash.com/..."
+                      value={formData.cover_image}
+                      onChange={(e) => setFormData({ ...formData, cover_image: e.target.value })}
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    />
+                  </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    থাম্বনেইল / কভার ইমেজের লিংক (Image URL):
-                  </label>
-                  <input
-                    type="url"
-                    placeholder="https://images.unsplash.com/..."
-                    value={formData.cover_image}
-                    onChange={(e) => setFormData({ ...formData, cover_image: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-700/60 border border-slate-200 dark:border-slate-600 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                  />
-                </div>
+                {/* Live Image Preview Box */}
+                {formData.cover_image ? (
+                  <div className="pt-2 space-y-1">
+                    <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block">
+                      লাইভ ছবি প্রিভিউ (Live Preview):
+                    </span>
+                    <div className="relative h-40 w-full overflow-hidden rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-800">
+                      <img
+                        src={formData.cover_image}
+                        alt="Cover Preview"
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1450133064473-71024230f91b?auto=format&fit=crop&w=1200&q=80';
+                        }}
+                      />
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
               {/* Excerpt Summary */}

@@ -184,6 +184,69 @@ app.post('/api/email/dispatch', async (req, res) => {
 });
 
 // ----------------------------------------------------------------------
+// SEO SITEMAP & ROBOTS.TXT ENDPOINTS (Fixes Google Search Console "Sitemap is HTML" error)
+// ----------------------------------------------------------------------
+app.get('/sitemap.xml', (_req, res) => {
+  res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+
+  const sitemapXml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://service.mukisoft.tech/</loc>
+    <lastmod>${new Date().toISOString().split('T')[0]}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://service.mukisoft.tech/services</loc>
+    <lastmod>${new Date().toISOString().split('T')[0]}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://service.mukisoft.tech/blog</loc>
+    <lastmod>${new Date().toISOString().split('T')[0]}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://service.mukisoft.tech/how-it-works</loc>
+    <lastmod>${new Date().toISOString().split('T')[0]}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://service.mukisoft.tech/about</loc>
+    <lastmod>${new Date().toISOString().split('T')[0]}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://service.mukisoft.tech/contact</loc>
+    <lastmod>${new Date().toISOString().split('T')[0]}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+</urlset>`;
+
+  return res.send(sitemapXml);
+});
+
+app.get('/robots.txt', (_req, res) => {
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+
+  const robotsTxt = `User-agent: *
+Allow: /
+
+Sitemap: https://service.mukisoft.tech/sitemap.xml
+`;
+
+  return res.send(robotsTxt);
+});
+
+// ----------------------------------------------------------------------
 // ADMIN AI CONFIGURATION ENDPOINTS (Centralized backend key storage)
 // ----------------------------------------------------------------------
 app.get('/api/admin/ai-key-status', (_req, res) => {

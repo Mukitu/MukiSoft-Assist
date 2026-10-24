@@ -213,6 +213,9 @@ export const BlogPostDetailPage: React.FC = () => {
             <img
               src={post.cover_image}
               alt={post.title_bn || post.title}
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1450133064473-71024230f91b?auto=format&fit=crop&w=1200&q=80';
+              }}
               className="w-full h-full object-cover"
             />
           </div>
