@@ -6,6 +6,7 @@ import { useNotification } from '../../context/NotificationContext';
 import { api } from '../../services/api';
 import { Profile, UserRole } from '../../types/database';
 import { StatusBadge } from '../../components/common/StatusBadge';
+import { Pagination } from '../../components/common/Pagination';
 
 export const AdminUsers: React.FC = () => {
   const { user, isSuperAdmin, role } = useAuth();
@@ -14,6 +15,11 @@ export const AdminUsers: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | UserRole>('all');
+  const [currentPage, setCurrentPage] = useState(1);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, roleFilter]);
 
   const loadUsers = async () => {
     setLoading(true);
@@ -146,7 +152,8 @@ export const AdminUsers: React.FC = () => {
             '{searchTerm}' অনুসন্ধানে কোনো ব্যবহারকারী অ্যাকাউন্ট পাওয়া যায়নি।
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            <div className="overflow-x-auto">
             <table className="w-full text-xs text-left">
               <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
                 <tr>
@@ -158,7 +165,7 @@ export const AdminUsers: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
-                {filteredUsers.map((u) => {
+                {filteredUsers.slice((currentPage - 1) * 10, currentPage * 10).map((u) => {
                   const canEdit = isSuperAdmin;
 
                   return (
@@ -193,6 +200,14 @@ export const AdminUsers: React.FC = () => {
               </tbody>
             </table>
           </div>
+          <Pagination
+            currentPage={currentPage}
+            totalPages={Math.ceil(filteredUsers.length / 10)}
+            totalItems={filteredUsers.length}
+            pageSize={10}
+            onPageChange={setCurrentPage}
+          />
+        </>
         )}
       </div>
 

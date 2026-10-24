@@ -20,12 +20,14 @@ import { useNotification } from '../../context/NotificationContext';
 import { api } from '../../services/api';
 import { DepositRequest, PaymentMethodConfig } from '../../types/database';
 import { StatusBadge } from '../../components/common/StatusBadge';
+import { Pagination } from '../../components/common/Pagination';
 
 export const AdminDeposits: React.FC = () => {
   const { user, isSuperAdmin, role } = useAuth();
   const { showToast } = useNotification();
 
   const [activeTab, setActiveTab] = useState<'requests' | 'payment_methods'>('requests');
+  const [currentPage, setCurrentPage] = useState(1);
   const [requests, setRequests] = useState<DepositRequest[]>([]);
   const [paymentConfigs, setPaymentConfigs] = useState<PaymentMethodConfig[]>([]);
   const [loading, setLoading] = useState(true);
@@ -288,7 +290,8 @@ export const AdminDeposits: React.FC = () => {
               <p>সকল গ্রাহকের রিচার্জ প্রক্রিয়া সম্পন্ন হয়েছে।</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+              <div className="overflow-x-auto">
               <table className="w-full text-xs text-left">
                 <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
                   <tr>
@@ -303,7 +306,7 @@ export const AdminDeposits: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700">
-                  {requests.map((req) => (
+                  {requests.slice((currentPage - 1) * 8, currentPage * 8).map((req) => (
                     <tr key={req.id} className="hover:bg-slate-50/50">
                       <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
                         {toBengaliDate(req.created_at)}
@@ -382,6 +385,14 @@ export const AdminDeposits: React.FC = () => {
                 </tbody>
               </table>
             </div>
+            <Pagination
+              currentPage={currentPage}
+              totalPages={Math.ceil(requests.length / 8)}
+              totalItems={requests.length}
+              pageSize={8}
+              onPageChange={setCurrentPage}
+            />
+          </>
           )}
         </div>
       )}

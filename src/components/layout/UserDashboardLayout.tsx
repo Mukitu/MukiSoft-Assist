@@ -195,7 +195,7 @@ export const UserDashboardLayout: React.FC<UserDashboardLayoutProps> = ({
       )}
 
       {/* ডেস্কটপ সাইডবার নেভিগেশন */}
-      <aside className="hidden md:flex w-64 bg-white border-r border-slate-200 shrink-0 min-h-screen flex-col justify-between">
+      <aside className="hidden md:flex w-64 bg-white border-r border-slate-200 shrink-0 sticky top-0 h-screen flex-col justify-between overflow-y-auto">
         <div>
           <div className="p-5 border-b border-slate-100 flex items-center justify-between">
             <div>
@@ -260,7 +260,7 @@ export const UserDashboardLayout: React.FC<UserDashboardLayoutProps> = ({
           </nav>
         </div>
 
-        <div className="p-4 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
+        <div className="p-4 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 shrink-0">
           <div className="truncate pr-2">
             <div className="font-medium text-slate-800 truncate">{user?.email}</div>
             <div className="text-[11px] text-slate-500">গ্রাহক অ্যাকাউন্ট</div>
@@ -279,9 +279,9 @@ export const UserDashboardLayout: React.FC<UserDashboardLayoutProps> = ({
       </aside>
 
       {/* মূল কনটেন্ট এরিয়া */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-screen">
         {/* টপ বার ও ব্রেডক্রাম্বস */}
-        <header className="h-14 bg-white border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between">
+        <header className="h-14 bg-white border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-20 shadow-2xs shrink-0">
           <div className="flex items-center gap-1.5 sm:gap-2 text-xs text-slate-500 overflow-x-auto whitespace-nowrap">
             {breadcrumbs.map((crumb, idx) => (
               <React.Fragment key={idx}>
@@ -304,7 +304,7 @@ export const UserDashboardLayout: React.FC<UserDashboardLayoutProps> = ({
         </header>
 
         {/* কনটেন্ট ভিউপোর্ট */}
-        <main className="p-4 sm:p-6 max-w-6xl w-full mx-auto flex-1">{children}</main>
+        <main className="p-4 sm:p-6 max-w-6xl w-full mx-auto flex-1 overflow-x-hidden">{children}</main>
       </div>
     </div>
   );

@@ -21,6 +21,7 @@ import { toBengaliDate, toBengaliDigits } from '../../lib/i18n';
 import { api } from '../../services/api';
 import { SupportTicket, TicketMessage, Order } from '../../types/database';
 import { StatusBadge } from '../../components/common/StatusBadge';
+import { Pagination } from '../../components/common/Pagination';
 import { useNotification } from '../../context/NotificationContext';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 
@@ -66,6 +67,11 @@ export const UserSupport: React.FC = () => {
 
   // টিকিট ফিল্টার
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'in_progress' | 'waiting_for_user' | 'resolved' | 'closed'>('all');
+  const [currentPage, setCurrentPage] = useState(1);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter]);
 
   const loadData = async () => {
     if (!user) return;
@@ -372,36 +378,45 @@ export const UserSupport: React.FC = () => {
                 </button>
               </div>
             ) : (
-              <div className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto">
-                {filteredTickets.map((t) => {
-                  const isSelected = selectedTicket?.id === t.id;
-                  return (
-                    <div
-                      key={t.id}
-                      onClick={() => handleSelectTicket(t)}
-                      className={`p-4 transition-colors cursor-pointer hover:bg-slate-50 ${
-                        isSelected ? 'bg-indigo-50/60 border-l-4 border-indigo-600' : ''
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-mono font-bold text-slate-800">{t.ticket_number}</span>
-                        <StatusBadge status={t.status} />
-                      </div>
-                      <h4 className="text-sm font-semibold text-slate-900 mt-1 line-clamp-1">{t.subject}</h4>
-                      <div className="flex items-center justify-between gap-2 mt-2 text-[11px] text-slate-500">
-                        <span className="truncate">{t.category}</span>
-                        <span className="shrink-0">{toBengaliDate(t.created_at)}</span>
-                      </div>
-                      {t.order && (
-                        <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 rounded text-[10px] text-slate-600">
-                          <ShoppingBag className="w-3 h-3" />
-                          <span>অর্ডার #{t.order.order_number}</span>
+              <>
+                <div className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto">
+                  {filteredTickets.slice((currentPage - 1) * 8, currentPage * 8).map((t) => {
+                    const isSelected = selectedTicket?.id === t.id;
+                    return (
+                      <div
+                        key={t.id}
+                        onClick={() => handleSelectTicket(t)}
+                        className={`p-4 transition-colors cursor-pointer hover:bg-slate-50 ${
+                          isSelected ? 'bg-indigo-50/60 border-l-4 border-indigo-600' : ''
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-mono font-bold text-slate-800">{t.ticket_number}</span>
+                          <StatusBadge status={t.status} />
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                        <h4 className="text-sm font-semibold text-slate-900 mt-1 line-clamp-1">{t.subject}</h4>
+                        <div className="flex items-center justify-between gap-2 mt-2 text-[11px] text-slate-500">
+                          <span className="truncate">{t.category}</span>
+                          <span className="shrink-0">{toBengaliDate(t.created_at)}</span>
+                        </div>
+                        {t.order && (
+                          <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 rounded text-[10px] text-slate-600">
+                            <ShoppingBag className="w-3 h-3" />
+                            <span>অর্ডার #{t.order.order_number}</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={Math.ceil(filteredTickets.length / 8)}
+                  totalItems={filteredTickets.length}
+                  pageSize={8}
+                  onPageChange={setCurrentPage}
+                />
+              </>
             )}
           </div>
         </div>

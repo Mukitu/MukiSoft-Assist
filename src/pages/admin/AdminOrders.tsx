@@ -31,6 +31,7 @@ import { api } from '../../services/api';
 import { Order, OrderStatus, OrderWorkMessage } from '../../types/database';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { useMessages } from '../../hooks/useMessages';
+import { Pagination } from '../../components/common/Pagination';
 
 export const AdminOrders: React.FC = () => {
   const { user, profile, isSuperAdmin } = useAuth();
@@ -45,6 +46,12 @@ export const AdminOrders: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'unassigned' | 'my_orders' | 'other_orders' | 'delivered' | 'completed' | 'refunded'>('all');
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const pageSize = 8;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, statusFilter]);
 
   // বিস্তারিত দেখার জন্য সিলেক্টেড অর্ডার
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -594,7 +601,7 @@ export const AdminOrders: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
-                {filteredOrders.map((ord) => {
+                {filteredOrders.slice((currentPage - 1) * pageSize, currentPage * pageSize).map((ord) => {
                   const isClaimedByMe = ord.assigned_admin === user?.id;
                   const isUnassigned = !ord.assigned_admin;
 
@@ -704,6 +711,15 @@ export const AdminOrders: React.FC = () => {
                 })}
               </tbody>
             </table>
+
+            {/* গ্লোবাল পেজিনেশন বার */}
+            <Pagination
+              currentPage={currentPage}
+              totalPages={Math.ceil(filteredOrders.length / pageSize)}
+              totalItems={filteredOrders.length}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+            />
           </div>
         )}
       </div>

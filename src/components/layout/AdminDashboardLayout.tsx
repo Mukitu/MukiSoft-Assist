@@ -212,7 +212,7 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
           mobileMenuOpen
             ? 'fixed inset-y-0 left-0 z-50 w-72 shadow-2xl flex'
             : 'hidden md:flex'
-        } md:static md:z-auto md:shadow-none md:w-64 bg-slate-900 text-slate-300 shrink-0 md:min-h-screen flex-col justify-between border-r border-slate-800 transition-all duration-300`}
+        } md:sticky md:top-0 md:h-screen md:w-64 bg-slate-900 text-slate-300 shrink-0 flex-col justify-between border-r border-slate-800 transition-all duration-300 overflow-y-auto`}
       >
         <div>
           {/* ব্র্যান্ড হেডার */}
@@ -279,7 +279,7 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
         </div>
 
         {/* সাইডবার ফুটার */}
-        <div className="p-4 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+        <div className="p-4 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 shrink-0">
           <div className="truncate pr-2">
             <div className="text-white font-medium truncate">{profile?.full_name || 'অ্যাডমিনিস্ট্রেটর'}</div>
             <div className="text-[11px] text-slate-500">মুকিসফট টেকনোলজি</div>
@@ -299,9 +299,9 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
       </aside>
 
       {/* মূল কনটেন্ট এরিয়া */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-screen">
         {/* টপ হেডার */}
-        <header className="h-14 bg-white border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between">
+        <header className="h-14 bg-white border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-20 shadow-2xs shrink-0">
           <div className="flex items-center gap-1.5 sm:gap-2 text-xs text-slate-500 overflow-x-auto whitespace-nowrap">
             {breadcrumbs.map((crumb, idx) => (
               <React.Fragment key={idx}>
@@ -322,7 +322,7 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({
         </header>
 
         {/* কনটেন্ট ভিউপোর্ট */}
-        <main className="p-4 sm:p-6 max-w-7xl w-full mx-auto flex-1">{children}</main>
+        <main className="p-4 sm:p-6 max-w-7xl w-full mx-auto flex-1 overflow-x-hidden">{children}</main>
       </div>
     </div>
   );

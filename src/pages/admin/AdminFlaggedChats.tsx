@@ -5,6 +5,7 @@ import { toBengaliDate } from '../../lib/i18n';
 import { useNotification } from '../../context/NotificationContext';
 import { api } from '../../services/api';
 import { SuspiciousChatFlag } from '../../types/database';
+import { Pagination } from '../../components/common/Pagination';
 
 export const AdminFlaggedChats: React.FC = () => {
   const { isSuperAdmin } = useAuth();
@@ -12,8 +13,13 @@ export const AdminFlaggedChats: React.FC = () => {
   const [flags, setFlags] = useState<SuspiciousChatFlag[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const [reviewNoteInput, setReviewNoteInput] = useState('');
   const [activeFlagModal, setActiveFlagModal] = useState<SuspiciousChatFlag | null>(null);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
 
   const loadFlags = async () => {
     try {
@@ -100,22 +106,23 @@ export const AdminFlaggedChats: React.FC = () => {
             <p>আমাদের AI সিস্টেম প্রতিনিয়ত সকল চ্যাট মনিটর করছে।</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
-                <tr>
-                  <th className="py-3 px-4 font-medium">তারিখ</th>
-                  <th className="py-3 px-4 font-medium">অর্ডার নম্বর</th>
-                  <th className="py-3 px-4 font-medium">প্রেরক ও ভূমিকা</th>
-                  <th className="py-3 px-4 font-medium">শনাক্তকৃত কিওয়ার্ড</th>
-                  <th className="py-3 px-4 font-medium">সন্দেহজনক বার্তা</th>
-                  <th className="py-3 px-4 font-medium">অবস্থা</th>
-                  <th className="py-3 px-4 font-medium text-right">পদক্ষেপ</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700">
-                {filtered.map((flag) => (
-                  <tr key={flag.id} className="hover:bg-slate-50/60">
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                  <tr>
+                    <th className="py-3 px-4 font-medium">তারিখ</th>
+                    <th className="py-3 px-4 font-medium">অর্ডার নম্বর</th>
+                    <th className="py-3 px-4 font-medium">প্রেরক ও ভূমিকা</th>
+                    <th className="py-3 px-4 font-medium">শনাক্তকৃত কিওয়ার্ড</th>
+                    <th className="py-3 px-4 font-medium">সন্দেহজনক বার্তা</th>
+                    <th className="py-3 px-4 font-medium">অবস্থা</th>
+                    <th className="py-3 px-4 font-medium text-right">পদক্ষেপ</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-700">
+                  {filtered.slice((currentPage - 1) * 8, currentPage * 8).map((flag) => (
+                    <tr key={flag.id} className="hover:bg-slate-50/60">
                     <td className="py-3 px-4 whitespace-nowrap text-slate-500">{toBengaliDate(flag.created_at)}</td>
                     <td className="py-3 px-4 font-mono font-bold text-slate-900">{flag.order_number}</td>
                     <td className="py-3 px-4">
@@ -162,6 +169,14 @@ export const AdminFlaggedChats: React.FC = () => {
               </tbody>
             </table>
           </div>
+          <Pagination
+            currentPage={currentPage}
+            totalPages={Math.ceil(filtered.length / 8)}
+            totalItems={filtered.length}
+            pageSize={8}
+            onPageChange={setCurrentPage}
+          />
+        </>
         )}
       </div>
 

@@ -31,6 +31,7 @@ import { useNotification } from '../../context/NotificationContext';
 import { api } from '../../services/api';
 import { Order, OrderStatus, OrderWorkMessage } from '../../types/database';
 import { StatusBadge } from '../../components/common/StatusBadge';
+import { Pagination } from '../../components/common/Pagination';
 import { useMessages } from '../../hooks/useMessages';
 
 interface AdminClaimTasksProps {
@@ -95,8 +96,17 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
   const [refundReason, setRefundReason] = useState('গ্রাহকের অনুরোধে অর্ডার বাতিল ও সম্পূর্ণ রিফান্ড করা হয়েছে');
   const [isRefunding, setIsRefunding] = useState(false);
 
-  // সার্চ
+  // সার্চ ও পেজিনেশন
   const [search, setSearch] = useState('');
+  const [pendingPage, setPendingPage] = useState(1);
+  const [myDeliveredPage, setMyDeliveredPage] = useState(1);
+  const [otherClaimedPage, setOtherClaimedPage] = useState(1);
+
+  useEffect(() => {
+    setPendingPage(1);
+    setMyDeliveredPage(1);
+    setOtherClaimedPage(1);
+  }, [search, activeTab]);
 
   // সকল অর্ডার লোড
   const loadOrders = async () => {
@@ -518,8 +528,9 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {pendingOrders.map((ord) => (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {pendingOrders.slice((pendingPage - 1) * 6, pendingPage * 6).map((ord) => (
                 <div
                   key={ord.id}
                   className="bg-white rounded-2xl border border-slate-200 p-5 hover:border-amber-400 hover:shadow-md transition-all flex flex-col justify-between space-y-4 relative overflow-hidden group"
@@ -613,8 +624,16 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                 </div>
               ))}
             </div>
-          )}
-        </div>
+            <Pagination
+              currentPage={pendingPage}
+              totalPages={Math.ceil(pendingOrders.length / 6)}
+              totalItems={pendingOrders.length}
+              pageSize={6}
+              onPageChange={setPendingPage}
+            />
+          </>
+        )}
+      </div>
       )}
 
       {/* ২. আমার দায়িত্বপ্রাপ্ত কাজ ও লাইভ চ্যাট (My Claimed Tasks & Direct Live Chat) */}
@@ -926,8 +945,9 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {myDeliveredOrders.map((ord) => {
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {myDeliveredOrders.slice((myDeliveredPage - 1) * 6, myDeliveredPage * 6).map((ord) => {
                 const commission = Math.round((ord.amount * 80) / 100); // ৮০% উপার্জিত কমিশন
                 return (
                   <div
@@ -1056,8 +1076,16 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                 );
               })}
             </div>
-          )}
-        </div>
+            <Pagination
+              currentPage={myDeliveredPage}
+              totalPages={Math.ceil(myDeliveredOrders.length / 6)}
+              totalItems={myDeliveredOrders.length}
+              pageSize={6}
+              onPageChange={setMyDeliveredPage}
+            />
+          </>
+        )}
+      </div>
       )}
 
       {/* ৩. সুপার অ্যাডমিন অডিট ভিউ (শুধুমাত্র সুপার অ্যাডমিনের জন্য) */}
@@ -1076,7 +1104,8 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
               অন্য কোনো অ্যাডমিনের চলমান কাজ নেই।
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+              <div className="overflow-x-auto">
               <table className="w-full text-xs text-left">
                 <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
                   <tr>
@@ -1090,7 +1119,7 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {otherClaimedOrders.map((ord) => (
+                  {otherClaimedOrders.slice((otherClaimedPage - 1) * 8, otherClaimedPage * 8).map((ord) => (
                     <tr key={ord.id} className="hover:bg-slate-50">
                       <td className="py-2.5 px-3 font-mono font-bold text-slate-800">{ord.order_number}</td>
                       <td className="py-2.5 px-3 font-bold text-slate-900">
@@ -1121,6 +1150,14 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                 </tbody>
               </table>
             </div>
+            <Pagination
+              currentPage={otherClaimedPage}
+              totalPages={Math.ceil(otherClaimedOrders.length / 8)}
+              totalItems={otherClaimedOrders.length}
+              pageSize={8}
+              onPageChange={setOtherClaimedPage}
+            />
+          </>
           )}
         </div>
       )}

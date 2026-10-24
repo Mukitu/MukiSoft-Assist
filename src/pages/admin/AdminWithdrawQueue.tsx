@@ -6,6 +6,7 @@ import { api } from '../../services/api';
 import { WithdrawalRequest } from '../../types/database';
 import { toBengaliCurrency, toBengaliDate, toBengaliDigits } from '../../lib/i18n';
 import { StatusBadge } from '../../components/common/StatusBadge';
+import { Pagination } from '../../components/common/Pagination';
 
 export const AdminWithdrawQueue: React.FC = () => {
   const { user, isSuperAdmin } = useAuth();
@@ -15,6 +16,11 @@ export const AdminWithdrawQueue: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filter, searchTerm]);
 
   // Modals
   const [selectedReq, setSelectedReq] = useState<WithdrawalRequest | null>(null);
@@ -193,21 +199,22 @@ export const AdminWithdrawQueue: React.FC = () => {
             কোনো উইথড্র রিকোয়েস্ট পাওয়া যায়নি।
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
-                <tr>
-                  <th className="py-3 px-4 font-medium">আবেদনকারী কর্মকর্তা</th>
-                  <th className="py-3 px-4 font-medium">ভূমিকা</th>
-                  <th className="py-3 px-4 font-medium">উত্তোলনের পরিমাণ</th>
-                  <th className="py-3 px-4 font-medium">পেমেন্ট মেথড ও নম্বর</th>
-                  <th className="py-3 px-4 font-medium">তারিখ</th>
-                  <th className="py-3 px-4 font-medium">স্ট্যাটাস</th>
-                  <th className="py-3 px-4 font-medium text-right">ম্যানেজমেন্ট অ্যাকশন</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700">
-                {filteredRequests.map((req) => (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                  <tr>
+                    <th className="py-3 px-4 font-medium">আবেদনকারী কর্মকর্তা</th>
+                    <th className="py-3 px-4 font-medium">ভূমিকা</th>
+                    <th className="py-3 px-4 font-medium">উত্তোলনের পরিমাণ</th>
+                    <th className="py-3 px-4 font-medium">পেমেন্ট মেথড ও নম্বর</th>
+                    <th className="py-3 px-4 font-medium">তারিখ</th>
+                    <th className="py-3 px-4 font-medium">স্ট্যাটাস</th>
+                    <th className="py-3 px-4 font-medium text-right">ম্যানেজমেন্ট অ্যাকশন</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-700">
+                  {filteredRequests.slice((currentPage - 1) * 8, currentPage * 8).map((req) => (
                   <tr key={req.id} className="hover:bg-slate-50/50">
                     <td className="py-3 px-4">
                       <div className="font-bold text-slate-900">{req.user_name}</div>
@@ -283,6 +290,14 @@ export const AdminWithdrawQueue: React.FC = () => {
               </tbody>
             </table>
           </div>
+          <Pagination
+            currentPage={currentPage}
+            totalPages={Math.ceil(filteredRequests.length / 8)}
+            totalItems={filteredRequests.length}
+            pageSize={8}
+            onPageChange={setCurrentPage}
+          />
+        </>
         )}
       </div>
 

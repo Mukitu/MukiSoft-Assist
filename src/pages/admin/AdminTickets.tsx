@@ -24,6 +24,7 @@ import { toBengaliDate, toBengaliDigits } from '../../lib/i18n';
 import { api } from '../../services/api';
 import { SupportTicket, TicketMessage, TicketStatus, TicketPriority, Profile } from '../../types/database';
 import { StatusBadge } from '../../components/common/StatusBadge';
+import { Pagination } from '../../components/common/Pagination';
 import { useNotification } from '../../context/NotificationContext';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 
@@ -38,6 +39,11 @@ export const AdminTickets: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter, priorityFilter, searchQuery]);
 
   // নির্বাচিত টিকিট ও কথোপকথন
   const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
@@ -384,9 +390,10 @@ export const AdminTickets: React.FC = () => {
                 <p>কোনো টিকিট পাওয়া যায়নি।</p>
               </div>
             ) : (
-              <div className="divide-y divide-slate-100 max-h-[640px] overflow-y-auto">
-                {filteredTickets.map((t) => {
-                  const isSelected = selectedTicket?.id === t.id;
+              <>
+                <div className="divide-y divide-slate-100 max-h-[640px] overflow-y-auto">
+                  {filteredTickets.slice((currentPage - 1) * 8, currentPage * 8).map((t) => {
+                    const isSelected = selectedTicket?.id === t.id;
                   return (
                     <div
                       key={t.id}
@@ -443,6 +450,14 @@ export const AdminTickets: React.FC = () => {
                   );
                 })}
               </div>
+              <Pagination
+                currentPage={currentPage}
+                totalPages={Math.ceil(filteredTickets.length / 8)}
+                totalItems={filteredTickets.length}
+                pageSize={8}
+                onPageChange={setCurrentPage}
+              />
+            </>
             )}
           </div>
         </div>

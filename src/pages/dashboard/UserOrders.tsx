@@ -5,6 +5,7 @@ import { toBengaliCurrency, toBengaliDigits, toBengaliDate } from '../../lib/i18
 import { api } from '../../services/api';
 import { Order } from '../../types/database';
 import { StatusBadge } from '../../components/common/StatusBadge';
+import { Pagination } from '../../components/common/Pagination';
 
 interface UserOrdersProps {
   onNavigate: (path: string) => void;
@@ -26,6 +27,8 @@ export const UserOrders: React.FC<UserOrdersProps> = ({ onNavigate }) => {
   const [filter, setFilter] = useState<string>('all');
   const [search, setSearch] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const pageSize = 6;
 
   useEffect(() => {
     async function load() {
@@ -36,6 +39,11 @@ export const UserOrders: React.FC<UserOrdersProps> = ({ onNavigate }) => {
     }
     load();
   }, [user]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filter, search]);
 
   const filtered = orders.filter((o) => {
     // Search
@@ -61,6 +69,9 @@ export const UserOrders: React.FC<UserOrdersProps> = ({ onNavigate }) => {
     if (filter === 'cancelled') return ['cancelled', 'refunded'].includes(o.status);
     return o.status === filter;
   });
+
+  const totalPages = Math.ceil(filtered.length / pageSize);
+  const paginatedOrders = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   return (
     <div className="space-y-6">
@@ -131,7 +142,7 @@ export const UserOrders: React.FC<UserOrdersProps> = ({ onNavigate }) => {
       </div>
 
       {/* অর্ডার তালিকা */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
         {loading ? (
           <div className="p-8 text-center text-xs text-slate-500">অর্ডার লোড হচ্ছে...</div>
         ) : filtered.length === 0 ? (
@@ -151,7 +162,7 @@ export const UserOrders: React.FC<UserOrdersProps> = ({ onNavigate }) => {
           <div>
             {/* মোবাইল কার্ড ভিউ */}
             <div className="block md:hidden divide-y divide-slate-100">
-              {filtered.map((order) => (
+              {paginatedOrders.map((order) => (
                 <div key={order.id} className="p-4 space-y-3 hover:bg-slate-50/50">
                   <div className="flex items-center justify-between">
                     <span className="font-mono font-bold text-xs text-slate-900">{order.order_number}</span>
@@ -214,7 +225,7 @@ export const UserOrders: React.FC<UserOrdersProps> = ({ onNavigate }) => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700">
-                  {filtered.map((order) => (
+                  {paginatedOrders.map((order) => (
                     <tr key={order.id} className="hover:bg-slate-50/50">
                       <td className="py-3.5 px-4 font-mono font-bold text-slate-900">{order.order_number}</td>
                       <td className="py-3.5 px-4 font-semibold text-slate-900 max-w-[220px] truncate">
@@ -262,6 +273,15 @@ export const UserOrders: React.FC<UserOrdersProps> = ({ onNavigate }) => {
                 </tbody>
               </table>
             </div>
+
+            {/* গ্লোবাল পেজিনেশন বার */}
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={filtered.length}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+            />
           </div>
         )}
       </div>

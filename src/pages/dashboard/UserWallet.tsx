@@ -15,10 +15,13 @@ import { useNotification } from '../../context/NotificationContext';
 import { api } from '../../services/api';
 import { Wallet, WalletTransaction, DepositRequest, PaymentMethodConfig } from '../../types/database';
 import { StatusBadge } from '../../components/common/StatusBadge';
+import { Pagination } from '../../components/common/Pagination';
 
 export const UserWallet: React.FC = () => {
   const { user } = useAuth();
   const { showToast } = useNotification();
+  const [depositPage, setDepositPage] = useState(1);
+  const [txPage, setTxPage] = useState(1);
 
   const [wallet, setWallet] = useState<Wallet | null>(() => {
     if (!user) return null;
@@ -428,40 +431,49 @@ export const UserWallet: React.FC = () => {
             এখনও কোনো টাকা জমার অনুরোধ করা হয়নি।
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
-                <tr>
-                  <th className="py-2.5 px-3 font-medium">তারিখ</th>
-                  <th className="py-2.5 px-3 font-medium">মেথড</th>
-                  <th className="py-2.5 px-3 font-medium">TrxID</th>
-                  <th className="py-2.5 px-3 font-medium text-right">পরিমাণ</th>
-                  <th className="py-2.5 px-3 font-medium">অবস্থা</th>
-                  <th className="py-2.5 px-3 font-medium">অ্যাডমিন নোট</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {depositRequests.map((req) => (
-                  <tr key={req.id} className="hover:bg-slate-50/60">
-                    <td className="py-3 px-3 text-slate-500 whitespace-nowrap">
-                      {toBengaliDate(req.created_at)}
-                    </td>
-                    <td className="py-3 px-3 font-semibold text-slate-800">{req.payment_method}</td>
-                    <td className="py-3 px-3 font-mono font-bold text-slate-900">{req.transaction_reference}</td>
-                    <td className="py-3 px-3 text-right font-mono font-bold text-slate-900">
-                      {toBengaliCurrency(req.amount)}
-                    </td>
-                    <td className="py-3 px-3">
-                      <StatusBadge status={req.status} />
-                    </td>
-                    <td className="py-3 px-3 text-slate-500 max-w-[200px] truncate text-[11px]">
-                      {req.admin_notes || '—'}
-                    </td>
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                  <tr>
+                    <th className="py-2.5 px-3 font-medium">তারিখ</th>
+                    <th className="py-2.5 px-3 font-medium">মেথড</th>
+                    <th className="py-2.5 px-3 font-medium">TrxID</th>
+                    <th className="py-2.5 px-3 font-medium text-right">পরিমাণ</th>
+                    <th className="py-2.5 px-3 font-medium">অবস্থা</th>
+                    <th className="py-2.5 px-3 font-medium">অ্যাডমিন নোট</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {depositRequests.slice((depositPage - 1) * 6, depositPage * 6).map((req) => (
+                    <tr key={req.id} className="hover:bg-slate-50/60">
+                      <td className="py-3 px-3 text-slate-500 whitespace-nowrap">
+                        {toBengaliDate(req.created_at)}
+                      </td>
+                      <td className="py-3 px-3 font-semibold text-slate-800">{req.payment_method}</td>
+                      <td className="py-3 px-3 font-mono font-bold text-slate-900">{req.transaction_reference}</td>
+                      <td className="py-3 px-3 text-right font-mono font-bold text-slate-900">
+                        {toBengaliCurrency(req.amount)}
+                      </td>
+                      <td className="py-3 px-3">
+                        <StatusBadge status={req.status} />
+                      </td>
+                      <td className="py-3 px-3 text-slate-500 max-w-[200px] truncate text-[11px]">
+                        {req.admin_notes || '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pagination
+              currentPage={depositPage}
+              totalPages={Math.ceil(depositRequests.length / 6)}
+              totalItems={depositRequests.length}
+              pageSize={6}
+              onPageChange={setDepositPage}
+            />
+          </>
         )}
       </div>
 
@@ -473,36 +485,45 @@ export const UserWallet: React.FC = () => {
             কোনো ট্রানজ্যাকশন রেকর্ড নেই।
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
-                <tr>
-                  <th className="py-2.5 px-3 font-medium">তারিখ</th>
-                  <th className="py-2.5 px-3 font-medium">বিবরণ</th>
-                  <th className="py-2.5 px-3 font-medium text-right">পরিমাণ</th>
-                  <th className="py-2.5 px-3 font-medium text-right">ব্যালেন্স পর</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {transactions.map((tx) => (
-                  <tr key={tx.id} className="hover:bg-slate-50/60">
-                    <td className="py-3 px-3 text-slate-500 whitespace-nowrap">
-                      {toBengaliDate(tx.created_at)}
-                    </td>
-                    <td className="py-3 px-3 font-medium text-slate-800">{tx.description}</td>
-                    <td className={`py-3 px-3 text-right font-mono font-bold ${
-                      tx.amount > 0 ? 'text-emerald-600' : 'text-slate-900'
-                    }`}>
-                      {tx.amount > 0 ? '+' : ''}{toBengaliCurrency(tx.amount)}
-                    </td>
-                    <td className="py-3 px-3 text-right font-mono text-slate-600">
-                      {toBengaliCurrency(tx.balance_after)}
-                    </td>
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                  <tr>
+                    <th className="py-2.5 px-3 font-medium">তারিখ</th>
+                    <th className="py-2.5 px-3 font-medium">বিবরণ</th>
+                    <th className="py-2.5 px-3 font-medium text-right">পরিমাণ</th>
+                    <th className="py-2.5 px-3 font-medium text-right">ব্যালেন্স পর</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {transactions.slice((txPage - 1) * 6, txPage * 6).map((tx) => (
+                    <tr key={tx.id} className="hover:bg-slate-50/60">
+                      <td className="py-3 px-3 text-slate-500 whitespace-nowrap">
+                        {toBengaliDate(tx.created_at)}
+                      </td>
+                      <td className="py-3 px-3 font-medium text-slate-800">{tx.description}</td>
+                      <td className={`py-3 px-3 text-right font-mono font-bold ${
+                        tx.amount > 0 ? 'text-emerald-600' : 'text-slate-900'
+                      }`}>
+                        {tx.amount > 0 ? '+' : ''}{toBengaliCurrency(tx.amount)}
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono text-slate-600">
+                        {toBengaliCurrency(tx.balance_after)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pagination
+              currentPage={txPage}
+              totalPages={Math.ceil(transactions.length / 6)}
+              totalItems={transactions.length}
+              pageSize={6}
+              onPageChange={setTxPage}
+            />
+          </>
         )}
       </div>
     </div>
