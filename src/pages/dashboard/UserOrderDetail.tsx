@@ -672,7 +672,7 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
               )}
 
               {/* সংযুক্ত ফাইল যদি থাকে */}
-              {order.attachment_name && (
+              {(order.attachment_name || order.attachment_url) && (
                 <div className="text-xs space-y-2 border-t border-slate-100 pt-3">
                   <span className="font-semibold text-slate-700 block">সংযুক্ত প্রজেক্ট ফাইল / পিডিএফ:</span>
                   {order.attachment_url ? (
@@ -683,18 +683,19 @@ export const UserOrderDetail: React.FC<UserOrderDetailProps> = ({ orderId, onNav
                           setPreviewFile({
                             url: order.attachment_url!,
                             name: order.attachment_name || 'attachment.pdf',
+                            notes: order.requirements_submitted || undefined,
                           });
                           setPreviewModalOpen(true);
                         }}
-                        className="inline-flex items-center gap-2 px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg border border-indigo-200 transition-colors text-xs"
+                        className="inline-flex items-center gap-2 px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg border border-indigo-200 transition-colors text-xs cursor-pointer shadow-2xs"
                       >
                         <Eye className="w-4 h-4 text-indigo-600" />
-                        <span>{order.attachment_name} (প্রিভিউ দেখুন)</span>
+                        <span>{order.attachment_name || 'Project_Attachment.pdf'} (প্রিভিউ দেখুন)</span>
                       </button>
                       <button
                         type="button"
-                        onClick={() => downloadFile(order.attachment_url, order.attachment_name || 'attachment.pdf')}
-                        className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg transition-colors text-xs"
+                        onClick={() => downloadFile(order.attachment_url, order.attachment_name || 'attachment.pdf', order.requirements_submitted || '')}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg transition-colors text-xs cursor-pointer shadow-2xs"
                       >
                         <Download className="w-3.5 h-3.5" />
                         <span>ডাউনলোড</span>

@@ -1346,8 +1346,13 @@ export const api = {
         }
       }
 
+      const finalAttachmentUrl = o.attachment_url || o.brief_attachment_url || o.file_url || o.requirements_attachment_url || null;
+      const finalAttachmentName = o.attachment_name || o.brief_attachment_name || o.file_name || (finalAttachmentUrl ? 'Attachment.pdf' : null);
+
       return {
         ...o,
+        attachment_url: finalAttachmentUrl,
+        attachment_name: finalAttachmentName,
         status,
         service: servicesMap.get(o.service_id) || o.service || undefined,
         customer: profilesMap.get(o.user_id) || o.customer || undefined,

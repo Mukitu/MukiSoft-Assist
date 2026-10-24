@@ -107,11 +107,12 @@ export function getSafeFileUrl(url?: string | null, fileName = 'document.pdf', n
     return URL.createObjectURL(blob);
   }
 
-  // 2. Placeholder mukisoft URLs -> Convert to generated PDF Blob
+  // 2. Placeholder mukisoft or non-existent remote URLs -> Convert to generated PDF Blob
   if (
-    cleanUrl.includes('mukisoft.com/deliverables/') ||
+    cleanUrl.includes('mukisoft.com/') ||
     cleanUrl.includes('sample_output.pdf') ||
-    cleanUrl.includes('final_work.pdf')
+    cleanUrl.includes('final_work.pdf') ||
+    cleanUrl.includes('attachments/')
   ) {
     const blob = createSamplePdfBlob(fileName.replace(/\.pdf$/i, ''), notes || 'MukiSoft Work Deliverable');
     return URL.createObjectURL(blob);
@@ -155,9 +156,10 @@ export function downloadFile(url?: string | null, fileName = 'delivery_file.pdf'
     blobUrl = URL.createObjectURL(blob);
     shouldRevoke = true;
   } else if (
-    cleanUrl.includes('mukisoft.com/deliverables/') ||
+    cleanUrl.includes('mukisoft.com/') ||
     cleanUrl.includes('sample_output.pdf') ||
-    cleanUrl.includes('final_work.pdf')
+    cleanUrl.includes('final_work.pdf') ||
+    cleanUrl.includes('attachments/')
   ) {
     const blob = createSamplePdfBlob(safeFileName.replace(/\.pdf$/i, ''), notes || 'MukiSoft Work Deliverable');
     blobUrl = URL.createObjectURL(blob);

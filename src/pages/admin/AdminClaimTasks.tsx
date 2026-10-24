@@ -7,6 +7,7 @@ import {
   AlertCircle,
   FileText,
   Upload,
+  Download,
   Send,
   Eye,
   Lock,
@@ -822,6 +823,63 @@ export const AdminClaimTasks: React.FC<AdminClaimTasksProps> = ({ onNavigate }) 
                         <div className="line-clamp-2 leading-relaxed">
                           <span className="font-bold text-amber-900">রিকোয়ারমেন্টস:</span> {selectedOrder.requirements_submitted}
                         </div>
+                      </div>
+                    )}
+
+                    {/* ক্লায়েন্টের সংযুক্ত প্রজেক্ট পিডিএফ / ফাইল স্ট্রিপ */}
+                    {(selectedOrder.attachment_url || selectedOrder.attachment_name || selectedOrder.reference_link) && (
+                      <div className="px-4 py-2.5 bg-indigo-50/80 border-b border-indigo-100 text-xs text-indigo-950 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Paperclip className="w-4 h-4 text-indigo-600 shrink-0" />
+                          <div className="min-w-0">
+                            <span className="font-bold text-indigo-950 block truncate">
+                              ক্লায়েন্টের সংযুক্ত প্রজেক্ট ফাইল: {selectedOrder.attachment_name || 'Project_Attachment.pdf'}
+                            </span>
+                            {selectedOrder.reference_link && (
+                              <a
+                                href={selectedOrder.reference_link}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[11px] text-indigo-700 hover:underline inline-flex items-center gap-1 font-mono mt-0.5"
+                              >
+                                <span>রেফারেন্স লিংক: {selectedOrder.reference_link}</span>
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                            )}
+                          </div>
+                        </div>
+
+                        {selectedOrder.attachment_url ? (
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPreviewFile({
+                                  url: selectedOrder.attachment_url!,
+                                  name: selectedOrder.attachment_name || 'attachment.pdf',
+                                  notes: selectedOrder.requirements_submitted || undefined,
+                                });
+                                setPreviewModalOpen(true);
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg border border-indigo-200 transition-colors text-xs cursor-pointer shadow-2xs"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>পিডিএফ প্রিভিউ দেখুন</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => downloadFile(selectedOrder.attachment_url, selectedOrder.attachment_name || 'attachment.pdf', selectedOrder.requirements_submitted || '')}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg transition-colors text-xs cursor-pointer shadow-2xs"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>ডাউনলোড</span>
+                            </button>
+                          </div>
+                        ) : selectedOrder.attachment_name ? (
+                          <span className="font-mono text-xs bg-white px-2 py-1 rounded text-slate-700 border border-slate-200">
+                            {selectedOrder.attachment_name}
+                          </span>
+                        ) : null}
                       </div>
                     )}
 

@@ -914,8 +914,8 @@ export const AdminOrders: React.FC = () => {
                   </div>
                 )}
 
-                {selectedOrder.attachment_name && (
-                  <div className="space-y-1">
+                {(selectedOrder.attachment_name || selectedOrder.attachment_url) && (
+                  <div className="space-y-1 pt-2 border-t border-slate-100">
                     <span className="font-semibold text-slate-700 block mb-0.5">সংযুক্ত প্রজেক্ট ফাইল / পিডিএফ:</span>
                     {selectedOrder.attachment_url ? (
                       <div className="flex items-center gap-2 pt-1">
@@ -925,18 +925,19 @@ export const AdminOrders: React.FC = () => {
                             setPreviewFile({
                               url: selectedOrder.attachment_url!,
                               name: selectedOrder.attachment_name || 'attachment.pdf',
+                              notes: selectedOrder.requirements_submitted || undefined,
                             });
                             setPreviewModalOpen(true);
                           }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg border border-indigo-200 transition-colors text-xs"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg border border-indigo-200 transition-colors text-xs cursor-pointer shadow-2xs"
                         >
                           <Eye className="w-3.5 h-3.5 text-indigo-600" />
-                          <span>{selectedOrder.attachment_name} (প্রিভিউ দেখুন)</span>
+                          <span>{selectedOrder.attachment_name || 'Project_Attachment.pdf'} (প্রিভিউ দেখুন)</span>
                         </button>
                         <button
                           type="button"
-                          onClick={() => downloadFile(selectedOrder.attachment_url, selectedOrder.attachment_name || 'attachment.pdf')}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg transition-colors text-xs"
+                          onClick={() => downloadFile(selectedOrder.attachment_url, selectedOrder.attachment_name || 'attachment.pdf', selectedOrder.requirements_submitted || '')}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg transition-colors text-xs cursor-pointer shadow-2xs"
                         >
                           <Download className="w-3.5 h-3.5" />
                           <span>ডাউনলোড</span>
