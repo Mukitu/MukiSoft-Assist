@@ -465,6 +465,81 @@ STRICT INSTRUCTIONS:
 });
 
 // ----------------------------------------------------------------------
+// FACEBOOK & SOCIAL MEDIA OPENGRAPH INTERCEPTOR FOR BLOGS
+// ----------------------------------------------------------------------
+app.get('/blog/:slug', async (req, res, next) => {
+  const slug = req.params.slug;
+  if (!slug) return next();
+
+  try {
+    let post: any = null;
+    const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+    const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+
+    if (supabaseUrl && supabaseAnonKey) {
+      try {
+        const queryUrl = `${supabaseUrl}/rest/v1/blog_posts?or=(slug.eq.${encodeURIComponent(slug)},id.eq.${encodeURIComponent(slug)})&select=*`;
+        const sbRes = await fetch(queryUrl, {
+          headers: {
+            apikey: supabaseAnonKey,
+            Authorization: `Bearer ${supabaseAnonKey}`,
+          },
+        });
+        if (sbRes.ok) {
+          const sbData = await sbRes.json();
+          if (Array.isArray(sbData) && sbData.length > 0) {
+            post = sbData[0];
+          }
+        }
+      } catch (err) {
+        console.warn('Supabase fetch for OG tags error:', err);
+      }
+    }
+
+    const indexPath = process.env.NODE_ENV === 'production'
+      ? path.resolve(__dirname, 'dist', 'index.html')
+      : path.resolve(__dirname, 'index.html');
+
+    if (!fs.existsSync(indexPath)) {
+      return next();
+    }
+
+    let html = fs.readFileSync(indexPath, 'utf-8');
+
+    if (post) {
+      const ogTitle = post.title_bn || post.title || 'MukiSoft Blog';
+      const rawDesc = post.excerpt_bn || post.excerpt || post.title_bn || post.title || 'MukiSoft Digital Services';
+      const ogDesc = rawDesc.replace(/"/g, '&quot;').replace(/\n/g, ' ');
+      const ogImage = post.cover_image || 'https://service.mukisoft.tech/logo.png';
+      const ogUrl = `https://service.mukisoft.tech/blog/${post.slug || slug}`;
+
+      // Dynamic Title
+      html = html.replace(/<title>.*?<\/title>/gi, `<title>${ogTitle} | MukiSoft Assist</title>`);
+
+      // Dynamic Meta Description
+      html = html.replace(/<meta name="description" content=".*?" \/>/gi, `<meta name="description" content="${ogDesc}" />`);
+
+      // Dynamic OpenGraph Tags
+      html = html.replace(/<meta property="og:title" content=".*?" \/>/gi, `<meta property="og:title" content="${ogTitle.replace(/"/g, '&quot;')}" />`);
+      html = html.replace(/<meta property="og:description" content=".*?" \/>/gi, `<meta property="og:description" content="${ogDesc}" />`);
+      html = html.replace(/<meta property="og:image" content=".*?" \/>/gi, `<meta property="og:image" content="${ogImage}" />`);
+      html = html.replace(/<meta property="og:url" content=".*?" \/>/gi, `<meta property="og:url" content="${ogUrl}" />`);
+
+      // Dynamic Twitter Tags
+      html = html.replace(/<meta name="twitter:title" content=".*?" \/>/gi, `<meta name="twitter:title" content="${ogTitle.replace(/"/g, '&quot;')}" />`);
+      html = html.replace(/<meta name="twitter:description" content=".*?" \/>/gi, `<meta name="twitter:description" content="${ogDesc}" />`);
+      html = html.replace(/<meta name="twitter:image" content=".*?" \/>/gi, `<meta name="twitter:image" content="${ogImage}" />`);
+    }
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.send(html);
+  } catch (err) {
+    console.error('OG Handler error:', err);
+    return next();
+  }
+});
+
+// ----------------------------------------------------------------------
 // VITE DEV MIDDLEWARE / STATIC SERVING
 // ----------------------------------------------------------------------
 async function startServer() {

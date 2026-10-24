@@ -208,15 +208,15 @@ export const BlogPostDetailPage: React.FC = () => {
       {/* Main Body Content */}
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 -mt-4 relative z-10">
         <article className="bg-white dark:bg-slate-800 rounded-3xl shadow-xl border border-slate-200/80 dark:border-slate-700/80 overflow-hidden">
-          {/* Cover Image */}
-          <div className="relative h-64 sm:h-96 w-full overflow-hidden bg-slate-900">
+          {/* Cover Image - Preserving full aspect ratio without cropping head */}
+          <div className="relative w-full max-h-[600px] bg-slate-950 flex items-center justify-center p-2 sm:p-4 border-b border-slate-800">
             <img
               src={post.cover_image}
               alt={post.title_bn || post.title}
               onError={(e) => {
                 (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1450133064473-71024230f91b?auto=format&fit=crop&w=1200&q=80';
               }}
-              className="w-full h-full object-cover"
+              className="w-full h-auto max-h-[560px] object-contain mx-auto rounded-2xl shadow-2xl"
             />
           </div>
 
