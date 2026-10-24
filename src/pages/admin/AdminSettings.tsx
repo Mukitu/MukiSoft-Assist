@@ -24,15 +24,6 @@ export const AdminSettings: React.FC = () => {
   const [showApiKey, setShowApiKey] = useState(false);
   const [testingGrok, setTestingGrok] = useState(false);
 
-  // পেমেন্ট তথ্য
-  const [bkashNumber, setBkashNumber] = useState('');
-  const [bkashInstructions, setBkashInstructions] = useState('');
-  const [nagadNumber, setNagadNumber] = useState('');
-  const [nagadInstructions, setNagadInstructions] = useState('');
-  const [bankAccountNumber, setBankAccountNumber] = useState('');
-  const [bankName, setBankName] = useState('');
-  const [bankRouting, setBankRouting] = useState('');
-
   useEffect(() => {
     async function load() {
       const s = await api.getSettings();
@@ -42,14 +33,6 @@ export const AdminSettings: React.FC = () => {
         setParentCompany(s.general?.parent_company || 'MukiSoft Technology');
         setSupportEmail(s.general?.support_email || 'support@mukisoft.com');
         setSupportPhone(s.general?.support_phone || '+880 1700 000000');
-
-        setBkashNumber(s.payment_methods?.bKash?.account_number || '01700-000000');
-        setBkashInstructions(s.payment_methods?.bKash?.instructions_bn || '');
-        setNagadNumber(s.payment_methods?.nagad?.account_number || s.payment_methods?.Nagad?.account_number || '01800-000000');
-        setNagadInstructions(s.payment_methods?.nagad?.instructions_bn || s.payment_methods?.Nagad?.instructions_bn || '');
-        setBankAccountNumber(s.payment_methods?.bank?.account_number || s.payment_methods?.Bank_Transfer?.account_number || '1100-2233-4455-66');
-        setBankName(s.payment_methods?.bank?.bank_name || s.payment_methods?.Bank_Transfer?.bank_name || 'The City Bank PLC');
-        setBankRouting(s.payment_methods?.bank?.routing || s.payment_methods?.Bank_Transfer?.routing || '085272183');
       }
 
       const savedGrok = localStorage.getItem('mukisoft_grok_key') || '';
@@ -358,70 +341,6 @@ export const AdminSettings: React.FC = () => {
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>{testingGrok ? 'যাচাই করা হচ্ছে...' : 'কানেকশন টেস্ট করুন'}</span>
               </button>
-            </div>
-          </div>
-
-          {/* ৩. পেমেন্ট গেটওয়ে তথ্য */}
-          <div className="border-t border-slate-100 pt-5 space-y-4">
-            <div className="flex items-center gap-2 text-slate-900 border-b border-slate-100 pb-2">
-              <CreditCard className="w-4 h-4 text-emerald-600" />
-              <h3 className="font-bold text-sm">টাকা জমার পেমেন্ট গেটওয়ে তথ্য (গ্রাহক পোর্টালে দৃশ্যমান)</h3>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">বিকাশ মার্চেন্ট নম্বর</label>
-                <input
-                  type="text"
-                  required
-                  value={bkashNumber}
-                  onChange={(e) => setBkashNumber(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg font-mono font-medium focus:outline-hidden focus:bg-white focus:border-indigo-500"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">নগদ মার্চেন্ট নম্বর</label>
-                <input
-                  type="text"
-                  required
-                  value={nagadNumber}
-                  onChange={(e) => setNagadNumber(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg font-mono font-medium focus:outline-hidden focus:bg-white focus:border-indigo-500"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-3 pt-2">
-              <h4 className="font-semibold text-slate-800 text-xs">ব্যাংক ট্রান্সফার তথ্য</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block font-medium text-slate-600 mb-1">ব্যাংকের নাম</label>
-                  <input
-                    type="text"
-                    value={bankName}
-                    onChange={(e) => setBankName(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg font-medium focus:outline-hidden focus:bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="block font-medium text-slate-600 mb-1">হিসাব নম্বর</label>
-                  <input
-                    type="text"
-                    value={bankAccountNumber}
-                    onChange={(e) => setBankAccountNumber(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg font-mono font-medium focus:outline-hidden focus:bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="block font-medium text-slate-600 mb-1">রাউটিং নম্বর</label>
-                  <input
-                    type="text"
-                    value={bankRouting}
-                    onChange={(e) => setBankRouting(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg font-mono font-medium focus:outline-hidden focus:bg-white"
-                  />
-                </div>
-              </div>
             </div>
           </div>
 

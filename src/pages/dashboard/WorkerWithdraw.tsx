@@ -68,6 +68,7 @@ export const WorkerWithdraw: React.FC = () => {
   const [completedOrders, setCompletedOrders] = useState<
     { order: any; commission: number; rate: number; companyShare?: number; companyRate?: number }[]
   >([]);
+  const [activePaymentConfigs, setActivePaymentConfigs] = useState<any[]>([]);
   const [withdrawAmount, setWithdrawAmount] = useState<string>('');
 
   const [savingAccount, setSavingAccount] = useState(false);
@@ -77,17 +78,19 @@ export const WorkerWithdraw: React.FC = () => {
   const loadData = async () => {
     if (!user) return;
     try {
-      const [bal, acc, reqs, doneOrders] = await Promise.all([
+      const [bal, acc, reqs, doneOrders, payConfigs] = await Promise.all([
         api.getUserWithdrawableBalance(user.id, user.email),
         api.getPayoutAccount(user.id),
         api.getWithdrawalRequests(),
         api.getWorkerCompletedOrders(user.id, user.email),
+        api.getPaymentMethodConfigs(),
       ]);
 
       setBalance(bal);
       if (acc) setPayoutAccount(acc);
       setWithdrawHistory(filterMyRequests(reqs));
       setCompletedOrders(doneOrders);
+      setActivePaymentConfigs((payConfigs || []).filter((c) => c.is_active));
     } catch (err) {
       console.warn('Load withdraw page error:', err);
     } finally {
@@ -359,10 +362,25 @@ export const WorkerWithdraw: React.FC = () => {
                 onChange={(e) => setPayoutAccount({ ...payoutAccount, method: e.target.value as any })}
                 className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-hidden"
               >
-                <option value="bkash">bKash (বিকাশ পার্সোনাল)</option>
-                <option value="nagad">Nagad (নগদ পার্সোনাল)</option>
-                <option value="rocket">Rocket (রকেট পার্সোনাল)</option>
-                <option value="bank">Bank Transfer (ব্যাংক অ্যাকাউন্ট)</option>
+                {activePaymentConfigs.length > 0 ? (
+                  activePaymentConfigs.map((cfg) => {
+                    const idLower = cfg.id.toLowerCase();
+                    const val = idLower.includes('bkash') || idLower.includes('বিকাশ') ? 'bkash' : idLower.includes('nagad') || idLower.includes('নগদ') ? 'nagad' : idLower.includes('rocket') || idLower.includes('রকেট') ? 'rocket' : 'bank';
+                    const label = cfg.name || cfg.id;
+                    return (
+                      <option key={cfg.id} value={val}>
+                        {label} {cfg.number_or_account ? `(${cfg.number_or_account})` : ''}
+                      </option>
+                    );
+                  })
+                ) : (
+                  <>
+                    <option value="bkash">bKash (বিকাশ পার্সোনাল)</option>
+                    <option value="nagad">Nagad (নগদ পার্সোনাল)</option>
+                    <option value="rocket">Rocket (রকেট পার্সোনাল)</option>
+                    <option value="bank">Bank Transfer (ব্যাংক অ্যাকাউন্ট)</option>
+                  </>
+                )}
               </select>
             </div>
 
