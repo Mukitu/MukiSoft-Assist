@@ -8,18 +8,16 @@ import {
   CheckCircle, 
   Clock, 
   FileText, 
-  Tag, 
-  Sparkles, 
-  Globe, 
   X, 
   Save, 
   RefreshCw, 
   Shield, 
   AlertCircle,
   ExternalLink,
-  DollarSign,
-  TrendingUp,
-  Sliders
+  Code,
+  Copy,
+  Check,
+  Database
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { BlogPost, Profile } from '../../types/database';
@@ -32,8 +30,9 @@ export const AdminBlogManagement: React.FC<Props> = ({ currentUser }) => {
   const [posts, setPosts] = useState<BlogPost[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  const [isSqlModalOpen, setIsSqlModalOpen] = useState<boolean>(false);
+  const [sqlCopied, setSqlCopied] = useState<boolean>(false);
   const [editingPost, setEditingPost] = useState<BlogPost | null>(null);
   const [saving, setSaving] = useState<boolean>(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -43,26 +42,16 @@ export const AdminBlogManagement: React.FC<Props> = ({ currentUser }) => {
     title: '',
     title_bn: '',
     slug: '',
-    category: 'Document Services',
-    category_bn: 'ডকুমেন্ট সেবা',
     excerpt: '',
     excerpt_bn: '',
     content: '',
     content_bn: '',
     cover_image: '',
-    tagsStr: '',
     meta_title: '',
     meta_description: '',
     is_published: true,
     is_featured: false,
   });
-
-  const presetImages = [
-    { url: 'https://images.unsplash.com/photo-1450133064473-71024230f91b?auto=format&fit=crop&w=1200&q=80', label: 'Document & Legal' },
-    { url: 'https://images.unsplash.com/photo-1586281380349-632531db7ed4?auto=format&fit=crop&w=1200&q=80', label: 'Resume & Career' },
-    { url: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1200&q=80', label: 'Marketing & Digital' },
-    { url: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80', label: 'Tech & Helpdesk' },
-  ];
 
   useEffect(() => {
     loadPosts();
@@ -89,14 +78,11 @@ export const AdminBlogManagement: React.FC<Props> = ({ currentUser }) => {
       title: '',
       title_bn: '',
       slug: '',
-      category: 'Document Services',
-      category_bn: 'ডকুমেন্ট সেবা',
       excerpt: '',
       excerpt_bn: '',
       content: '',
       content_bn: '',
-      cover_image: presetImages[0].url,
-      tagsStr: 'Google SEO, MukiSoft, Digital Services',
+      cover_image: 'https://images.unsplash.com/photo-1450133064473-71024230f91b?auto=format&fit=crop&w=1200&q=80',
       meta_title: '',
       meta_description: '',
       is_published: true,
@@ -111,14 +97,11 @@ export const AdminBlogManagement: React.FC<Props> = ({ currentUser }) => {
       title: post.title,
       title_bn: post.title_bn || post.title,
       slug: post.slug,
-      category: post.category || 'Document Services',
-      category_bn: post.category_bn || 'ডকুমেন্ট সেবা',
       excerpt: post.excerpt || '',
       excerpt_bn: post.excerpt_bn || post.excerpt || '',
       content: post.content || '',
       content_bn: post.content_bn || post.content || '',
-      cover_image: post.cover_image || presetImages[0].url,
-      tagsStr: (post.tags || []).join(', '),
+      cover_image: post.cover_image || 'https://images.unsplash.com/photo-1450133064473-71024230f91b?auto=format&fit=crop&w=1200&q=80',
       meta_title: post.meta_title || post.title,
       meta_description: post.meta_description || post.excerpt,
       is_published: post.is_published ?? true,
@@ -151,30 +134,22 @@ export const AdminBlogManagement: React.FC<Props> = ({ currentUser }) => {
     setSaving(true);
     setMessage(null);
 
-    const tagsArray = formData.tagsStr
-      .split(',')
-      .map((t) => t.trim())
-      .filter((t) => t.length > 0);
-
     const postPayload: Partial<BlogPost> = {
       title: formData.title || formData.title_bn,
       title_bn: formData.title_bn || formData.title,
       slug: formData.slug || `post-${Date.now()}`,
-      category: formData.category,
-      category_bn: formData.category_bn,
       excerpt: formData.excerpt || formData.excerpt_bn,
       excerpt_bn: formData.excerpt_bn || formData.excerpt,
       content: formData.content || formData.content_bn,
       content_bn: formData.content_bn || formData.content,
       cover_image: formData.cover_image,
-      tags: tagsArray,
       meta_title: formData.meta_title || formData.title,
       meta_description: formData.meta_description || formData.excerpt,
       is_published: formData.is_published,
       is_featured: formData.is_featured,
       author_id: currentUser.id,
-      author_name: currentUser.full_name || 'Super Admin',
-      author_role: currentUser.role === 'super_admin' ? 'Super Admin' : 'Admin',
+      author_name: 'MukiSoft Team',
+      author_role: 'MukiSoft Team',
     };
 
     try {
@@ -217,12 +192,10 @@ export const AdminBlogManagement: React.FC<Props> = ({ currentUser }) => {
 
   // Filtered posts
   const filteredPosts = posts.filter((p) => {
-    const matchesSearch =
+    return (
       p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.title_bn?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.tags.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase()));
-    const matchesCat = categoryFilter === 'all' || p.category === categoryFilter;
-    return matchesSearch && matchesCat;
+      p.title_bn?.toLowerCase().includes(searchQuery.toLowerCase())
+    );
   });
 
   // Calculate Balance & Stats
@@ -231,38 +204,93 @@ export const AdminBlogManagement: React.FC<Props> = ({ currentUser }) => {
   const draftCount = totalPosts - publishedCount;
   const totalViews = posts.reduce((sum, p) => sum + (p.views_count || 0), 0);
 
+  const supabaseSqlScript = `-- Supabase PostgreSQL Table Schema for Blog Posts
+CREATE TABLE IF NOT EXISTS public.blog_posts (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  title_bn TEXT,
+  slug TEXT UNIQUE NOT NULL,
+  excerpt TEXT,
+  excerpt_bn TEXT,
+  content TEXT NOT NULL,
+  content_bn TEXT,
+  category TEXT DEFAULT 'General',
+  category_bn TEXT DEFAULT 'সাধারণ',
+  tags TEXT[] DEFAULT '{}',
+  cover_image TEXT,
+  author_id TEXT,
+  author_name TEXT DEFAULT 'MukiSoft Team',
+  author_role TEXT DEFAULT 'MukiSoft Team',
+  author_avatar TEXT,
+  meta_title TEXT,
+  meta_description TEXT,
+  is_published BOOLEAN DEFAULT true,
+  is_featured BOOLEAN DEFAULT false,
+  views_count INT DEFAULT 1,
+  likes_count INT DEFAULT 0,
+  reading_time_minutes INT DEFAULT 4,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Enable Row Level Security (RLS)
+ALTER TABLE public.blog_posts ENABLE ROW LEVEL SECURITY;
+
+-- Public Read Policy
+CREATE POLICY "Allow public read access" ON public.blog_posts
+  FOR SELECT USING (true);
+
+-- Admin Full Access Policy
+CREATE POLICY "Allow admin full access" ON public.blog_posts
+  FOR ALL USING (true);
+`;
+
+  const handleCopySql = () => {
+    navigator.clipboard.writeText(supabaseSqlScript);
+    setSqlCopied(true);
+    setTimeout(() => setSqlCopied(false), 2500);
+  };
+
   return (
     <div className="space-y-8">
       {/* Header Banner & Super Admin Balance Card */}
       <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-emerald-950 text-white rounded-3xl p-6 sm:p-8 shadow-xl relative overflow-hidden border border-slate-800">
-        <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-gradient-to-l from-emerald-500/10 to-transparent pointer-events-none"></div>
-
         <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div className="space-y-2 max-w-xl">
             <div className="flex items-center gap-2">
               <span className="px-3 py-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-semibold rounded-full flex items-center gap-1.5">
                 <Shield className="w-3.5 h-3.5 text-emerald-400" />
-                <span>সুপার অ্যাডমিন ও অ্যাডমিন ব্লগ পোর্টাল</span>
+                <span>সুপার অ্যাডমিন ব্লগ পোর্টাল</span>
               </span>
               <span className="bg-indigo-500/20 text-indigo-300 text-xs px-2.5 py-0.5 rounded-full border border-indigo-500/30 font-medium">
-                রিয়েল-টাইম ডাটা সিঙ্কড
+                রিয়েল-টাইম ডাটা সিঙ্ক
               </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              ব্লগ কন্টেন্ট ও গুগলে SEO ম্যানেজমেন্ট
+              ব্লগ পোস্ট ম্যানেজমেন্ট
             </h1>
             <p className="text-xs sm:text-sm text-slate-300">
-              এখান থেকে আপনি গুগলে র‍্যাংক করার জন্য ব্লগ পোস্ট তৈরি, এডিট, রিয়েল টাইমে ড্রাফট বা পাবলিশ করতে পারবেন।
+              সুপার অ্যাডমিন পেজ থেকে আপনি সরাসরি যেকোনো ব্লগ পোস্ট অ্যাড, এডিট এবং ডিলিট করতে পারবেন যা রিয়েল-টাইমে পাবলিস পেজে দেখাবে।
             </p>
           </div>
 
-          <button
-            onClick={handleOpenCreateModal}
-            className="px-6 py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-2xl transition-all shadow-lg hover:shadow-emerald-500/30 flex items-center justify-center gap-2 text-sm whitespace-nowrap self-start lg:self-center"
-          >
-            <Plus className="w-5 h-5" />
-            <span>নতুন ব্লগ পোস্ট লিখুন</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => setIsSqlModalOpen(true)}
+              className="px-4 py-3.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 font-semibold rounded-2xl border border-slate-700 transition-all flex items-center justify-center gap-2 text-xs"
+            >
+              <Code className="w-4 h-4" />
+              <span>সুপার পেজ SQL কোড</span>
+            </button>
+
+            <button
+              onClick={handleOpenCreateModal}
+              className="px-6 py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-2xl transition-all shadow-lg hover:shadow-emerald-500/30 flex items-center justify-center gap-2 text-sm whitespace-nowrap"
+            >
+              <Plus className="w-5 h-5" />
+              <span>নতুন ব্লগ পোস্ট লিখুন</span>
+            </button>
+          </div>
         </div>
 
         {/* Real-time Super Admin Balance / Stats Row */}
@@ -306,38 +334,25 @@ export const AdminBlogManagement: React.FC<Props> = ({ currentUser }) => {
       )}
 
       {/* Search & Filter Bar */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="relative w-full sm:w-80">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between gap-4">
+        <div className="relative w-full sm:w-96">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
             type="text"
-            placeholder="ব্লগের বিষয়বস্তু বা ট্যাগ লিখুন..."
+            placeholder="ব্লগের টাইটেল লিখে খুঁজুন..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-700/60 border border-slate-200 dark:border-slate-600 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
           />
         </div>
 
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="px-4 py-2.5 bg-slate-50 dark:bg-slate-700/60 border border-slate-200 dark:border-slate-600 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500"
-          >
-            <option value="all">সকল ক্যাটাগরি</option>
-            <option value="Document Services">ডকুমেন্ট সেবা</option>
-            <option value="Career & Jobs">ক্যারিয়ার ও চাকরি</option>
-            <option value="Digital Marketing">ডিজিটাল মার্কেটিং</option>
-          </select>
-
-          <button
-            onClick={loadPosts}
-            className="p-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 rounded-xl transition-all"
-            title="রিফ্রেশ করুন"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
-        </div>
+        <button
+          onClick={loadPosts}
+          className="p-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 rounded-xl transition-all"
+          title="রিফ্রেশ করুন"
+        >
+          <RefreshCw className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Posts Table / List */}
@@ -367,8 +382,7 @@ export const AdminBlogManagement: React.FC<Props> = ({ currentUser }) => {
               <thead className="bg-slate-50 dark:bg-slate-700/60 text-xs uppercase font-semibold text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
                 <tr>
                   <th className="px-6 py-4">পোস্ট ও টাইটেল</th>
-                  <th className="px-6 py-4">ক্যাটাগরি</th>
-                  <th className="px-6 py-4">ভিউজ</th>
+                  <th className="px-6 py-4">ভিউ সংখ্যা</th>
                   <th className="px-6 py-4">স্ট্যাটাস</th>
                   <th className="px-6 py-4 text-right">অ্যাকশন</th>
                 </tr>
@@ -388,18 +402,10 @@ export const AdminBlogManagement: React.FC<Props> = ({ currentUser }) => {
                             {post.title_bn || post.title}
                           </p>
                           <div className="flex items-center gap-2 text-xs text-slate-400">
-                            <span>লেখক: {post.author_name}</span>
-                            <span>•</span>
                             <span>{new Date(post.created_at).toLocaleDateString('bn-BD')}</span>
                           </div>
                         </div>
                       </div>
-                    </td>
-
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="px-2.5 py-1 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-semibold">
-                        {post.category_bn || post.category}
-                      </span>
                     </td>
 
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -472,12 +478,9 @@ export const AdminBlogManagement: React.FC<Props> = ({ currentUser }) => {
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white dark:bg-slate-800 rounded-3xl max-w-3xl w-full p-6 sm:p-8 space-y-6 shadow-2xl border border-slate-200 dark:border-slate-700 my-8">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-4">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-emerald-500" />
-                <h3 className="text-xl font-bold text-slate-900 dark:text-white">
-                  {editingPost ? 'ব্লগ পোস্ট এডিট করুন' : 'নতুন ব্লগ পোস্ট লিখুন'}
-                </h3>
-              </div>
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+                {editingPost ? 'ব্লগ পোস্ট এডিট করুন' : 'নতুন ব্লগ পোস্ট লিখুন'}
+              </h3>
               <button
                 onClick={() => setIsModalOpen(false)}
                 className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full"
@@ -496,7 +499,7 @@ export const AdminBlogManagement: React.FC<Props> = ({ currentUser }) => {
                   <input
                     type="text"
                     required
-                    placeholder="যেমন: পেশাদার ডকুমেন্ট ফরম্যাটিং..."
+                    placeholder="ব্লগের টাইটেল লিখুন..."
                     value={formData.title_bn}
                     onChange={(e) => handleTitleChange(e.target.value, true)}
                     className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-700/60 border border-slate-200 dark:border-slate-600 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
@@ -509,7 +512,7 @@ export const AdminBlogManagement: React.FC<Props> = ({ currentUser }) => {
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. Professional Document Formatting..."
+                    placeholder="e.g. Blog Title in English..."
                     value={formData.title}
                     onChange={(e) => handleTitleChange(e.target.value, false)}
                     className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-700/60 border border-slate-200 dark:border-slate-600 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
@@ -517,7 +520,7 @@ export const AdminBlogManagement: React.FC<Props> = ({ currentUser }) => {
                 </div>
               </div>
 
-              {/* Slug & Category */}
+              {/* Slug & Cover Image */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
@@ -525,7 +528,7 @@ export const AdminBlogManagement: React.FC<Props> = ({ currentUser }) => {
                   </label>
                   <input
                     type="text"
-                    placeholder="professional-document-formatting"
+                    placeholder="my-first-blog-post"
                     value={formData.slug}
                     onChange={(e) => setFormData({ ...formData, slug: e.target.value })}
                     className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-700/60 border border-slate-200 dark:border-slate-600 rounded-xl text-sm font-mono focus:ring-2 focus:ring-emerald-500 focus:outline-none"
@@ -534,53 +537,15 @@ export const AdminBlogManagement: React.FC<Props> = ({ currentUser }) => {
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    ক্যাটাগরি:
+                    থাম্বনেইল / কভার ইমেজের লিংক (Image URL):
                   </label>
-                  <select
-                    value={formData.category}
-                    onChange={(e) => {
-                      const cat = e.target.value;
-                      let catBn = 'সাধারণ';
-                      if (cat === 'Document Services') catBn = 'ডকুমেন্ট সেবা';
-                      if (cat === 'Career & Jobs') catBn = 'ক্যারিয়ার ও চাকরি';
-                      if (cat === 'Digital Marketing') catBn = 'ডিজিটাল মার্কেটিং';
-                      setFormData({ ...formData, category: cat, category_bn: catBn });
-                    }}
+                  <input
+                    type="url"
+                    placeholder="https://images.unsplash.com/..."
+                    value={formData.cover_image}
+                    onChange={(e) => setFormData({ ...formData, cover_image: e.target.value })}
                     className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-700/60 border border-slate-200 dark:border-slate-600 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                  >
-                    <option value="Document Services">ডকুমেন্ট সেবা (Document Services)</option>
-                    <option value="Career & Jobs">ক্যারিয়ার ও চাকরি (Career & Jobs)</option>
-                    <option value="Digital Marketing">ডিজিটাল মার্কেটিং (Digital Marketing)</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Thumbnail Cover Image */}
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  থাম্বনেইল / কভার ইমেজের লিংক (URL):
-                </label>
-                <input
-                  type="url"
-                  placeholder="https://images.unsplash.com/..."
-                  value={formData.cover_image}
-                  onChange={(e) => setFormData({ ...formData, cover_image: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-700/60 border border-slate-200 dark:border-slate-600 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                />
-                
-                {/* Preset Image Options */}
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <span className="text-xs text-slate-400 py-1">স্যাম্পল ইমেজ:</span>
-                  {presetImages.map((img, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => setFormData({ ...formData, cover_image: img.url })}
-                      className="px-2.5 py-1 bg-slate-100 dark:bg-slate-700 hover:bg-emerald-50 text-slate-600 dark:text-slate-300 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-600 transition-colors"
-                    >
-                      {img.label}
-                    </button>
-                  ))}
+                  />
                 </div>
               </div>
 
@@ -591,7 +556,7 @@ export const AdminBlogManagement: React.FC<Props> = ({ currentUser }) => {
                 </label>
                 <textarea
                   rows={2}
-                  placeholder="ব্লগটির সংক্ষেপ বিবরণ যা সোশ্যাল কার্ডে ও লিস্টে দেখাবে..."
+                  placeholder="ব্লগটির সংক্ষিপ্ত সারসংক্ষেপ..."
                   value={formData.excerpt_bn}
                   onChange={(e) => setFormData({ ...formData, excerpt_bn: e.target.value, excerpt: e.target.value })}
                   className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-700/60 border border-slate-200 dark:border-slate-600 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
@@ -603,66 +568,14 @@ export const AdminBlogManagement: React.FC<Props> = ({ currentUser }) => {
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                   মূল ব্লগ কন্টেন্ট (Body Content):
                 </label>
-                <p className="text-[11px] text-slate-400">
-                  প্যারাগ্রাফ, হেডিং (## হেডিং), বুলেট পয়েন্ট (* পয়েন্ট) অথবা কোটেশন (&gt; কোট) ব্যবহার করতে পারেন।
-                </p>
                 <textarea
-                  rows={8}
+                  rows={10}
                   required
                   placeholder="এখানে আপনার ব্লগের বিস্তারিত কন্টেন্ট লিখুন..."
                   value={formData.content_bn}
                   onChange={(e) => setFormData({ ...formData, content_bn: e.target.value, content: e.target.value })}
                   className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-700/60 border border-slate-200 dark:border-slate-600 rounded-xl text-sm font-sans focus:ring-2 focus:ring-emerald-500 focus:outline-none leading-relaxed"
                 />
-              </div>
-
-              {/* Tags & Google SEO Meta */}
-              <div className="p-4 bg-slate-50 dark:bg-slate-700/40 rounded-2xl border border-slate-200 dark:border-slate-600 space-y-4">
-                <div className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
-                  <Globe className="w-4 h-4 text-emerald-500" />
-                  <span>Google SEO & AI Search Keywords:</span>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    ট্যাগ / কী-ওয়ার্ডস (কমা দিয়ে লিখুন):
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="PDF Formatting, ATS Resume, Google SEO, MukiSoft Services"
-                    value={formData.tagsStr}
-                    onChange={(e) => setFormData({ ...formData, tagsStr: e.target.value })}
-                    className="w-full px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      SEO Meta Title:
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Google Search Snippet Title..."
-                      value={formData.meta_title}
-                      onChange={(e) => setFormData({ ...formData, meta_title: e.target.value })}
-                      className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl text-xs"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      SEO Meta Description:
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="120-160 character description..."
-                      value={formData.meta_description}
-                      onChange={(e) => setFormData({ ...formData, meta_description: e.target.value })}
-                      className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl text-xs"
-                    />
-                  </div>
-                </div>
               </div>
 
               {/* Toggles */}
@@ -675,7 +588,7 @@ export const AdminBlogManagement: React.FC<Props> = ({ currentUser }) => {
                     className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
                   />
                   <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                    এখনই পাবলিশ করুন (সরাসরি ওয়েবসাইটে দৃশ্যমান হবে)
+                    এখনই পাবলিশ করুন (সরাসরি ওয়েবসাইটে দেখতে পারবেন)
                   </span>
                 </label>
 
@@ -687,7 +600,7 @@ export const AdminBlogManagement: React.FC<Props> = ({ currentUser }) => {
                     className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
                   />
                   <span className="text-xs font-bold text-amber-600 dark:text-amber-400">
-                    ফিচার্ড পোস্ট হিসেবে সেট করুন
+                    প্রধান ফিচার্ড পোস্ট হিসেবে দেখান
                   </span>
                 </label>
               </div>
@@ -715,6 +628,52 @@ export const AdminBlogManagement: React.FC<Props> = ({ currentUser }) => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* SQL Script Generator Modal */}
+      {isSqlModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 text-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-6 shadow-2xl border border-slate-800">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-2 text-emerald-400">
+                <Database className="w-5 h-5" />
+                <h3 className="text-lg font-bold text-white">সুপার পেজ SQL ডাটাবেস টেবিল কোড</h3>
+              </div>
+              <button
+                onClick={() => setIsSqlModalOpen(false)}
+                className="p-2 text-slate-400 hover:text-white rounded-full"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              আপনি যদি Supabase বা PostgreSQL ডাটাবেস সরাসরি ব্যবহার করেন, তবে নিচের SQL স্ক্রিপ্টটি Supabase SQL Editor এ রান করে টেবিল তৈরি করে নিতে পারেন।
+            </p>
+
+            <div className="relative">
+              <pre className="p-4 bg-slate-950 rounded-2xl text-xs font-mono text-emerald-300 overflow-x-auto max-h-64 border border-slate-800 leading-relaxed">
+                {supabaseSqlScript}
+              </pre>
+              <button
+                onClick={handleCopySql}
+                className="absolute top-3 right-3 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg transition-all flex items-center gap-1 shadow"
+              >
+                {sqlCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{sqlCopied ? 'কপি হয়েছে!' : 'SQL কপি'}</span>
+              </button>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                onClick={() => setIsSqlModalOpen(false)}
+                className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl transition-all"
+              >
+                বন্ধ করুন
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -5,8 +5,6 @@ import {
   Eye, 
   Share2, 
   ArrowLeft, 
-  Tag, 
-  Sparkles, 
   BookOpen, 
   Check, 
   Facebook, 
@@ -52,14 +50,11 @@ export const BlogPostDetailPage: React.FC = () => {
 
         // Fetch related posts
         const allPosts = await api.getBlogPosts({ onlyPublished: true });
-        const related = allPosts.filter(
-          (p) => p.id !== data.id && (p.category === data.category || p.tags.some((t) => data.tags.includes(t)))
-        );
+        const related = allPosts.filter((p) => p.id !== data.id);
         setRelatedPosts(related.slice(0, 3));
 
-        // Inject JSON-LD Schema for Google SEO & AI Crawlers
+        // Inject background JSON-LD Schema for Google Search indexing
         injectJsonLdSchema(data);
-        // Update document title
         document.title = `${data.meta_title || data.title_bn || data.title} | MukiSoft Digital Services`;
       } else {
         setPost(null);
@@ -89,9 +84,8 @@ export const BlogPostDetailPage: React.FC = () => {
       description: article.meta_description || article.excerpt_bn || article.excerpt,
       image: [article.cover_image],
       author: {
-        '@type': 'Person',
-        name: article.author_name,
-        jobTitle: article.author_role,
+        '@type': 'Organization',
+        name: article.author_name || 'MukiSoft Team',
       },
       publisher: {
         '@type': 'Organization',
@@ -103,8 +97,6 @@ export const BlogPostDetailPage: React.FC = () => {
       },
       datePublished: article.created_at,
       dateModified: article.updated_at || article.created_at,
-      keywords: article.tags ? article.tags.join(', ') : '',
-      articleSection: article.category_bn || article.category,
       inLanguage: 'bn-BD',
     };
 
@@ -167,15 +159,15 @@ export const BlogPostDetailPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 pb-20">
       {/* Top Header & Breadcrumb */}
-      <div className="bg-slate-900 text-slate-200 py-8 px-4 sm:px-6 lg:px-8 border-b border-slate-800">
+      <div className="bg-slate-950 text-slate-200 py-8 px-4 sm:px-6 lg:px-8 border-b border-slate-800">
         <div className="max-w-4xl mx-auto space-y-4">
           <div className="flex items-center gap-2 text-xs text-slate-400 flex-wrap">
             <a href="/" onClick={(e) => navigateTo('/', e)} className="hover:text-emerald-400 transition-colors">হোম</a>
             <ChevronRight className="w-3 h-3 text-slate-600" />
             <a href="/blog" onClick={(e) => navigateTo('/blog', e)} className="hover:text-emerald-400 transition-colors">ব্লগ</a>
             <ChevronRight className="w-3 h-3 text-slate-600" />
-            <span className="text-slate-200 font-medium truncate max-w-[200px] sm:max-w-xs">
-              {post.category_bn || post.category}
+            <span className="text-slate-200 font-medium truncate max-w-[250px] sm:max-w-md">
+              {post.title_bn || post.title}
             </span>
           </div>
 
@@ -185,15 +177,10 @@ export const BlogPostDetailPage: React.FC = () => {
 
           <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400 pt-2 border-t border-slate-800">
             <div className="flex items-center gap-2">
-              <img
-                src={post.author_avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80'}
-                alt={post.author_name}
-                className="w-6 h-6 rounded-full object-cover ring-1 ring-emerald-500/40"
-              />
-              <span className="font-semibold text-slate-200">{post.author_name}</span>
-              <span className="bg-emerald-500/20 text-emerald-300 text-[10px] px-2 py-0.5 rounded-full border border-emerald-500/30">
-                {post.author_role}
-              </span>
+              <div className="w-6 h-6 rounded-full bg-slate-800 text-emerald-400 flex items-center justify-center font-bold text-xs font-mono ring-1 ring-emerald-500/40">
+                M
+              </div>
+              <span className="font-semibold text-slate-200">{post.author_name || 'MukiSoft Team'}</span>
             </div>
 
             <span className="flex items-center gap-1">
@@ -228,23 +215,15 @@ export const BlogPostDetailPage: React.FC = () => {
               alt={post.title_bn || post.title}
               className="w-full h-full object-cover"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
-            <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">
-              <span className="px-3.5 py-1.5 bg-slate-900/80 backdrop-blur-md text-emerald-300 border border-emerald-500/30 rounded-full text-xs font-semibold shadow">
-                {post.category_bn || post.category}
-              </span>
-              <span className="px-3 py-1 bg-black/60 backdrop-blur-md text-white/80 rounded-lg text-xs font-medium flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                Google SEO & AI Sourced
-              </span>
-            </div>
           </div>
 
           {/* Post Excerpt Banner */}
           <div className="p-6 sm:p-10 space-y-8">
-            <div className="p-4 sm:p-6 bg-slate-50 dark:bg-slate-700/40 rounded-2xl border-l-4 border-emerald-500 text-slate-700 dark:text-slate-200 italic font-medium text-base sm:text-lg leading-relaxed">
-              "{post.excerpt_bn || post.excerpt}"
-            </div>
+            {post.excerpt_bn || post.excerpt ? (
+              <div className="p-4 sm:p-6 bg-slate-50 dark:bg-slate-700/40 rounded-2xl border-l-4 border-emerald-500 text-slate-700 dark:text-slate-200 italic font-medium text-base sm:text-lg leading-relaxed">
+                "{post.excerpt_bn || post.excerpt}"
+              </div>
+            ) : null}
 
             {/* Rendered Rich Content Body */}
             <div className="prose dark:prose-invert max-w-none text-slate-800 dark:text-slate-200 text-base sm:text-lg leading-relaxed space-y-6">
@@ -292,26 +271,6 @@ export const BlogPostDetailPage: React.FC = () => {
               })}
             </div>
 
-            {/* SEO Tags Section */}
-            {post.tags && post.tags.length > 0 && (
-              <div className="pt-6 border-t border-slate-200 dark:border-slate-700 space-y-3">
-                <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  <Tag className="w-4 h-4 text-emerald-500" />
-                  <span>গুগল ইণ্ডেক্সকৃত ট্যাগ ও কিওয়ার্ডস:</span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {post.tags.map((tag, idx) => (
-                    <span
-                      key={idx}
-                      className="px-3 py-1 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-medium rounded-xl border border-slate-200 dark:border-slate-600"
-                    >
-                      #{tag}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* Share & Social Action Buttons */}
             <div className="p-6 bg-slate-50 dark:bg-slate-700/50 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 border border-slate-200/80 dark:border-slate-600/80">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-200">
@@ -351,25 +310,20 @@ export const BlogPostDetailPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Author Card */}
-            <div className="p-6 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-2xl border border-emerald-200 dark:border-emerald-800/40 flex items-center gap-4">
-              <img
-                src={post.author_avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80'}
-                alt={post.author_name}
-                className="w-14 h-14 rounded-full object-cover border-2 border-emerald-500 shadow-md"
-              />
+            {/* Author Card - MukiSoft Logo Badge */}
+            <div className="p-6 bg-slate-900 text-white rounded-2xl flex items-center gap-4 border border-slate-800 shadow-md">
+              <div className="w-14 h-14 rounded-full bg-slate-950 text-amber-400 border-2 border-emerald-500 flex items-center justify-center font-bold text-2xl font-mono shadow-md shrink-0">
+                M
+              </div>
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <h4 className="text-base font-bold text-slate-900 dark:text-white">
-                    {post.author_name}
+                  <h4 className="text-base font-bold text-white">
+                    {post.author_name || 'MukiSoft Team'}
                   </h4>
-                  <ShieldCheck className="w-4 h-4 text-emerald-600 fill-emerald-100" />
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
                 </div>
-                <p className="text-xs font-medium text-emerald-700 dark:text-emerald-300">
-                  {post.author_role} — MukiSoft Official Author
-                </p>
-                <p className="text-xs text-slate-600 dark:text-slate-400">
-                  ডিজিটাল সেবা, সরকারি ফরম্যাটিং ও আইটি সংক্রান্ত বিষয়ে অভিজ্ঞ পরামর্শক।
+                <p className="text-xs text-slate-300">
+                  MukiSoft Digital Services — অফিশিয়াল কন্টেন্ট ও পরামর্শ টিম।
                 </p>
               </div>
             </div>
