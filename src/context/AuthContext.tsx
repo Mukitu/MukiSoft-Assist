@@ -234,7 +234,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         id: `user_${Date.now()}`,
         email,
         full_name: fullName || email.split('@')[0],
-        role: 'user',
+        role: email.trim().toLowerCase() === 'mukituislamnishat@gmail.com' ? 'super_admin' : 'user',
         preferred_language: 'en',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -314,7 +314,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('mukisoft_demo_current_user', JSON.stringify(targetProfile));
   };
 
-  const role: UserRole = profile?.role || 'user';
+  const rawRole: UserRole = profile?.role || 'user';
+  const isTargetSuperAdminEmail =
+    user?.email?.trim().toLowerCase() === 'mukituislamnishat@gmail.com' ||
+    profile?.email?.trim().toLowerCase() === 'mukituislamnishat@gmail.com';
+  const role: UserRole = isTargetSuperAdminEmail ? 'super_admin' : rawRole;
   const isAdmin = role === 'admin' || role === 'super_admin' || role === 'worker';
   const isSuperAdmin = role === 'super_admin';
 
