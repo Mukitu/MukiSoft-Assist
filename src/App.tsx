@@ -148,7 +148,25 @@ function AppRouter() {
         <ProtectedRoute currentPath={currentUrl} onNavigate={navigate} requireAdmin>
           {pathname === '/admin/live-chat' ? (
             <AdminDashboardLayout currentPath={pathname} onNavigate={navigate}>
-              <AdminLiveChat />
+              {role === 'worker' ? (
+                <div className="bg-white p-8 rounded-xl border border-slate-200 text-center space-y-3 my-8 max-w-md mx-auto">
+                  <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+                    <span className="text-xl font-bold">!</span>
+                  </div>
+                  <h2 className="text-base font-bold text-slate-900">অনুমতি নেই</h2>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    লাইভ সাপোর্ট চ্যাট প্যানেলে শুধুমাত্র অ্যাডমিন ও সুপার অ্যাডমিনদের প্রবেশাধিকার রয়েছে।
+                  </p>
+                  <button
+                    onClick={() => navigate('/admin/claim-tasks')}
+                    className="mt-2 px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition-colors"
+                  >
+                    ক্লেইম টাস্কে ফিরুন
+                  </button>
+                </div>
+              ) : (
+                <AdminLiveChat />
+              )}
             </AdminDashboardLayout>
           ) : pathname === '/admin/services' || pathname === '/admin/categories' ? (
             <AdminDashboardLayout currentPath={pathname} onNavigate={navigate}>
