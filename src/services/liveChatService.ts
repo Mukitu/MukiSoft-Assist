@@ -109,13 +109,13 @@ export const liveChatService = {
     allSessions.unshift(newSession);
     this.saveLocalSessions(allSessions);
 
-    // Initial AI Welcome Greeting with live context
+    // Initial AI Welcome Greeting - concise, warm, and human-like
     const initialAiMessage: LiveChatMessage = {
       id: `msg_${Date.now()}`,
       session_id: sessionId,
       sender_type: 'ai',
       sender_name: 'MukiSoft AI সহকারী',
-      message: `আসসালামু আলাইকুম ${customerName}! MukiSoft Assist-এর স্মার্ট AI কনসালট্যান্ট সার্ভিসে আপনাকে স্বাগতম। 🤝\n\nআমাদের প্ল্যাটফর্মে আপনি সকল ধরণের ডিজিটাল সেবা (ওয়েব ডেভেলপমেন্ট, গ্রাফিক ডিজাইন, লিগ্যাল ও ট্রেড লাইসেন্স, চাকরির সিভি তৈরি, ডিজিটাল মার্কেটিং ইত্যাদি) নিশ্চিন্তে নিতে পারবেন।\n\nআপনার কী ধরণের সেবা বা প্রজেক্ট প্রয়োজন? সংক্ষেপে লিখুন। (যেকোনো সময় কোনো কর্মকর্তার সাথে সরাসরি কথা বলতে চাইলে 'এজেন্ট' বা 'মানুষের সাথে কথা' লিখলেই আমি অ্যাডমিনের সাথে কানেক্ট করে দেবো)।`,
+      message: `আসসালামু আলাইকুম ${customerName}! MukiSoft Assist-এ আপনাকে স্বাগতম। আপনার কী ধরনের ডিজিটাল সেবা প্রয়োজন বা কীভাবে সাহায্য করতে পারি বলুন?`,
       created_at: new Date().toISOString(),
     };
 

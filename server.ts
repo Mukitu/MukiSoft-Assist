@@ -328,45 +328,30 @@ app.post('/api/chat/grok', async (req, res) => {
       ...GROQ_CANDIDATE_MODELS.filter((m) => m !== activeGroqModel),
     ];
 
-    const servicesContext = services.map((s: any) => {
-      const price = s.promotional_price ? `৳${s.promotional_price} (অফারে, মূল মূল্য ৳${s.price})` : `৳${s.price}`;
-      return `• [${s.title_bn || s.title}]: বিভাগ: ${s.category?.name_bn || s.category?.name || 'সাধারণ'}, ফি: ${price}, ডেলিভারি: ${s.delivery_days} দিন, লিঙ্ক: /service/${s.slug}, বিবরণ: ${s.description_bn || s.description || 'N/A'}`;
+    const servicesContext = services.slice(0, 16).map((s: any) => {
+      const price = s.promotional_price ? `৳${s.promotional_price}` : `৳${s.price}`;
+      return `• ${s.title_bn || s.title} (${price}) -> /service/${s.slug}`;
     }).join('\n');
 
-    const categoriesContext = categories.map((c: any) => `• ${c.name_bn || c.name} (/category/${c.slug})`).join(', ');
+    const systemPrompt = `You are "MukiSoft AI সহকারী", a friendly, helpful human-like customer support specialist for "MukiSoft Assist" (service.mukisoft.tech) in Bangladesh.
 
-    const systemPrompt = `You are "MukiSoft AI সহকারী", the official expert technical consultant and sales specialist for "MukiSoft Assist" (service.mukisoft.tech) in Bangladesh.
+SERVICES & PRICING:
+${servicesContext || 'No services currently listed.'}
 
-WEBSITE KNOWLEDGE BASE & SERVICES DATABASE:
-Available Service Categories:
-${categoriesContext}
-
-Live Services Catalog:
-${servicesContext || 'No services currently listed in database.'}
-
-PLATFORM CORE POLICIES:
-- Payment methods: bKash, Nagad, Rocket, Bank Transfer.
-- 100% Escrow-backed wallet protection: payments are held securely until delivery is approved.
-- Clients can track progress in real-time, submit requirements, and request revisions directly on their dashboard.
-- Link format for services: /service/{slug} (e.g. /service/website-development)
-- Link for all services: /services
-- Link for wallet deposit: /dashboard/wallet
-
-STRICT INSTRUCTIONS:
-1. Always identify yourself strictly as "MukiSoft AI সহকারী" (মুকিসফট এআই সহকারী). NEVER mention or acknowledge underlying technologies, architectures, or providers such as Groq, Grok, Llama, Meta, OpenAI, xAI, etc.
-2. Always respond in fluent, polite, friendly, and natural Bengali (বাংলা).
-3. Carefully analyze what the user is asking for.
-4. Recommend ONLY the most relevant, exact services from our live database with their prices in BDT (৳) and delivery times.
-5. Provide direct markdown links to the services using format: [সার্ভিসের নাম](/service/{slug}).
-6. If the user indicates they want human assistance, advise them to click the "লাইভ এজেন্ট ডাকুন" button.
-7. Be concise, professional, and helpful.`;
+CORE RULES:
+1. Tone & Persona: Speak naturally, warmly, and politely in clear Bengali (বাংলা), like a real human support consultant chatting on live messaging.
+2. Short & Smart (CRITICAL): Keep every response concise — strictly 1 to 3 short sentences (around 20-45 words). Answer directly without essays, preamble, or repetition.
+3. No Markdown Clutter (Anti-Slop): Never use horizontal dividers (---), ASCII designs, markdown headers (###), excessive bolding, or bloated bullet lists. Keep the text clean, elegant, and readable.
+4. Recommendations: When suggesting a service, mention it naturally in a brief sentence with its direct link as [সার্ভিসের নাম](/service/{slug}).
+5. Human Handoff: If the client requests human assistance, politely inform them to click the "লাইভ এজেন্ট ডাকুন" button.
+6. Identity: Strictly "MukiSoft AI সহকারী". Never mention AI models, Groq, Meta, OpenAI, or technical backend details.`;
 
     const aiMessages: Array<{ role: string; content: string }> = [
       { role: 'system', content: systemPrompt },
     ];
 
     if (Array.isArray(history) && history.length > 0) {
-      history.slice(-6).forEach((h: any) => {
+      history.slice(-4).forEach((h: any) => {
         aiMessages.push({
           role: h.sender_type === 'customer' ? 'user' : 'assistant',
           content: h.message || '',
@@ -392,8 +377,8 @@ STRICT INSTRUCTIONS:
             body: JSON.stringify({
               model: candidate,
               messages: aiMessages,
-              temperature: 0.6,
-              max_tokens: 1000,
+              temperature: 0.5,
+              max_tokens: 220,
             }),
           });
 
@@ -420,8 +405,8 @@ STRICT INSTRUCTIONS:
         body: JSON.stringify({
           model: model || 'grok-beta',
           messages: aiMessages,
-          temperature: 0.6,
-          max_tokens: 1000,
+          temperature: 0.5,
+          max_tokens: 220,
         }),
       });
       data = await aiRes.json();
@@ -436,13 +421,22 @@ STRICT INSTRUCTIONS:
       });
     }
 
-    const reply = data.choices?.[0]?.message?.content || 'কোনো উত্তর পাওয়া যায়নি।';
+    let reply = (data.choices?.[0]?.message?.content || '').trim();
+    // Clean up excessive markdown dividers or lines
+    reply = reply
+      .replace(/[-=_*#]{3,}/g, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
+    if (!reply) {
+      reply = 'ধন্যবাদ আপনার বার্তার জন্য! কীভাবে সাহায্য করতে পারি বলুন?';
+    }
 
     const matchedServices = services.filter((s: any) => {
       const slugMatch = reply.includes(`/service/${s.slug}`);
       const titleMatch = (s.title_bn && reply.includes(s.title_bn)) || (s.title && reply.includes(s.title));
       return slugMatch || titleMatch;
-    }).slice(0, 3);
+    }).slice(0, 2);
 
     return res.json({
       success: true,
