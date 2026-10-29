@@ -33,6 +33,7 @@ import { toBengaliCurrency, toBengaliDigits } from '../../lib/i18n';
 import { ServiceItem, ServiceCategory } from '../../types/database';
 import { useNotification } from '../../context/NotificationContext';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
+import { INITIAL_CATEGORIES, INITIAL_SERVICES } from '../../data/initialCatalog';
 
 interface AdminServicesProps {
   defaultTab?: 'services' | 'categories';
@@ -64,6 +65,7 @@ export const AdminServices: React.FC<AdminServicesProps> = ({ defaultTab = 'serv
   // মাল্টি-সিলেক্ট ও বাল্ক অ্যাকশন স্টেট
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [isSyncingCatalog, setIsSyncingCatalog] = useState(false);
   const [isConfirmBulkDeleteOpen, setIsConfirmBulkDeleteOpen] = useState(false);
   const [isConfirmDeleteAllOpen, setIsConfirmDeleteAllOpen] = useState(false);
   const [showSqlGuide, setShowSqlGuide] = useState(false);
@@ -291,6 +293,69 @@ export const AdminServices: React.FC<AdminServicesProps> = ({ defaultTab = 'serv
     }
   };
 
+  const handleSyncOfficialCatalog = async () => {
+    setIsSyncingCatalog(true);
+    try {
+      if (isSupabaseConfigured && supabase) {
+        // 1. Categories upsert
+        const catPayload = INITIAL_CATEGORIES.map((c) => ({
+          id: c.id,
+          name: c.name,
+          name_bn: c.name_bn,
+          slug: c.slug,
+          description: c.description,
+          description_bn: c.description_bn,
+          icon: c.icon,
+          display_order: c.display_order,
+          is_active: c.is_active,
+        }));
+        const { error: catErr } = await supabase.from('service_categories').upsert(catPayload, { onConflict: 'id' });
+        if (catErr) {
+          console.warn('Upsert categories notice:', catErr.message);
+        }
+
+        // 2. Services upsert
+        const srvPayload = INITIAL_SERVICES.map((s) => ({
+          id: s.id,
+          category_id: s.category_id,
+          title: s.title,
+          title_bn: s.title_bn,
+          slug: s.slug,
+          description: s.description,
+          description_bn: s.description_bn,
+          price: s.price,
+          promotional_price: s.promotional_price ?? null,
+          delivery_days: s.delivery_days,
+          requirements: s.requirements,
+          revision_policy: s.revision_policy,
+          is_active: s.is_active,
+          is_featured: s.is_featured,
+          is_gov_service: false,
+        }));
+        const { error: srvErr } = await supabase.from('services').upsert(srvPayload, { onConflict: 'id' });
+        if (srvErr) throw new Error(srvErr.message);
+      } else {
+        for (const cat of INITIAL_CATEGORIES) {
+          await api.createOrUpdateCategory(cat);
+        }
+        for (const srv of INITIAL_SERVICES) {
+          await api.createOrUpdateService(srv);
+        }
+      }
+      await loadData(true);
+      showToast({
+        type: 'success',
+        title: 'ক্যাটালগ সফলভাবে সিঙ্ক হয়েছে',
+        message: 'অফিসিয়াল ৪টি ক্যাটাগরি ও ৯টি ডিজিটাল সেবা ডাটাবেজে হালনাগাদ করা হয়েছে।',
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'ক্যাটালগ সিঙ্ক করা সম্ভব হয়নি';
+      showToast({ type: 'error', title: 'ত্রুটি', message: msg });
+    } finally {
+      setIsSyncingCatalog(false);
+    }
+  };
+
   // ----------------------------------------------------------------------
   // ক্যাটাগরি অ্যাকশনস
   // ----------------------------------------------------------------------
@@ -430,6 +495,16 @@ export const AdminServices: React.FC<AdminServicesProps> = ({ defaultTab = 'serv
           </button>
 
           <button
+            onClick={handleSyncOfficialCatalog}
+            disabled={isSyncingCatalog}
+            className="px-3.5 py-2.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-xs"
+            title="১-ক্লিকে অফিসিয়াল ৪টি ক্যাটাগরি ও ৯টি সেবা Supabase এ আপলোড করুন"
+          >
+            <Sparkles className={`w-3.5 h-3.5 text-indigo-600 ${isSyncingCatalog ? 'animate-spin' : ''}`} />
+            <span>{isSyncingCatalog ? 'সিঙ্ক হচ্ছে...' : 'অফিসিয়াল ক্যাটালগ সিঙ্ক'}</span>
+          </button>
+
+          <button
             onClick={() => setShowSqlGuide(!showSqlGuide)}
             className={`px-3 py-2.5 text-xs font-medium rounded-lg border transition-colors flex items-center gap-1.5 shadow-xs ${
               showSqlGuide
@@ -493,32 +568,209 @@ export const AdminServices: React.FC<AdminServicesProps> = ({ defaultTab = 'serv
 
       {/* SQL গাইড ও ডিলিট ফিক্স প্যানেল */}
       {showSqlGuide && (
-        <div className="bg-slate-900 text-slate-100 rounded-xl p-5 border border-slate-800 shadow-md space-y-3">
+        <div className="bg-slate-900 text-slate-100 rounded-xl p-5 border border-slate-800 shadow-md space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Terminal className="w-5 h-5 text-amber-400" />
               <h4 className="text-sm font-bold text-white">
-                Supabase Foreign Key ফিক্স স্ক্রিপ্ট (ERROR 23502 সমাধান)
+                Supabase Foreign Key ফিক্স ও অফিসিয়াল ক্যাটালগ SQL স্ক্রিপ্ট
               </h4>
             </div>
             <button
               onClick={() => {
-                const sqlText = `-- =======================================================
--- MukiSoft Assist: Supabase Delete Fix & Safe Foreign Key Constraints
--- =======================================================
-
--- ১. orders টেবিল: service_id কে nullable করা যাতে সার্ভিস ডিলিট করলে এরর না দিয়ে service_id = NULL হয়
+                const sqlText = `-- ========================================================
+-- ধাপ ১: ডিলিট এরর ফিক্স (Foreign Key Safe Constraints)
+-- ========================================================
 ALTER TABLE public.orders ALTER COLUMN service_id DROP NOT NULL;
 ALTER TABLE public.orders DROP CONSTRAINT IF EXISTS orders_service_id_fkey;
 ALTER TABLE public.orders ADD CONSTRAINT orders_service_id_fkey FOREIGN KEY (service_id) REFERENCES public.services(id) ON DELETE SET NULL;
 
--- ২. services টেবিল: category_id কে nullable করা যাতে ক্যাটাগরি ডিলিট করলে এরর না দিয়ে category_id = NULL হয়
 ALTER TABLE public.services ALTER COLUMN category_id DROP NOT NULL;
 ALTER TABLE public.services DROP CONSTRAINT IF EXISTS services_category_id_fkey;
 ALTER TABLE public.services ADD CONSTRAINT services_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.service_categories(id) ON DELETE SET NULL;
 
--- ৩. (ঐচ্ছিক) যদি Supabase থেকে সকল ডেমো সার্ভিস ও ক্যাশ একবারে শূন্য করে ফ্রেশ শুরু করতে চান:
--- TRUNCATE TABLE public.order_deliverables, public.order_events, public.orders, public.services CASCADE;`;
+-- ========================================================
+-- ধাপ ২: অফিসিয়াল ৪টি ক্যাটাগরি এন্ট্রি / সিঙ্ক
+-- ========================================================
+INSERT INTO public.service_categories (id, name, name_bn, slug, description, description_bn, icon, display_order, is_active)
+VALUES
+  ('11111111-1111-1111-1111-111111111101', $$Website & E-commerce$$, $$ওয়েবসাইট ও ই-কমার্স$$, $$website-ecommerce$$, $$Professional e-commerce stores, landing pages, website fixes, and store setup.$$, $$প্রফেশনাল ই-কমার্স স্টোর, ব্যবসার ল্যান্ডিং পেজ, ওয়েবসাইট ফিক্স ও অনলাইন শপ সেটআপ।$$, $$Globe$$, 1, true),
+  ('11111111-1111-1111-1111-111111111102', $$Business & Digital Setup$$, $$ব্যবসা ও ডিজিটাল সেটআপ$$, $$business-digital-setup$$, $$Business presence, WhatsApp Business automation, and catalog configuration.$$, $$অফিসিয়াল হোয়াটসঅ্যাপ বিজনেস প্রোফাইল, ক্যাটালগ ও অটোমেশন সেটআপ।$$, $$Briefcase$$, 2, true),
+  ('11111111-1111-1111-1111-111111111103', $$Career & Documents$$, $$ক্যারিয়ার ও ডকুমেন্ট$$, $$career-documents$$, $$Professional pitch decks, resumes, CVs, and job application cover letters.$$, $$প্রফেশনাল প্রেজেন্টেশন ও পিচ ডেক, স্ট্যান্ডার্ড সিভি ও কভার লেটার প্যাকেজ।$$, $$FileText$$, 3, true),
+  ('11111111-1111-1111-1111-111111111104', $$Data & Productivity$$, $$ডেটা ও প্রোডাক্টিভিটি$$, $$data-productivity$$, $$Excel data cleanup, deduplication, spreadsheets, and website performance audits.$$, $$এক্সেল ডেটা ক্লিনআপ, স্প্রেডশিট সাজানো এবং ওয়েবসাইট পারফরম্যান্স অডিট রিপোর্ট।$$, $$Database$$, 4, true)
+ON CONFLICT (id) DO UPDATE SET
+  name = EXCLUDED.name,
+  name_bn = EXCLUDED.name_bn,
+  slug = EXCLUDED.slug,
+  description = EXCLUDED.description,
+  description_bn = EXCLUDED.description_bn,
+  icon = EXCLUDED.icon,
+  display_order = EXCLUDED.display_order,
+  is_active = EXCLUDED.is_active;
+
+-- ========================================================
+-- ধাপ ৩: অফিসিয়াল ৯টি ডিজিটাল সার্ভিস এন্ট্রি / সিঙ্ক
+-- ========================================================
+INSERT INTO public.services (id, category_id, title, title_bn, slug, description, description_bn, price, delivery_days, requirements, revision_policy, is_active, is_featured, is_gov_service)
+VALUES
+  (
+    '22222222-2222-2222-2222-222222222201',
+    '11111111-1111-1111-1111-111111111101',
+    $$E-commerce Website Development$$,
+    $$ই-কমার্স ওয়েবসাইট তৈরি$$,
+    $$ecommerce-website-development$$,
+    $$Basic online store with product list, category filtering, product details, and contact options for small businesses.$$,
+    $$ছোট ব্যবসার জন্য প্রোডাক্ট লিস্ট, ক্যাটাগরি, প্রোডাক্টের বিবরণ ও যোগাযোগের সুবিধাসহ একটি বেসিক অনলাইন স্টোর তৈরি করা হবে। উন্নত ফিচার প্রয়োজন হলে আলাদা মূল্য নির্ধারণ করা হবে।$$,
+    1999.00,
+    4,
+    $$ব্যবসার বিবরণ, পণ্যের ছবি ও মূল্যতালিকা, লোগো এবং যোগাযোগের তথ্য।$$,
+    $$২ বার প্রয়োজনীয় পরিবর্তন বা রিভিশন ফ্রি।$$,
+    true,
+    true,
+    false
+  ),
+  (
+    '22222222-2222-2222-2222-222222222202',
+    '11111111-1111-1111-1111-111111111101',
+    $$Business Landing Page$$,
+    $$ব্যবসার ল্যান্ডিং পেজ$$,
+    $$business-landing-page$$,
+    $$Mobile-friendly one-page website designed to showcase business services, contact buttons, and clear calls to action.$$,
+    $$ব্যবসা, পণ্য বা সার্ভিস প্রচারের জন্য একটি মোবাইল-ফ্রেন্ডলি ওয়েবপেজ তৈরি করা হবে, যেখানে প্রয়োজনীয় তথ্য, ছবি, যোগাযোগের বাটন ও কল-টু-অ্যাকশন থাকবে।$$,
+    1499.00,
+    3,
+    $$কোম্পানি বা সার্ভিসের বিস্তারিত তথ্য, ব্যানার বা ছবি এবং যোগাযোগের নম্বর।$$,
+    $$২ বার প্রয়োজনীয় রিভিশন সম্পন্ন করা হবে।$$,
+    true,
+    true,
+    false
+  ),
+  (
+    '22222222-2222-2222-2222-222222222203',
+    '11111111-1111-1111-1111-111111111101',
+    $$Website Fix & Integration$$,
+    $$ওয়েবসাইট ফিক্স ও ইন্টিগ্রেশন$$,
+    $$website-fix-integration$$,
+    $$Quick resolution of small website bugs, contact form integration, social media link setup, or live chat integration.$$,
+    $$ওয়েবসাইটের ছোটখাটো সমস্যা সমাধান, কন্টাক্ট ফর্ম যুক্ত করা, সোশ্যাল মিডিয়া লিংক যোগ করা, লাইভ চ্যাট বা মেসেঞ্জার চ্যাট যুক্ত করা।$$,
+    299.00,
+    1,
+    $$ওয়েবসাইট অ্যাক্সেস বা সিপ্যানেল তথ্য এবং সমাধানের বিস্তারিত বিবরণ।$$,
+    $$কাজ পুরোপুরি টেস্ট করে বুঝিয়ে দেওয়া হবে।$$,
+    true,
+    false,
+    false
+  ),
+  (
+    '22222222-2222-2222-2222-222222222204',
+    '11111111-1111-1111-1111-111111111101',
+    $$Product Upload & Store Setup$$,
+    $$প্রোডাক্ট আপলোড ও স্টোর সেটআপ$$,
+    $$product-upload-store-setup$$,
+    $$Professional upload and organization of 10 products with images, titles, descriptions, and accurate pricing.$$,
+    $$আপনার অনলাইন স্টোরে ১০টি প্রোডাক্ট ছবি, বিবরণ ও সঠিক মূল্যসহ আপলোড করে সাজিয়ে দেওয়া হবে।$$,
+    299.00,
+    1,
+    $$১০টি পণ্যের ছবি, পণ্যের নাম, ক্যাটাগরি ও মূল্যতালিকা।$$,
+    $$প্রোডাক্ট এন্ট্রি সঠিকতা নিশ্চিতকরণে ১ বার রিভিউ।$$,
+    true,
+    false,
+    false
+  ),
+  (
+    '22222222-2222-2222-2222-222222222205',
+    '11111111-1111-1111-1111-111111111102',
+    $$WhatsApp Business Setup$$,
+    $$হোয়াটসঅ্যাপ বিজনেস সেটআপ$$,
+    $$whatsapp-business-setup$$,
+    $$Creation of an official WhatsApp Business profile, business catalog, operating hours, and automated welcome and away messages.$$,
+    $$অফিসিয়াল হোয়াটসঅ্যাপ বিজনেস প্রোফাইল তৈরি, ব্যবসার বিবরণ, সময়সূচি, ক্যাটালগ সেটআপ এবং অটোমেটিক গ্রিটিং ও অ্যাওয়ে মেসেজ কনফিগার করে দেওয়া হবে।$$,
+    399.00,
+    1,
+    $$ব্যবসার নাম, মোবাইল নম্বর, লোগো, পণ্য/সার্ভিসের তালিকা ও সময়সূচি।$$,
+    $$প্রোফাইল লাইভ যাচাইকরণ।$$,
+    true,
+    true,
+    false
+  ),
+  (
+    '22222222-2222-2222-2222-222222222206',
+    '11111111-1111-1111-1111-111111111103',
+    $$Presentation & Pitch Deck$$,
+    $$প্রেজেন্টেশন ও পিচ ডেক$$,
+    $$presentation-pitch-deck$$,
+    $$Professional and compelling slide design for schools, colleges, universities, or corporate presentations up to 10 slides.$$,
+    $$স্কুল, কলেজ, বিশ্ববিদ্যালয় বা অফিসের জন্য প্রফেশনাল ও আকর্ষণীয় স্লাইড ডিজাইন (১০ স্লাইড পর্যন্ত)।$$,
+    399.00,
+    2,
+    $$স্লাইডের খসড়া টেক্সট বা টপিক, লোগো ও পছন্দের কালার থিম।$$,
+    $$সর্বোচ্চ ২ বার স্লাইড পরিবর্তন বা রিভিশন।$$,
+    true,
+    false,
+    false
+  ),
+  (
+    '22222222-2222-2222-2222-222222222207',
+    '11111111-1111-1111-1111-111111111103',
+    $$CV & Job Application Package$$,
+    $$সিভি ও জব অ্যাপ্লিকেশন প্যাকেজ$$,
+    $$cv-job-application-package$$,
+    $$Standard, professional CV creation for job applications paired with a tailored, modern cover letter.$$,
+    $$চাকরির আবেদনের জন্য স্ট্যান্ডার্ড ও প্রফেশনাল সিভি তৈরি এবং একটি মানসম্মত কভার লেটার প্রস্তুত করে দেওয়া হবে।$$,
+    399.00,
+    2,
+    $$বর্তমান তথ্য বা পুরোনো সিভি, শিক্ষাগত যোগ্যতা, অভিজ্ঞতার বিবরণ ও যে পদের জন্য আবেদন করছেন।$$,
+    $$প্রয়োজনে ২ বার তথ্য হালনাগাদ রিভিশন।$$,
+    true,
+    true,
+    false
+  ),
+  (
+    '22222222-2222-2222-2222-222222222208',
+    '11111111-1111-1111-1111-111111111104',
+    $$Excel & Data Cleanup$$,
+    $$এক্সেল ও ডেটা ক্লিনআপ$$,
+    $$excel-data-cleanup$$,
+    $$Organizing messy spreadsheets, removing duplicates, applying essential filters, and preparing clean data.$$,
+    $$অগোছালো ডেটা সাজানো, ডুপ্লিকেট রিমুভ করা, প্রয়োজনীয় ফিল্টারিং করা এবং ব্যবহারের উপযোগী স্প্রেডশিট প্রস্তুত করা।$$,
+    249.00,
+    1,
+    $$কাঁচা এক্সেল বা সিএসভি ফাইল এবং আপনি কী ধরণের ফরম্যাট চান তার বিবরণ।$$,
+    $$ডেটা নির্ভুলতা নিশ্চিতকরণে ১ বার রিভিউ।$$,
+    true,
+    false,
+    false
+  ),
+  (
+    '22222222-2222-2222-2222-222222222209',
+    '11111111-1111-1111-1111-111111111104',
+    $$Website Audit & Improvement Report$$,
+    $$ওয়েবসাইট অডিট ও ইমপ্রুভমেন্ট রিপোর্ট$$,
+    $$website-audit-improvement-report$$,
+    $$Detailed actionable report examining website speed, mobile responsiveness, and overall user experience.$$,
+    $$আপনার বর্তমান ওয়েবসাইটের গতি, মোবাইল রেসপনসিভনেস ও ইউজার এক্সপেরিয়েন্স পর্যবেক্ষণ করে একটি বিস্তারিত অ্যাকশনেবল রিপোর্ট প্রদান করা হবে।$$,
+    499.00,
+    2,
+    $$ওয়েবসাইটের লাইভ লিংক ও কোনো নির্দিষ্ট সমস্যা থাকলে তার উল্লেখ।$$,
+    $$রিপোর্ট বুঝিয়ে দেওয়ার পর ১ বার প্রশ্নোত্তর সহায়তা।$$,
+    true,
+    false,
+    false
+  )
+ON CONFLICT (id) DO UPDATE SET
+  category_id = EXCLUDED.category_id,
+  title = EXCLUDED.title,
+  title_bn = EXCLUDED.title_bn,
+  slug = EXCLUDED.slug,
+  description = EXCLUDED.description,
+  description_bn = EXCLUDED.description_bn,
+  price = EXCLUDED.price,
+  delivery_days = EXCLUDED.delivery_days,
+  requirements = EXCLUDED.requirements,
+  revision_policy = EXCLUDED.revision_policy,
+  is_active = EXCLUDED.is_active,
+  is_featured = EXCLUDED.is_featured,
+  is_gov_service = EXCLUDED.is_gov_service;`;
                 navigator.clipboard.writeText(sqlText);
                 setSqlCopied(true);
                 setTimeout(() => setSqlCopied(false), 2500);
@@ -526,28 +778,29 @@ ALTER TABLE public.services ADD CONSTRAINT services_category_id_fkey FOREIGN KEY
               className="px-3 py-1.5 text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg flex items-center gap-1.5 transition-colors"
             >
               {sqlCopied ? <Check className="w-3.5 h-3.5 text-slate-950" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{sqlCopied ? 'কপি হয়েছে!' : 'SQL কপি করুন'}</span>
+              <span>{sqlCopied ? 'কপি হয়েছে!' : 'সম্পূর্ণ SQL কপি করুন'}</span>
             </button>
           </div>
 
           <p className="text-xs text-slate-300 leading-relaxed">
-            <strong>কেন এরর হয়েছিল:</strong> পূর্বে <code className="text-amber-300 font-mono">orders</code> টেবিলে <code className="text-amber-300 font-mono">service_id</code> এবং <code className="text-amber-300 font-mono">services</code> টেবিলে <code className="text-amber-300 font-mono">category_id</code> তে <code className="text-rose-400 font-mono">NOT NULL</code> বাধ্যবাধকতা ছিল। ফলে সার্ভিস বা ক্যাটাগরি ডিলিট করার চেষ্টা করলেই PostgreSQL <code className="text-rose-400 font-mono">ERROR 23502</code> দিত। এই স্ক্রিপ্টটি রান করলে যে কোনো সময় যে কোনো সার্ভিস বা ক্যাটাগরি বাধাহীনভাবে ডিলিট করা যাবে।
+            <strong>ত্রুটির কারণ ও সমাধান:</strong> স্ক্রিনশটে যে এররটি দেখছেন (<code className="text-rose-400 font-mono">ERROR 23502</code>), তা ঘটেছিল কারণ <code className="text-amber-300 font-mono">orders</code> টেবিলে <code className="text-amber-300 font-mono">service_id</code> কলামে <code className="text-rose-400 font-mono">NOT NULL</code> ছিল। আর <code className="text-rose-400 font-mono">relation &quot;an&quot; does not exist</code> ঘটেছিল টেক্সট কপি করার সময় বা ব্রাউজার ট্রান্সেলেটর কোটেশন ভেঙে দেওয়ায়। নিচের স্ক্রিপ্টে <code className="text-emerald-400 font-mono">$$ ... $$</code> ডলার কোটেশন ব্যবহার করা হয়েছে যা ১০০% নিরাপদ।
           </p>
 
-          <pre className="p-3 bg-slate-950 rounded-lg text-[11px] font-mono text-emerald-400 overflow-x-auto leading-relaxed border border-slate-800">
-{`-- ১. orders টেবিল ফিক্স
+          <pre className="p-3 bg-slate-950 rounded-lg text-[11px] font-mono text-emerald-400 overflow-x-auto leading-relaxed border border-slate-800 max-h-56">
+{`-- ধাপ ১: ডিলিট ফিক্স
 ALTER TABLE public.orders ALTER COLUMN service_id DROP NOT NULL;
 ALTER TABLE public.orders DROP CONSTRAINT IF EXISTS orders_service_id_fkey;
 ALTER TABLE public.orders ADD CONSTRAINT orders_service_id_fkey FOREIGN KEY (service_id) REFERENCES public.services(id) ON DELETE SET NULL;
 
--- ২. services টেবিল ফিক্স
 ALTER TABLE public.services ALTER COLUMN category_id DROP NOT NULL;
 ALTER TABLE public.services DROP CONSTRAINT IF EXISTS services_category_id_fkey;
-ALTER TABLE public.services ADD CONSTRAINT services_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.service_categories(id) ON DELETE SET NULL;`}
+ALTER TABLE public.services ADD CONSTRAINT services_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.service_categories(id) ON DELETE SET NULL;
+
+-- ধাপ ২ ও ৩: ৪টি ক্যাটাগরি ও ৯টি অফিসিয়াল সার্ভিস ইন্সার্ট/আপসার্ট`}
           </pre>
 
           <div className="text-[11px] text-slate-400 flex items-center gap-1">
-            <span>কীভাবে রান করবেন: Supabase Dashboard এ গিয়ে বামের মেনু থেকে <strong>SQL Editor</strong> এ যান &gt; কোড পেস্ট করুন &gt; <strong>Run</strong> এ ক্লিক করুন।</span>
+            <span>টিপ: আপনি উপরের <strong>&quot;অফিসিয়াল ক্যাটালগ সিঙ্ক&quot;</strong> বাটনে ক্লিক করেও সরাসরি ওয়েবসাইট থেকেই এটি সিঙ্ক করে নিতে পারেন!</span>
           </div>
         </div>
       )}
