@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS public.service_categories (
 -- 5. SERVICES TABLE
 CREATE TABLE IF NOT EXISTS public.services (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    category_id UUID NOT NULL REFERENCES public.service_categories(id) ON DELETE RESTRICT,
+    category_id UUID REFERENCES public.service_categories(id) ON DELETE SET NULL,
     title TEXT NOT NULL,
     title_bn TEXT NOT NULL,
     slug TEXT NOT NULL UNIQUE,
@@ -151,7 +151,7 @@ CREATE TABLE IF NOT EXISTS public.orders (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     order_number TEXT NOT NULL UNIQUE,
     user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT,
-    service_id UUID NOT NULL REFERENCES public.services(id) ON DELETE RESTRICT,
+    service_id UUID REFERENCES public.services(id) ON DELETE SET NULL,
     amount DECIMAL(12, 2) NOT NULL CHECK (amount >= 0),
     status order_status NOT NULL DEFAULT 'pending_requirements',
     requirements_submitted TEXT,

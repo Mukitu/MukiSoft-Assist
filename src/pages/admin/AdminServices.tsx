@@ -24,6 +24,9 @@ import {
   FileText,
   Briefcase,
   Sliders,
+  Copy,
+  Check,
+  Terminal,
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { toBengaliCurrency, toBengaliDigits } from '../../lib/i18n';
@@ -57,6 +60,14 @@ export const AdminServices: React.FC<AdminServicesProps> = ({ defaultTab = 'serv
   const [categories, setCategories] = useState<ServiceCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // মাল্টি-সিলেক্ট ও বাল্ক অ্যাকশন স্টেট
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [isConfirmBulkDeleteOpen, setIsConfirmBulkDeleteOpen] = useState(false);
+  const [isConfirmDeleteAllOpen, setIsConfirmDeleteAllOpen] = useState(false);
+  const [showSqlGuide, setShowSqlGuide] = useState(false);
+  const [sqlCopied, setSqlCopied] = useState(false);
 
   // সার্ভিসেস ফিল্টার ও সার্চ স্টেট
   const [searchQuery, setSearchQuery] = useState('');
@@ -212,6 +223,7 @@ export const AdminServices: React.FC<AdminServicesProps> = ({ defaultTab = 'serv
     try {
       await api.deleteService(deletingService.id);
       setServices((prev) => prev.filter((s) => s.id !== deletingService.id));
+      setSelectedServiceIds((prev) => prev.filter((id) => id !== deletingService.id));
       showToast({
         type: 'success',
         title: 'সেবা মুছে ফেলা হয়েছে',
@@ -221,6 +233,61 @@ export const AdminServices: React.FC<AdminServicesProps> = ({ defaultTab = 'serv
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'সেবা মুছে ফেলা যায়নি';
       showToast({ type: 'error', title: 'ত্রুটি', message: msg });
+    }
+  };
+
+  const handleToggleSelectAllServices = () => {
+    if (selectedServiceIds.length === filteredServices.length) {
+      setSelectedServiceIds([]);
+    } else {
+      setSelectedServiceIds(filteredServices.map((s) => s.id));
+    }
+  };
+
+  const handleToggleSelectService = (id: string) => {
+    setSelectedServiceIds((prev) =>
+      prev.includes(id) ? prev.filter((itemId) => itemId !== id) : [...prev, id]
+    );
+  };
+
+  const handleBulkDeleteServices = async () => {
+    if (selectedServiceIds.length === 0) return;
+    setIsBulkDeleting(true);
+    try {
+      await api.deleteServices(selectedServiceIds);
+      setServices((prev) => prev.filter((s) => !selectedServiceIds.includes(s.id)));
+      showToast({
+        type: 'success',
+        title: 'সেবাগুলো মুছে ফেলা হয়েছে',
+        message: `${toBengaliDigits(selectedServiceIds.length)}টি সেবা সফলভাবে ক্যাটালগ থেকে মুছে ফেলা হয়েছে।`,
+      });
+      setSelectedServiceIds([]);
+      setIsConfirmBulkDeleteOpen(false);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'সেবাগুলো মুছে ফেলা যায়নি';
+      showToast({ type: 'error', title: 'ত্রুটি', message: msg });
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
+  const handleDeleteAllServices = async () => {
+    setIsBulkDeleting(true);
+    try {
+      await api.deleteAllServices();
+      setServices([]);
+      setSelectedServiceIds([]);
+      showToast({
+        type: 'success',
+        title: 'সকল সেবা মুছে ফেলা হয়েছে',
+        message: 'ক্যাটালগের সকল ডেমো/পূর্বের সেবা মুছে ফেলা হয়েছে। এখন আপনি নতুন সেবা যোগ করতে পারেন।',
+      });
+      setIsConfirmDeleteAllOpen(false);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'সকল সেবা মোছা সম্ভব হয়নি';
+      showToast({ type: 'error', title: 'ত্রুটি', message: msg });
+    } finally {
+      setIsBulkDeleting(false);
     }
   };
 
@@ -352,7 +419,7 @@ export const AdminServices: React.FC<AdminServicesProps> = ({ defaultTab = 'serv
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <button
             onClick={() => loadData(true)}
             disabled={refreshing}
@@ -361,6 +428,30 @@ export const AdminServices: React.FC<AdminServicesProps> = ({ defaultTab = 'serv
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-indigo-600' : ''}`} />
           </button>
+
+          <button
+            onClick={() => setShowSqlGuide(!showSqlGuide)}
+            className={`px-3 py-2.5 text-xs font-medium rounded-lg border transition-colors flex items-center gap-1.5 shadow-xs ${
+              showSqlGuide
+                ? 'bg-amber-50 border-amber-200 text-amber-800'
+                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+            }`}
+            title="Supabase Foreign Key এরর ফিক্স ও অল ডিলিট SQL স্ক্রিপ্ট"
+          >
+            <Terminal className="w-3.5 h-3.5 text-amber-600" />
+            <span>SQL ফিক্স গাইড</span>
+          </button>
+
+          {activeTab === 'services' && services.length > 0 && (
+            <button
+              onClick={() => setIsConfirmDeleteAllOpen(true)}
+              className="px-3 py-2.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-xs"
+              title="সকল ডেমো সেবা এক ক্লিকে মুছে ফেলুন"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+              <span>সব সেবা মুছুন</span>
+            </button>
+          )}
 
           {activeTab === 'services' ? (
             <button
@@ -399,6 +490,67 @@ export const AdminServices: React.FC<AdminServicesProps> = ({ defaultTab = 'serv
           )}
         </div>
       </div>
+
+      {/* SQL গাইড ও ডিলিট ফিক্স প্যানেল */}
+      {showSqlGuide && (
+        <div className="bg-slate-900 text-slate-100 rounded-xl p-5 border border-slate-800 shadow-md space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Terminal className="w-5 h-5 text-amber-400" />
+              <h4 className="text-sm font-bold text-white">
+                Supabase Foreign Key ফিক্স স্ক্রিপ্ট (ERROR 23502 সমাধান)
+              </h4>
+            </div>
+            <button
+              onClick={() => {
+                const sqlText = `-- =======================================================
+-- MukiSoft Assist: Supabase Delete Fix & Safe Foreign Key Constraints
+-- =======================================================
+
+-- ১. orders টেবিল: service_id কে nullable করা যাতে সার্ভিস ডিলিট করলে এরর না দিয়ে service_id = NULL হয়
+ALTER TABLE public.orders ALTER COLUMN service_id DROP NOT NULL;
+ALTER TABLE public.orders DROP CONSTRAINT IF EXISTS orders_service_id_fkey;
+ALTER TABLE public.orders ADD CONSTRAINT orders_service_id_fkey FOREIGN KEY (service_id) REFERENCES public.services(id) ON DELETE SET NULL;
+
+-- ২. services টেবিল: category_id কে nullable করা যাতে ক্যাটাগরি ডিলিট করলে এরর না দিয়ে category_id = NULL হয়
+ALTER TABLE public.services ALTER COLUMN category_id DROP NOT NULL;
+ALTER TABLE public.services DROP CONSTRAINT IF EXISTS services_category_id_fkey;
+ALTER TABLE public.services ADD CONSTRAINT services_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.service_categories(id) ON DELETE SET NULL;
+
+-- ৩. (ঐচ্ছিক) যদি Supabase থেকে সকল ডেমো সার্ভিস ও ক্যাশ একবারে শূন্য করে ফ্রেশ শুরু করতে চান:
+-- TRUNCATE TABLE public.order_deliverables, public.order_events, public.orders, public.services CASCADE;`;
+                navigator.clipboard.writeText(sqlText);
+                setSqlCopied(true);
+                setTimeout(() => setSqlCopied(false), 2500);
+              }}
+              className="px-3 py-1.5 text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg flex items-center gap-1.5 transition-colors"
+            >
+              {sqlCopied ? <Check className="w-3.5 h-3.5 text-slate-950" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{sqlCopied ? 'কপি হয়েছে!' : 'SQL কপি করুন'}</span>
+            </button>
+          </div>
+
+          <p className="text-xs text-slate-300 leading-relaxed">
+            <strong>কেন এরর হয়েছিল:</strong> পূর্বে <code className="text-amber-300 font-mono">orders</code> টেবিলে <code className="text-amber-300 font-mono">service_id</code> এবং <code className="text-amber-300 font-mono">services</code> টেবিলে <code className="text-amber-300 font-mono">category_id</code> তে <code className="text-rose-400 font-mono">NOT NULL</code> বাধ্যবাধকতা ছিল। ফলে সার্ভিস বা ক্যাটাগরি ডিলিট করার চেষ্টা করলেই PostgreSQL <code className="text-rose-400 font-mono">ERROR 23502</code> দিত। এই স্ক্রিপ্টটি রান করলে যে কোনো সময় যে কোনো সার্ভিস বা ক্যাটাগরি বাধাহীনভাবে ডিলিট করা যাবে।
+          </p>
+
+          <pre className="p-3 bg-slate-950 rounded-lg text-[11px] font-mono text-emerald-400 overflow-x-auto leading-relaxed border border-slate-800">
+{`-- ১. orders টেবিল ফিক্স
+ALTER TABLE public.orders ALTER COLUMN service_id DROP NOT NULL;
+ALTER TABLE public.orders DROP CONSTRAINT IF EXISTS orders_service_id_fkey;
+ALTER TABLE public.orders ADD CONSTRAINT orders_service_id_fkey FOREIGN KEY (service_id) REFERENCES public.services(id) ON DELETE SET NULL;
+
+-- ২. services টেবিল ফিক্স
+ALTER TABLE public.services ALTER COLUMN category_id DROP NOT NULL;
+ALTER TABLE public.services DROP CONSTRAINT IF EXISTS services_category_id_fkey;
+ALTER TABLE public.services ADD CONSTRAINT services_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.service_categories(id) ON DELETE SET NULL;`}
+          </pre>
+
+          <div className="text-[11px] text-slate-400 flex items-center gap-1">
+            <span>কীভাবে রান করবেন: Supabase Dashboard এ গিয়ে বামের মেনু থেকে <strong>SQL Editor</strong> এ যান &gt; কোড পেস্ট করুন &gt; <strong>Run</strong> এ ক্লিক করুন।</span>
+          </div>
+        </div>
+      )}
 
       {/* সেকশন সুইচ ট্যাব (সার্ভিস সমূহ বনাম সার্ভিস ক্যাটাগরি) */}
       <div className="flex items-center gap-3 border-b border-slate-200">
@@ -516,6 +668,33 @@ export const AdminServices: React.FC<AdminServicesProps> = ({ defaultTab = 'serv
             </div>
           </div>
 
+          {/* নির্বাচিত সেবা বাল্ক অ্যাকশন বার */}
+          {selectedServiceIds.length > 0 && (
+            <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-indigo-600" />
+                <span className="text-xs font-semibold text-indigo-900">
+                  {toBengaliDigits(selectedServiceIds.length)}টি সেবা নির্বাচিত হয়েছে
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setSelectedServiceIds([])}
+                  className="px-3 py-1.5 text-xs text-slate-600 hover:text-slate-800 bg-white border border-slate-200 rounded-lg shadow-xs"
+                >
+                  নির্বাচন বাতিল
+                </button>
+                <button
+                  onClick={() => setIsConfirmBulkDeleteOpen(true)}
+                  className="px-3.5 py-1.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg flex items-center gap-1.5 transition-colors shadow-xs"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>নির্বাচিত ({toBengaliDigits(selectedServiceIds.length)}) সেবা মুছুন</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* সেবা তালিকা টেবিল */}
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
             {loading ? (
@@ -530,6 +709,15 @@ export const AdminServices: React.FC<AdminServicesProps> = ({ defaultTab = 'serv
                 <table className="w-full text-xs text-left">
                   <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
                     <tr>
+                      <th className="py-3 px-3 w-10 text-center">
+                        <input
+                          type="checkbox"
+                          aria-label="সব সেবা নির্বাচন করুন"
+                          checked={filteredServices.length > 0 && selectedServiceIds.length === filteredServices.length}
+                          onChange={handleToggleSelectAllServices}
+                          className="rounded text-indigo-600 focus:ring-0 cursor-pointer"
+                        />
+                      </th>
                       <th className="py-3 px-4 font-medium">সেবার নাম ও স্লাগ</th>
                       <th className="py-3 px-4 font-medium">ক্যাটাগরি</th>
                       <th className="py-3 px-4 font-medium text-right">স্ট্যান্ডার্ড ফি</th>
@@ -542,7 +730,16 @@ export const AdminServices: React.FC<AdminServicesProps> = ({ defaultTab = 'serv
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-slate-700">
                     {filteredServices.map((srv) => (
-                      <tr key={srv.id} className="hover:bg-slate-50/50">
+                      <tr key={srv.id} className={`hover:bg-slate-50/50 ${selectedServiceIds.includes(srv.id) ? 'bg-indigo-50/30' : ''}`}>
+                        <td className="py-3.5 px-3 text-center">
+                          <input
+                            type="checkbox"
+                            aria-label={`নির্বাচন করুন ${srv.title_bn || srv.title}`}
+                            checked={selectedServiceIds.includes(srv.id)}
+                            onChange={() => handleToggleSelectService(srv.id)}
+                            className="rounded text-indigo-600 focus:ring-0 cursor-pointer"
+                          />
+                        </td>
                         <td className="py-3.5 px-4 max-w-xs">
                           <div className="font-semibold text-slate-900">{srv.title_bn || srv.title}</div>
                           <div className="text-[11px] text-slate-400 font-mono mt-0.5">{srv.slug}</div>
@@ -1146,6 +1343,85 @@ export const AdminServices: React.FC<AdminServicesProps> = ({ defaultTab = 'serv
                 className="px-4 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors"
               >
                 ক্যাটাগরি মুছে ফেলুন
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================= */}
+      {/* নির্বাচিত সেবা বাল্ক ডিলিট কনফার্মেশন মডাল */}
+      {/* ================================================================= */}
+      {isConfirmBulkDeleteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-md w-full p-6 space-y-4">
+            <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <div className="text-center">
+              <h3 className="text-base font-bold text-slate-900">
+                নির্বাচিত {toBengaliDigits(selectedServiceIds.length)}টি সেবা মুছে ফেলতে চান?
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                নির্বাচিত সেবাসমূহ ক্যাটালগ ও Supabase ডাটাবেজ থেকে স্থায়ীভাবে মুছে ফেলা হবে।
+              </p>
+            </div>
+
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                disabled={isBulkDeleting}
+                onClick={() => setIsConfirmBulkDeleteOpen(false)}
+                className="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-800 disabled:opacity-50"
+              >
+                বাতিল
+              </button>
+              <button
+                disabled={isBulkDeleting}
+                onClick={handleBulkDeleteServices}
+                className="px-5 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
+              >
+                {isBulkDeleting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                <span>{isBulkDeleting ? 'মুছে ফেলা হচ্ছে...' : 'হ্যাঁ, মুছে ফেলুন'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================= */}
+      {/* সকল সেবা মুছুন (Wipe All Demo Services) কনফার্মেশন মডাল */}
+      {/* ================================================================= */}
+      {isConfirmDeleteAllOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <div className="bg-white rounded-xl shadow-2xl border border-rose-200 max-w-md w-full p-6 space-y-4">
+            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center mx-auto">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <div className="text-center">
+              <h3 className="text-base font-bold text-slate-900">সকল সেবা মুছে ফেলতে চান?</h3>
+              <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+                ক্যাটালগের সকল <strong className="text-rose-700">{toBengaliDigits(services.length)}টি সেবা</strong> সম্পূর্ণভাবে মুছে ফেলা হবে। এরপর ক্যাটালগ সম্পূর্ণ খালি হয়ে যাবে এবং আপনি আপনার নতুন রিয়েল সেবাগুলো যুক্ত করতে পারবেন।
+              </p>
+              <div className="mt-3 p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-800 text-[11px] text-left">
+                ⚠️ এই কাজটি অপরিবর্তনীয়। আপনি কি নিশ্চিত যে সমস্ত সেবা মুছে সম্পূর্ণ ফ্রেশ শুরু করতে চান?
+              </div>
+            </div>
+
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                disabled={isBulkDeleting}
+                onClick={() => setIsConfirmDeleteAllOpen(false)}
+                className="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-800 disabled:opacity-50"
+              >
+                বাতিল
+              </button>
+              <button
+                disabled={isBulkDeleting}
+                onClick={handleDeleteAllServices}
+                className="px-5 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
+              >
+                {isBulkDeleting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                <span>{isBulkDeleting ? 'সব মুছে ফেলা হচ্ছে...' : 'সব সেবা মুছে ফেলুন'}</span>
               </button>
             </div>
           </div>

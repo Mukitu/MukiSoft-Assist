@@ -283,6 +283,68 @@ export const api = {
     return true;
   },
 
+  async deleteServices(ids: string[]): Promise<boolean> {
+    if (!ids || ids.length === 0) return true;
+    if (isSupabaseConfigured && supabase) {
+      try {
+        // 1. Unlink orders
+        try {
+          await supabase.from('orders').update({ service_id: null }).in('service_id', ids);
+        } catch (e) {
+          console.warn('Bulk unlinking orders failed:', e);
+        }
+        // 2. Delete child reviews and faqs
+        try { await supabase.from('service_reviews').delete().in('service_id', ids); } catch {}
+        try { await supabase.from('service_faqs').delete().in('service_id', ids); } catch {}
+
+        // 3. Delete from services table
+        const { error } = await supabase.from('services').delete().in('id', ids);
+        if (error) {
+          console.warn('Bulk delete services failed in Supabase:', error.message);
+          throw new Error(error.message);
+        }
+      } catch (err: any) {
+        console.warn('deleteServices error:', err);
+        throw err;
+      }
+      await this.getServices();
+      return true;
+    }
+    const current = getLS<ServiceItem[]>('services', INITIAL_SERVICES);
+    const filtered = current.filter((s) => !ids.includes(s.id));
+    setLS('services', filtered);
+    return true;
+  },
+
+  async deleteAllServices(): Promise<boolean> {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        // 1. Unlink all orders
+        try {
+          await supabase.from('orders').update({ service_id: null }).not('service_id', 'is', null);
+        } catch (e) {
+          console.warn('Unlinking all orders failed:', e);
+        }
+        // 2. Clear reviews and faqs
+        try { await supabase.from('service_reviews').delete().neq('id', '00000000-0000-0000-0000-000000000000'); } catch {}
+        try { await supabase.from('service_faqs').delete().neq('id', '00000000-0000-0000-0000-000000000000'); } catch {}
+
+        // 3. Delete all services
+        const { error } = await supabase.from('services').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+        if (error) {
+          throw new Error(error.message);
+        }
+      } catch (err: any) {
+        console.warn('deleteAllServices error:', err);
+        throw err;
+      }
+      await this.getServices();
+      return true;
+    }
+    setLS('services', []);
+    return true;
+  },
+
   // -------------------------------------------------------------
   // WALLET & TRANSACTIONS
   // -------------------------------------------------------------

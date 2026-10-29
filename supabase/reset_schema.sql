@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS public.service_categories (
 -- SERVICES
 CREATE TABLE IF NOT EXISTS public.services (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    category_id UUID NOT NULL REFERENCES public.service_categories(id) ON DELETE CASCADE,
+    category_id UUID REFERENCES public.service_categories(id) ON DELETE SET NULL,
     title TEXT NOT NULL,
     title_bn TEXT NOT NULL,
     slug TEXT NOT NULL UNIQUE,
