@@ -21,14 +21,22 @@ export const Navbar: React.FC<NavbarProps> = ({ currentPath, onNavigate }) => {
     <>
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4 md:gap-8">
-          {/* জোন ১: ব্র্যান্ডের নাম ও লোগো */}
-          <button
-            onClick={() => handleNavClick('/')}
-            className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0 hover:text-indigo-600 transition-colors flex items-center gap-1.5"
-            aria-label="হোম পেজে যান"
-          >
-            <span>MukiSoft Assist</span>
-          </button>
+          {/* জোন ১: ব্র্যান্ডের নাম, লোগো এবং Built for AIgnite 2026 স্টিকার */}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <button
+              onClick={() => handleNavClick('/')}
+              className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0 hover:text-indigo-600 transition-colors flex items-center gap-1.5"
+              aria-label="হোম পেজে যান"
+            >
+              <span>MukiSoft Assist</span>
+            </button>
+            <div className="h-5 w-px bg-slate-200 hidden xs:block sm:block" />
+            <img
+              src="/assets/aistudio/Built for AIgnite 2026.png"
+              alt="Built for AIgnite 2026"
+              className="h-6 sm:h-8 object-contain shrink-0 max-w-[120px] sm:max-w-[170px]"
+            />
+          </div>
 
           {/* জোন ২: ডেস্কটপ নেভিগেশন লিংকসমূহ (বাংলায়) */}
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-700">
@@ -142,12 +150,16 @@ export const Navbar: React.FC<NavbarProps> = ({ currentPath, onNavigate }) => {
           <div className="relative z-10 w-80 max-w-[85vw] bg-white h-screen flex flex-col justify-between shadow-2xl p-5 overflow-y-auto">
             <div className="space-y-6">
               {/* ড্রয়ার হেডার */}
-              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-                <div>
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="space-y-1">
                   <span className="text-[10px] uppercase font-bold tracking-wider text-indigo-600 block">
                     MukiSoft Assist
                   </span>
-                  <span className="font-bold text-slate-900 text-base">মেনু নেভিগেশন</span>
+                  <img
+                    src="/assets/aistudio/Built for AIgnite 2026.png"
+                    alt="Built for AIgnite 2026"
+                    className="h-6 object-contain"
+                  />
                 </div>
                 <button
                   onClick={() => setMobileMenuOpen(false)}
@@ -156,6 +168,49 @@ export const Navbar: React.FC<NavbarProps> = ({ currentPath, onNavigate }) => {
                 >
                   <X className="w-6 h-6" />
                 </button>
+              </div>
+
+              {/* মোবাইল ড্রয়ার শীর্ষে একাউন্ট অ্যাকশন (লগইন ও রেজিস্ট্রেশন বাটন অবিলম্বে দৃশ্যমান) */}
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80 space-y-2">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                  একাউন্ট এক্সেস
+                </span>
+                {isAuthenticated ? (
+                  isAdmin ? (
+                    <button
+                      onClick={() => handleNavClick('/admin')}
+                      className="w-full py-2.5 px-4 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-xl text-center shadow-xs transition-colors flex items-center justify-center gap-2"
+                    >
+                      <LayoutDashboard className="w-4 h-4 text-indigo-400" />
+                      <span>{t.navAdminPanel}</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleNavClick('/dashboard')}
+                      className="w-full py-2.5 px-4 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl text-center shadow-xs transition-colors flex items-center justify-center gap-2"
+                    >
+                      <LayoutDashboard className="w-4 h-4" />
+                      <span>{t.navDashboard}</span>
+                    </button>
+                  )
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => handleNavClick('/login')}
+                      className="py-2.5 px-3 text-xs font-bold text-slate-800 bg-white border border-slate-200 hover:bg-slate-100 rounded-xl text-center transition-colors flex items-center justify-center gap-1.5 shadow-2xs"
+                    >
+                      <LogIn className="w-4 h-4 text-indigo-600" />
+                      <span>{t.navLogin}</span>
+                    </button>
+                    <button
+                      onClick={() => handleNavClick('/register')}
+                      className="py-2.5 px-3 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-xl text-center shadow-2xs transition-colors flex items-center justify-center gap-1.5"
+                    >
+                      <UserPlus className="w-4 h-4 text-indigo-400" />
+                      <span>{t.navRegister}</span>
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* মোবাইল মেনু লিংকস */}
@@ -215,44 +270,6 @@ export const Navbar: React.FC<NavbarProps> = ({ currentPath, onNavigate }) => {
                   <span>{t.navContact}</span>
                 </button>
               </nav>
-            </div>
-
-            {/* পোর্টাল বাটন বা লগইন বাটন */}
-            <div className="pt-4 border-t border-slate-100 space-y-2">
-              {isAuthenticated ? (
-                isAdmin ? (
-                  <button
-                    onClick={() => handleNavClick('/admin')}
-                    className="w-full py-3 px-4 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-xl text-center shadow-md transition-colors"
-                  >
-                    {t.navAdminPanel}
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => handleNavClick('/dashboard')}
-                    className="w-full py-3 px-4 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl text-center shadow-md transition-colors"
-                  >
-                    {t.navDashboard}
-                  </button>
-                )
-              ) : (
-                <>
-                  <button
-                    onClick={() => handleNavClick('/login')}
-                    className="w-full py-3 px-4 text-xs font-semibold text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-xl text-center transition-colors flex items-center justify-center gap-2"
-                  >
-                    <LogIn className="w-4 h-4 text-slate-600" />
-                    <span>{t.navLogin}</span>
-                  </button>
-                  <button
-                    onClick={() => handleNavClick('/register')}
-                    className="w-full py-3 px-4 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-xl text-center shadow-md transition-colors flex items-center justify-center gap-2"
-                  >
-                    <UserPlus className="w-4 h-4" />
-                    <span>{t.navRegister}</span>
-                  </button>
-                </>
-              )}
             </div>
           </div>
         </div>

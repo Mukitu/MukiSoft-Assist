@@ -232,7 +232,7 @@ export const LiveChatWidget: React.FC<LiveChatWidgetProps> = ({ onNavigate }) =>
 
       {/* চ্যাট উইন্ডো ডায়ালগ */}
       {isOpen && (
-        <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 w-[94vw] sm:w-[410px] h-[580px] max-h-[85vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
+        <div className="fixed inset-x-2 bottom-3 sm:inset-auto sm:bottom-6 sm:right-6 z-50 w-[calc(100vw-16px)] sm:w-[410px] h-[82vh] sm:h-[580px] max-h-[620px] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
           {/* হেডার */}
           <div className="bg-slate-900 text-white px-4 py-3.5 flex items-center justify-between border-b border-slate-800 shrink-0">
             <div className="flex items-center gap-3">
@@ -325,7 +325,7 @@ export const LiveChatWidget: React.FC<LiveChatWidgetProps> = ({ onNavigate }) =>
                         placeholder="আপনার পূর্ণ নাম লিখুন"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs focus:outline-hidden focus:border-indigo-600 shadow-xs"
+                        className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-base sm:text-xs focus:outline-hidden focus:border-indigo-600 shadow-xs"
                       />
                     </div>
                   </div>
@@ -345,7 +345,7 @@ export const LiveChatWidget: React.FC<LiveChatWidgetProps> = ({ onNavigate }) =>
                           setPhone(e.target.value);
                           if (phoneError) setPhoneError('');
                         }}
-                        className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono focus:outline-hidden focus:border-indigo-600 shadow-xs"
+                        className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-base sm:text-xs font-mono focus:outline-hidden focus:border-indigo-600 shadow-xs"
                       />
                     </div>
                     {phoneError && <span className="text-[11px] text-rose-500 mt-1 block">{phoneError}</span>}
@@ -519,7 +519,7 @@ export const LiveChatWidget: React.FC<LiveChatWidgetProps> = ({ onNavigate }) =>
                     }
                     value={inputText}
                     onChange={(e) => setInputText(e.target.value)}
-                    className="flex-1 py-2 px-3.5 bg-slate-100 border border-transparent focus:border-slate-300 focus:bg-white rounded-xl text-xs focus:outline-hidden transition-colors"
+                    className="flex-1 py-2 px-3.5 bg-slate-100 border border-transparent focus:border-slate-300 focus:bg-white rounded-xl text-base sm:text-xs focus:outline-hidden transition-colors"
                   />
                   <button
                     type="submit"
